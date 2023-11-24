@@ -9,7 +9,7 @@ LFLAGS=-L$(PREFIX)/lib -Llib
 MAX_SITES ?= 1000
 MAKE=make
 PROJROOT=$($(SHELL) pwd)
-DEPS=lib/libmixturedist.so lib/libhtswrapper.so
+DEPS=lib/libmixturedist.a lib/libhtswrapper.so
 
 all: demux/demux_vcf demux/demux_mt utils/bam_indiv_rg utils/bam_split_bcs
 
@@ -31,11 +31,11 @@ build/nnls.o: src/nnls.c src/nnls.h
 build/common.o: src/common.cpp src/common.h
 	$(COMP) $(IFLAGS) $(FLAGS) src/common.cpp -c -o build/common.o
 
-lib/libhtswrapper.so:
+lib/libhtswrapper.a:
 	cd htswrapper && $(MAKE) PREFIX=..
 	cd htswrapper && $(MAKE) install PREFIX=..
 
-lib/libmixturedist.so:
+lib/libmixturedist.a:
 	cd mixtureDist && $(MAKE) PREFIX=..
 	cd mixtureDist && $(MAKE) install PREFIX=..
 
