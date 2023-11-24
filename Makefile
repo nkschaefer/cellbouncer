@@ -9,15 +9,15 @@ LFLAGS=-L$(PREFIX)/lib -Llib
 MAX_SITES ?= 1000
 MAKE=make
 PROJROOT=$($(SHELL) pwd)
-DEPS=lib/libmixturedist.a lib/libhtswrapper.so
+DEPS=lib/libmixturedist.a lib/libhtswrapper.a
 
 all: demux/demux_vcf demux/demux_mt utils/bam_indiv_rg utils/bam_split_bcs
 
 demux/demux_vcf: src/demux_vcf.cpp src/robin_hood.h src/nnls.h build/nnls.o build/common.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_vcf.cpp -o demux/demux_vcf build/nnls.o build/common.o -lz -lhts -lmixturedist -lhtswrapper	
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_vcf.cpp -o demux/demux_vcf build/nnls.o build/common.o -lz -lhts lib/libmixturedist.a lib/libhtswrapper.a
 
 demux/demux_mt: src/demux_mt.cpp src/robin_hood.h src/common.h build/common.o $(DEPS)
-	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o -lz -lhts -lmixturedist -lhtswrapper
+	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o -lz -lhts lib/libmixturedist.a lib/libhtswrapper.a
 
 utils/bam_indiv_rg: src/bam_indiv_rg.cpp build/common.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_indiv_rg.cpp -o utils/bam_indiv_rg build/common.o -lhts -lhtswrapper
@@ -41,6 +41,7 @@ lib/libmixturedist.a:
 
 clean:
 	rm build/*.o
+	rm lib/*.a
 	rm utils/bam_indiv_rg
 	rm utils/bam_split_bcs
 	rm demux/demux_mt
