@@ -127,6 +127,11 @@ def main(args):
         cmd.append(options.barcodes)
 
     subprocess.call(cmd)
+    
+    # Clean up
+    os.unlink('{}.bcmap'.format(options.out))
+
+    # Generate plots
     subprocess.call(['Rscript', '{}/../plot/demux_mt_reclust.R'.format(script_dir), \
         '{}'.format(options.out)])
     subprocess.call(['Rscript', '{}/../plot/demux_mt_all.R'.format(script_dir), \

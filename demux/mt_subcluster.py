@@ -24,6 +24,8 @@ def parse_args():
         help="The cluster indices (or names) to subcluster")
     parser.add_argument("--doublet_rate", "-D", type=float, required=False, default=0.5, \
         help="The doublet rate to use in the final, merged re-clustering.")
+    parser.add_argument("--keep_intermediate", "-k", action="store_true", \
+        help="Do not remove temporary files from subcluster runs", required=False)
     return parser.parse_args()
 
 def main(args):
@@ -76,8 +78,9 @@ def main(args):
         else:
             # Keep root when merging hierarchically
             merge_str.append('NA')
-
+    
     fnroot_all = []
+    outs_cleanup = []
     for clust in sorted(list(clustset)):
         fnroot_all.append('{}.{}'.format(options.out, clust))
         print("Subcluster root cluster {}...".format(clust), file=sys.stderr)
@@ -85,7 +88,8 @@ def main(args):
             chrM, '-f', '{}.{}.bcs'.format(options.out, clust), \
             '-o', '{}.{}'.format(options.out, clust), '-D', '0.0']
         subprocess.call(cmd)
-    
+        outs_cleanup.append('{}.{}'.format(options.out, clust))
+
     # Merge hierarchically
     cmd = ['{}/mt_merge_hierarchical.py'.format(script_dir), '-b', options.bam, \
         '-r', options.inbase, '-D', '{}'.format(options.doublet_rate), \
@@ -93,6 +97,16 @@ def main(args):
     cmd.append('-l')
     cmd += merge_str
     subprocess.call(cmd)
+    
+    # Clean up
+    if not options.keep_intermediate:
+        for outbase in outs_cleanup:
+            os.unlink('{}.assignments'.format(outbase))
+            os.unlink('{}.bcs'.format(outbase))
+            os.unlink('{}.cellhaps'.format(outbase))
+            os.unlink('{}.haps'.format(outbase))
+            os.unlink('{}.summary'.format(outbase))
+            os.unlink('{}.vars'.format(outbase))
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))
