@@ -127,7 +127,9 @@ def main(args):
         cmd.append(options.barcodes)
 
     subprocess.call(cmd)
-    subprocess.call(['Rscript', '{}/../plot/demux_mt_plot.R'.format(script_dir), \
+    subprocess.call(['Rscript', '{}/../plot/demux_mt_reclust.R'.format(script_dir), \
+        '{}'.format(options.out)])
+    subprocess.call(['Rscript', '{}/../plot/demux_mt_all.R'.format(script_dir), \
         '{}'.format(options.out)])
 
 if __name__ == '__main__':
