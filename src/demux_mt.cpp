@@ -112,54 +112,81 @@ struct hap{
  */
 void help(int code){
     fprintf(stderr, "demux_mt [OPTIONS]\n");
-    fprintf(stderr, "Given one or more BAM files representing multiple individuals from \
-the same species, finds variable positions in the mitochondrial DNA and determines the \
-mitochondrial haplotype of each cell barcode in the BAMs. Then outputs a list of cell barcode -> \
-mtDNA cluster identities.\n");
+    fprintf(stderr, "Given a BAM file representing single-cell sequencing data \n");
+    fprintf(stderr, "(RNA-seq or ATAC-seq with cell barcode/CB tags present), \n");
+    fprintf(stderr, "Attempts to find variable sites on the mitochondrial genome and \n");
+    fprintf(stderr, "then cluster these into mitochondrial haplotypes.\n");
+    fprintf(stderr, "Attempts to infer the correct number of haplotypes in the mixture\n");
+    fprintf(stderr, "(assuming they are close to equally represented).\n");
+    fprintf(stderr, "Outputs the list of variable sites used, the haplotypes at these\n");
+    fprintf(stderr, "sites inferred for each cluster, the haplotype at each site for\n");
+    fprintf(stderr, "every cell in the data set, and the assignment of every cell to its\n");
+    fprintf(stderr, "most likely mitochondrial haplotype (optionally including doublet\n");
+    fprintf(stderr, "combinations).\n");
     fprintf(stderr, "[OPTIONS]:\n");
-    fprintf(stderr, "    --bam -b The BAM file of interest. If more than one BAM is desired, subset all to \
-mitochondrial sequences (i.e. samtools view -bh <file> chrM) and merge (samtools merge), then index (samtools \
-index).\n");
-    fprintf(stderr, "    --output_prefix -o The prefix of output files to create. Creates <output_prefix>.vars, \
-<output_prefix>.allhaps, <output_prefix>.clusthaps, and <output_prefix>.assignments by default. If dump data (-d) \
-is specified, creates only <output_prefix>.vars, <output_prefix>.allhaps, and <output_prefix>.clusthaps. If loading \
-data from a previous run, omits all files that were loaded instead of created.\n");
-    fprintf(stderr, "    --barcodes -B (OPTIONAL) list of whitelisted barcodes (i.e. from CellRanger). Will exclude non-cell barcodes.\n");
-    fprintf(stderr, "    --mapq -q The minimum map quality required (20)\n");
-    fprintf(stderr, "    --baseq -Q The minimum base quality required (20)\n");
-    fprintf(stderr, "    --freq -f The minimum frequency an allele must appear to be counted \
-as genuine and not an error (0.005)\n");
-    fprintf(stderr, "    --exact -e When clustering mitochondrial haplotypes, only use cells that contain \
-all alleles in a growing haplotype (faster and better for good/high coverage data, worse for low-coverage)\n");
-    fprintf(stderr, "    --num -n (OPTIONAL) expected number of clusters. If not provided, it will be inferred\n");
-    fprintf(stderr, "    --mincount -C minimum count for edge to be considered (heuristic to speed up; default 5)\n");
-    fprintf(stderr, "    --minsites -s The minimum number of sites visible to consider a cell. \
-This will automatically be adjusted upward as necessary but cannot be adjusted downward. Higher \
-numbers will speed up execution, but too high a number will unnecessarily discard data.\n");
-    fprintf(stderr, "    --cov -c Minimum coverage to count a site as variable (OPTIONAL; default 10)\n");
-    fprintf(stderr, "    --mito -m The name of the mitochondrial sequence (OPTIONAL; default: chrM)\n");
-    fprintf(stderr, "    --missing_thresh -M Minimum fraction missing sites to accept a haplotype (default = 0.25)\n");
-    fprintf(stderr, "    --dump -d Dump variant and haplotype (barcode and cluster) info to output files and quit. \
-Skips assigning cells to barcodes. One use of this feature would be to run the program once with this option \
-and -B to infer cluster haplotypes using only barcodes in a list of confidently-assigned cells (i.e. from CellRanger), \
-then to run a second time, loading cluster haplotypes (-H) and variant sites (-v) from this first confident run, \
-but assigning all barcodes to inferred individuals (omitting -d and -B).\n");
-    fprintf(stderr, "    --dump_raw -r Like --dump/-d, but outputs raw counts, including intermediate frequency. \
-Useful for visualizing doublets.\n");
-    fprintf(stderr, "    --tree -t (OPTIONAL) print a Newick tree showing clustering of sites, for debugging purposes\n");
-    fprintf(stderr, "    --vars -v (OPTIONAL) provide a pre-determined list of variant sites here. These will still \
-be filtered for coverage, but these variants will be used instead of attempting to discover new ones.\n");
-    fprintf(stderr, "    --haps -H If haplotypes were pre-computed, load them here. -vars / -v also required.\n");
-    fprintf(stderr, "    --nodoublet -N Disable checking for doublets. Will increase performance if there are many individuals.\n");
-    fprintf(stderr, "    --gex -g Specify that this is gene expression (single-cell RNA-seq) data\n");
-    fprintf(stderr, "    --ids -i (OPTIONAL) If using pre-computed haplotypes and variants (-H and -v provided), \
-provide an optional file of individual IDs, with line indices matching haplotypes in the -H file. Assignments will \
-then use these IDs instead of numeric indices.\n");
-    fprintf(stderr, "    --identity_thresh -I what percent different are sites allowed to be before they are \
-collapsed? -1 == find automatically (SLOW), 0 == do not collapse. Default = 0.07 for GEX, 0 otherwise.\n");
-    fprintf(stderr, "    --track_sites_causing_doublets -S If seeing more doublets than expected, this could be \
-caused by a small number of weird sites that tend to get 50 percent coverage in many cells (maybe low mappability regions?) This option collects and outputs information about each site's contribution to each type of doublet call.\n");
-    fprintf(stderr, "    --help -h Display this message and exit.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "   ===== Options for both run modes =====\n");
+    fprintf(stderr, "   ---------- I/O Options ----------\n");
+    fprintf(stderr, "   --output_prefix -o The base file name, including path, for output\n");
+    fprintf(stderr, "       files. If inferring haplotypes, will create files with the \n");
+    fprintf(stderr, "       extensions .vars, .haps, .cellhaps, .assignments, and .summary.\n");
+    fprintf(stderr, "       If assigning cells from pre-computed haplotypes, will only\n");
+    fprintf(stderr, "       create .cellhaps, .assignments, and .summary. (REQUIRED)\n");
+    fprintf(stderr, "   --barcodes -B To only print cell-haplotype assignments for a subset\n");
+    fprintf(stderr, "       of all cell barcodes in the BAM file (i.e. the list of barcodes\n");
+    fprintf(stderr, "       deemed to represent legitimate cells), provide a file listing\n");
+    fprintf(stderr, "       barcodes in the subset here. If using CellRanger output, this\n");
+    fprintf(stderr, "       would be in filtered_feature_bc_matrix/barcodes.tsv or\n");
+    fprintf(stderr, "       barcodes.tsv.gz. NOTE: all barcodes in the BAM will still be used\n");
+    fprintf(stderr, "       in clustering. To limit which barcodes are used to find variants\n");
+    fprintf(stderr, "       and cluster, use the -f option.\n");
+    fprintf(stderr, "   --barcode_group -g A string to append to each barcode in the \n");
+    fprintf(stderr, "       output files. This is equivalent to the batch ID appended to \n");
+    fprintf(stderr, "       cell barcodes by scanpy when concatenating multiple data sets.\n");
+    fprintf(stderr, "       Cell Ranger software automatically appends \"1\" here, so specify\n");
+    fprintf(stderr, "       1 as an argument if you desire default, single-data set Cell\n");
+    fprintf(stderr, "       -like output.\n");
+    fprintf(stderr, "   --dump -d Prints information about allelic state of cell barcodes \n");
+    fprintf(stderr, "       at each site (.bchaps file) and quits. If in clustering mode, \n");
+    fprintf(stderr, "       this happens after finding variant sites and before clustering\n");
+    fprintf(stderr, "       (alternatively, .bchaps will be automatically created after\n");
+    fprintf(stderr, "       clustering with only the sites found relevant for clustering).\n");
+    fprintf(stderr, "       If loading previously-inferred clusters, prints allelic state \n");
+    fprintf(stderr, "       in every cell at all sites in the .vars file. Bypasses the step\n");
+    fprintf(stderr, "       of assigning cells to mitochondrial haplotypes.\n");
+    fprintf(stderr, "   ---------- General Options ----------\n");
+    fprintf(stderr, "   --doublet_rate -D A decimal between 0 and 1 representing the prior\n");
+    fprintf(stderr ,"       probability of a cell being a doublet. Set to 0 to disable doublet\n");
+    fprintf(stderr, "       identification altogether. Default = 0.5\n");
+    fprintf(stderr, "   --help -h Display this message and exit.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "   |===== Inferring clusters from a BAM file =====|\n");
+    fprintf(stderr, "   ---------- I/O options ----------\n");
+    fprintf(stderr, "   --bam -b The BAM file containing the data to use. (REQUIRED)\n");
+    fprintf(stderr, "   --barcodes_filter -f Distinct from the -B option (above), which limits\n");
+    fprintf(stderr, "       which barcodes will be assigned mitochondrial haplotypes. This\n");
+    fprintf(stderr, "       option limits which barcodes are used to find variants and cluster\n");
+    fprintf(stderr, "       haplotypes. This option should only be used if you wish to find sub-\n");
+    fprintf(stderr, "       clusters within a specific haplotype from a previous run: pull out all\n");
+    fprintf(stderr, "       barcodes assigned to the cluster of interest and provide them here as\n");
+    fprintf(stderr, "       a text file, one per line. Optionally, can be gzipped.\n"); 
+    fprintf(stderr, "   --mito -m The name of the mitochondrial sequence in the reference\n");
+    fprintf(stderr, "       genome (OPTIONAL; default: chrM)\n");
+    fprintf(stderr, "   ---------- Filtering options ----------\n");
+    fprintf(stderr, "   --mapq -q The minimum map quality filter (OPTIONAL; default 20)\n");
+    fprintf(stderr, "   --baseq -Q The minimum base quality filter (OPTIONAL; default 20)\n");
+    fprintf(stderr, "   ---------- General options ----------\n"); 
+    fprintf(stderr, "   --nclustmax -n (OPTIONAL) If you know how many individuals should\n");
+    fprintf(stderr, "       be in the mixture, you can specify that number here, and only\n");
+    fprintf(stderr, "       up to that many haplotypes will be inferred. It's possible that\n");
+    fprintf(stderr, "       fewer than that number of haplotypes will be found, however.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "   |===== Assigning cells to previously-inferred haplotypes =====|\n");
+    fprintf(stderr, "   ---------- I/O Options ----------\n");
+    fprintf(stderr, "   --haps -H Cluster haplotypes from a previous run. Should be that\n");
+    fprintf(stderr, "       run's [output_prefix].haps. (REQUIRED)\n");
+    fprintf(stderr, "   --vars -v Variants used to build cluster haplotypes in previous \n");
+    fprintf(stderr, "       run. Should be that run's [output_prefix].vars. (REQUIRED)\n");
     exit(code);
 }
 
@@ -274,36 +301,26 @@ static int readaln_bcs(void *data, bam1_t *b){
 /**
  * Returns optimal number of clusters rather than cutoff.
  */
-int choose_nclust(vector<int>& clust_sizes, 
-    double& llr_return, 
-    double& exp_size1_return, 
-    double& exp_size2_return, 
-    int& totcells_return, 
-    int& smallest_group_return){
-    
-    // Sort and compute total
+int choose_nclust(vector<int>& clust_sizes){
+
+    // Sort values high to low
     int nclust_tot = 0;
     vector<int> clust_sorted;
-    for (vector<int>::iterator c = clust_sizes.begin(); c != clust_sizes.end(); ++c){
+    for (vector<int>::iterator c = clust_sizes.begin(); c != clust_sizes.end(); 
+        ++c){
         clust_sorted.push_back(-*c);
         nclust_tot += *c;
     }
     sort(clust_sorted.begin(), clust_sorted.end());
     
+    // What is the maximum possible number of clusters?
     int nclust_max = clust_sorted.size();
     
-    // Store the highest log likelihood encountered
-    double loglik_max = 0.0;
-    // Store the second-highest log likelihood encountered
-    // We will break iteration when we encounter a dip in LL,
-    // so second best is either the last LL computed or 
-    // two before the last computed.
-    double loglik_second = 0.0;
+    // What is the optimal number of clusters? 
     int nclust_best = -1;
-    int minsize = -1;
+    double loglik_max = 0.0;
     
     int nclust_min = 1;
-    
     for (int nclust = nclust_min; nclust <= nclust_max; ++nclust){
         
         // Get mean size of valid clusters under this model
@@ -331,44 +348,20 @@ int choose_nclust(vector<int>& clust_sizes,
             loglik += dpois(-clust_sorted[i], meansize2);
         }
         
-        fprintf(stderr, "nclust %d LL %f means %f %f\n", nclust, loglik, meansize1, meansize2);
+        //fprintf(stderr, "nclust %d LL %f means %f %f\n", nclust, 
+        //    loglik, meansize1, meansize2);
 
         if (nclust_best == -1 || loglik > loglik_max){
-            // Update second likeliest to previous
-            loglik_second = loglik_max;
-
             nclust_best = nclust;
             loglik_max = loglik;
-            
-            exp_size1_return = meansize1;
-            exp_size2_return = meansize2;
-            
-            totcells_return = ncell_this;
-            smallest_group_return = -clust_sorted[nclust-1]; 
         }
         else if (nclust_best != -1 && loglik < loglik_max){
-            if (loglik > loglik_second){
-                loglik_second = loglik;
-            }
             break;
         }
-
     }
     
-    // Return the best number of clusters; update the log likelihood ratio
-    // parameter to the ratio between best and second best choice for
-    // number of clusters.
-
-    if (loglik_second == 0 ){
-        llr_return = 0;
-    }
-    else{
-        llr_return = loglik_max - loglik_second;
-    }
     return nclust_best;
-    
 }
-
 
 void write_vars(string& mito_chrom, 
     string& output_prefix, 
@@ -382,7 +375,6 @@ void write_vars(string& mito_chrom,
     // Just print the non-blacklisted variable sites.
     int idx = 0;
     for (deque<varsite>::iterator v = vars.begin(); v != vars.end(); ++v){
-        //if (vars_blacklist.find(idx) == vars_blacklist.end()){
         if (!use_mask || mask_global.test(idx)){
             fprintf(vars_outf, "%s\t%d\t%c\t%c\t%.4f\t%.4f\t%d\n", mito_chrom.c_str(), v->pos + 1, 
                 v->allele1, v->allele2, v->freq1, v->freq2, v->cov); 
@@ -452,223 +444,288 @@ double curvature(map<double, double>& x,
     return maxk_x;
 }
 
+void collapse_sites(hapstr& mask_global,
+    int nvars,
+    map<int, robin_hood::unordered_set<unsigned long> >& clades,
+    map<int, robin_hood::unordered_set<unsigned long> >& clades_not,
+    map<int, robin_hood::unordered_set<unsigned long> >& clades_mask,
+    map<int, int>& orig_to_collapsed,
+    map<int, set<int> >& collapsed_to_orig,
+    vector<pair<long int, int> >& clsort,
+    bool keep_all_vars){
+    
+    // What sites appear to be erroneous and should be removed?
+    // (NOTE: maybe dangerous to do this here)
+    set<int> rm_err;
+    
+    for (int i = 0; i < clsort.size()-1; ++i){
+        int idx1 = clsort[i].second;
+        
+        // If it's already been collapsed, stop looking
+        if (orig_to_collapsed.count(idx1) > 0){
+            continue;
+        }
+        else if (rm_err.find(idx1) != rm_err.end()){
+            continue;
+        }
+        else{
+            // Put self in self group
+            orig_to_collapsed.insert(make_pair(idx1, idx1));
+            if (collapsed_to_orig.count(idx1) == 0){
+                set<int> s;
+                collapsed_to_orig.insert(make_pair(idx1, s));
+            }
+            collapsed_to_orig[idx1].insert(idx1);
+        }
+
+        for (int j = i + 1; j < clsort.size(); ++j){
+            int idx2 = clsort[j].second;
+            
+            // How many members of A are covered in B?
+            int cladesize_A = 0;
+            // How many members of B are covered in A?
+            int cladesize_B = 0;
+            // How many members are common to both clades?
+            int cladesize_both = 0;
+            // How many unique to A?
+            int cladesize_AminusB = 0;
+            // How many unique to B?
+            int cladesize_BminusA = 0;
+
+            for (robin_hood::unordered_set<unsigned long>::iterator a = 
+                clades[idx1].begin(); a != clades[idx1].end(); ++a){
+                if (clades_mask[idx2].find(*a) != clades_mask[idx2].end()){
+                    cladesize_A++;
+                    if (clades[idx2].find(*a) != clades[idx2].end()){
+                        cladesize_both++;
+                    }
+                    else{
+                        cladesize_AminusB++;
+                    }
+                }
+            }
+            for (robin_hood::unordered_set<unsigned long>::iterator b = 
+                clades[idx2].begin(); b != clades[idx2].end(); ++b){
+                if (clades_mask[idx1].find(*b) != clades_mask[idx1].end()){
+                    cladesize_B++;
+                    if (clades[idx1].find(*b) == clades[idx1].end()){
+                        cladesize_BminusA++;
+                    }
+                }
+            }
+            
+            // First, see if B looks like an error from A's perspective.
+            if (dbinom(cladesize_A, cladesize_B, 0.001) > 
+                dbinom(cladesize_A, cladesize_B, 0.5) &&
+                dbinom(cladesize_A, cladesize_B, 0.999)){
+                if (!keep_all_vars){
+                    // Remove site? (risky)
+                    //mask_global.reset(idx2);
+                    //rm_err.insert(idx2);
+                }
+            }
+            else{
+                // Two sites are same haplotype if A&B == A == B
+                if (dbinom(cladesize_A, cladesize_both, 0.999) > 
+                    dbinom(cladesize_A, cladesize_both, 0.5) && 
+                    dbinom(cladesize_A, cladesize_both, 0.001) &&
+                    dbinom(cladesize_B, cladesize_both, 0.999) > 
+                    dbinom(cladesize_B, cladesize_both, 0.5) && 
+                    dbinom(cladesize_B, cladesize_both, 0.001)){
+                    
+                    orig_to_collapsed.insert(make_pair(idx2, idx1));
+                    collapsed_to_orig[idx1].insert(idx2);
+                }
+            }
+        }
+    }
+    fprintf(stderr, "%ld collapsed site groups remaining\n", collapsed_to_orig.size());
+}
+
 /**
- *  Go through counts of each variant in each individual and do several things:
- *  Convert read counts to bitset haplotypes.
- *  Compute mean and SD allele frequency for all variable sites.
- *  Blacklist variable sites with too high SD - create global bitset mask
+ * Given counts of alleles at variant sites per barcode, does several
+ * things:
+ *
+ * Looks for sites that appear to be erroneous (in cells where the
+ * minor allele is more common than the major allele, the sum of
+ * log likelihoods that the allele is 50% frequent exceeds the
+ * sum of log likelihoods that the allele is 100% frequent)
+ *
+ * Creates summarized, bitset representations of cell haplotypes
+ * (instead of reads covering the minor and major allele,
+ * stores 0 or 1 for presence or absence of the minor allele)
+ *
+ * Creates sets of cell barcodes (hashed as unsigned long) per
+ * variant site, one for all cells with the minor allele,
+ * one for all cells with the major allele, and one containing
+ * both (all cells with coverage at that site)
+ *
+ * Collapses sites likely to tag the same haplotype into groups - 
+ * this information is stored in collapsed_to_orig and 
+ * orig_to_collapsed
+ *
+ * Combines the sets of cell barcodes per site (above) by group
+ * of linked sites.
  */
 void process_var_counts(robin_hood::unordered_map<unsigned long, var_counts>& hap_counter,
     robin_hood::unordered_map<unsigned long, hap>& bc2hap,
-    set<int>& sites_blacklist,
-    bool varsfile_provided,
+    bool keep_all_vars,
+    bool skip_clustering,
     hapstr& mask_global,
     int nvars,
-    bool gex,
-    bool barcodes_given){
+    bool barcodes_given,
+    map<int, robin_hood::unordered_set<unsigned long> >& site_minor,
+    map<int, robin_hood::unordered_set<unsigned long> >& site_major,
+    map<int, robin_hood::unordered_set<unsigned long> >& site_mask,
+    map<int, int>& orig_to_collapsed,
+    map<int, set<int> >& collapsed_to_orig,
+    vector<pair<long int, int> >& clsort){
 
-    // Set up global mask
+    // Set up global mask -- include all sites by default
     mask_global.reset();
     for (int i = 0; i < nvars; ++i){
         mask_global.set(i);
     }
+   
+    // Remove sites that appear to be errors. This is determined by, in cells
+    // where a site is more likely to be the minor than major allele, whether
+    // the site is more likely to be heterozygous than homozygous for the minor
+    // allele. 
+    map<int, double> site_hetsum;
+    map<int, double> site_homsum;
     
-    int hetmiss_max = MAX_SITES;
-
-    // Cells that have very low coverage or a lot of sites that look 
-    // heterozygous are probably messed up.
-    // These might interfere with clustering or at least slow it down.
-    
-    // While we will avoid clustering with these, we will save their var_counts
-    // so they can still be identified later, after clustering.
-    
-    map<double, double> miss_filter_hist;
-    for (int i = 1; i < MAX_SITES; ++i){
-        miss_filter_hist.insert(make_pair(i, 0));
+    for (int i = 0; i < nvars; ++i){
+        if (mask_global.test(i)){
+            site_hetsum.insert(make_pair(i, 0.0));
+            site_homsum.insert(make_pair(i, 0.0));
+            
+            if (!skip_clustering){ 
+                // need to cluster
+                robin_hood::unordered_set<unsigned long> s;
+                site_major.insert(make_pair(i, s));
+                site_minor.insert(make_pair(i, s));
+                site_mask.insert(make_pair(i, s));
+            }
+        }
     }
     
-    // Track how many sites are either missing or look heterozygous
-    // in each cell
-    robin_hood::unordered_map<unsigned long, int> cell2hetmiss;
-
+    // Create groups of cells with major/minor alleles at each site 
+    // Simultaneously build cell haplotypes
     for (robin_hood::unordered_map<unsigned long, var_counts>::iterator hc = 
         hap_counter.begin(); hc != hap_counter.end(); ++hc){
-        int hetcount = 0;
-        int misscount = 0;
-        int totcount = 0;
+        hap h;
         for (int i = 0; i < nvars; ++i){
-            
-            int count1 = hc->second.counts1[i];
-            int count2 = hc->second.counts2[i];
-            
-            totcount += count1 + count2;
-            if (count1+count2 == 0){
-                ++misscount;
+            if (mask_global.test(i)){
+                int maj = hc->second.counts1[i];
+                int min = hc->second.counts2[i];
+                if (maj + min > 0){
+                    double dmaj = dbinom(maj+min, min, 0.001);
+                    double dhet = dbinom(maj+min, min, 0.5);
+                    double dmin = dbinom(maj+min, min, 0.999);
+                    if (!keep_all_vars && dmin > dmaj){
+                        site_homsum[i] += dmin;
+                        site_hetsum[i] += dhet;
+                    }
+                    
+                   if (dmaj > dmin && dmaj > dhet){
+                        h.mask.set(i);
+                        if (!skip_clustering){
+                            site_major[i].insert(hc->first);
+                            site_mask[i].insert(hc->first);
+                        }
+                   } 
+                   else if (dmin > dmaj && dmin > dhet){
+                        h.mask.set(i);
+                        h.vars.set(i);
+                        if (!skip_clustering){
+                            site_minor[i].insert(hc->first);
+                            site_mask[i].insert(hc->first);
+                        }
+                   }
+                }
+            }
+        }
+        bc2hap.emplace(hc->first, h);
+    }
+    
+    if (!skip_clustering){      
+        int sites_removed = 0;
+        vector<pair<long int, int> > sitesort;
+        for (map<int, double>::iterator s = site_homsum.begin(); s != site_homsum.end();
+            ++s){
+            if (!keep_all_vars && (
+                site_homsum[s->first] == 0.0 || site_hetsum[s->first] >= 
+                site_homsum[s->first])){
+                // Remove
+                mask_global.reset(s->first);
+                site_major.erase(s->first);
+                site_minor.erase(s->first);
+                site_mask.erase(s->first);
+                ++sites_removed;
             }
             else{
-                double dhom1 = dbinom(count1+count2, count2, 0.001);
-                double dhom2 = dbinom(count1+count2, count2, 0.999);
-                double dhet = dbinom(count1+count2, count2, 0.5);
+                sitesort.push_back(make_pair(-site_minor[s->first].size(), s->first));
+            }
+        }    
+        if (!keep_all_vars){
+            fprintf(stderr, "%d sites removed\n", sites_removed);
+        }
+        sort(sitesort.begin(), sitesort.end());
 
-                if (dhet > dhom1 && dhet > dhom2){
-                    ++hetcount;
+        // Now collapse sites & dump cell groups together.
+        collapse_sites(mask_global, nvars, site_minor, site_major,
+            site_mask, orig_to_collapsed, collapsed_to_orig, sitesort, keep_all_vars);
+    
+        // For each set of collapsed sites, dump cells together.
+        for (map<int, int>::iterator oc = orig_to_collapsed.begin();
+            oc != orig_to_collapsed.end(); ++oc){
+            for (robin_hood::unordered_set<unsigned long>::iterator cell = 
+                site_major[oc->first].begin(); cell != site_major[oc->first].end(); ++cell){
+                /*
+                if (site_mask[oc->second].find(*cell) == site_mask[oc->second].end()){
+                    site_mask[oc->second].insert(*cell);
+                    site_major[oc->second].insert(*cell);
+                }
+                */
+                site_mask[oc->second].insert(*cell);
+                if (site_minor[oc->second].find(*cell) == site_minor[oc->second].end()){
+                    site_major[oc->second].insert(*cell);
+                }
+            }
+            for (robin_hood::unordered_set<unsigned long>::iterator cell = 
+                site_minor[oc->first].begin(); cell != site_minor[oc->first].end(); ++cell){
+                /*
+                if (site_mask[oc->second].find(*cell) == site_mask[oc->second].end()){
+                    site_mask[oc->second].insert(*cell);
+                    site_minor[oc->second].insert(*cell);
+                }
+                */
+                site_mask[oc->second].insert(*cell);
+                if (site_major[oc->second].find(*cell) == site_major[oc->second].end()){
+                    site_minor[oc->second].insert(*cell);
                 }
             }
         }
-        
-        // Missing and heterozygous-looking sites are both
-        // unusable for clustering.
-
-        for (int i = misscount + hetcount; i < MAX_SITES; ++i){
-            miss_filter_hist[i]++;
-        }
-
-        cell2hetmiss.emplace(hc->first, misscount + hetcount);
-    }
     
-    if (!gex){
-
-        // What we should have now is a curve of how many cells are included
-        // with each possible cutoff of missing sites.
-
-        // The curve should start out mostly flat, then shoot up as we allow
-        // cells with nearly all missing sites. The flat part represents
-        // true cells, and the curve at the end comes from including empty
-        // droplets that contain noise.
-        
-        // For clustering, we want to exclude these empty droplets
-        // (although we can still seek to identify them later, once
-        // haplotypes have been learned).
-
-        // We will approximate the first and second derivatives of this
-        // curve, and then choose as a cutoff the point with the highest
-        // curvative, defined as abs(f"(x)) / (1 + (f'(x))^2)^(3/2)
-        
-        map<double, double> miss_filter_hist_curvature;
-        double maxcurv_cutoff = curvature(miss_filter_hist, 
-            miss_filter_hist_curvature);
-        
-        // This cutoff is the maximum allowable number of missing + het
-        // sites in a cell.
-        hetmiss_max = (int)round(maxcurv_cutoff);
-    }
-
-    // Now, with the cells that pass filter, do the same thing but to find
-    // a minimum number of cells visible per site. If we do not wish to
-    // filter variants (i.e. if a variant file was provided), we can skip
-    // this step.
-    
-    // We also omit this step for RNA-seq data, because in that case, we
-    // will attempt to collapse sites with similar sets of cells, which 
-    // will rescue many sites that would otherwise be deleted here.
-    
-    if (!varsfile_provided && !gex){
-        // Now look to see what coverage & MAF look like for each site
-        // in remaining cells.
-        map<double, double> site_filter_hist;
-        
-        vector<int> site_ncells;
-
-        for (int i = 0; i < nvars; ++i){
-            int cells_hetmiss = 0;
-            int cells_good = 0;
-            for (robin_hood::unordered_map<unsigned long, var_counts>::iterator hc = 
-                hap_counter.begin(); hc != hap_counter.end(); ++hc){
+        // Finally, remove any uninformative sites (100% major or 100% minor allele)
+        for (map<int, robin_hood::unordered_set<unsigned long> >::iterator sm = 
+            site_minor.begin(); sm != site_minor.end(); ){
             
-                if (cell2hetmiss[hc->first] <= hetmiss_max){
-                
-                    int count1 = hc->second.counts1[i];
-                    int count2 = hc->second.counts2[i];
-                    
-                    bool hetmiss = false; 
-                    if (count1+count2 == 0){
-                        hetmiss = true;
-                    }
-                    else{
-                        double dhom1 = dbinom(count1+count2, count2, 0.001);
-                        double dhom2 = dbinom(count1+count2, count2, 0.999);
-                        double dhet = dbinom(count1+count2, count2, 0.5);
-
-                        if (dhet > dhom1 && dhet > dhom2){
-                            hetmiss = true;
-                        }
-                    }
-                    if (hetmiss){
-                        ++cells_hetmiss;
-                    }
-                    else{
-                        ++cells_good;
-                    }
-                }
+            if (sm->second.size() == 0 || site_major[sm->first].size() == 0){
+                mask_global.reset(sm->first);
+                site_major.erase(sm->first);
+                site_mask.erase(sm->first);
+                site_minor.erase(sm++);
             }
-            site_ncells.push_back(cells_good);
-            for (double i = 1; i <= cells_good; ++i){
-                if (site_filter_hist.count(i) == 0){
-                    site_filter_hist.insert(make_pair(i, 0));
-                }
-                site_filter_hist[i]++;
+            else{
+                clsort.push_back(make_pair(-sm->second.size(), sm->first));
+                ++sm;
             }
         }
-        
-        map<double, double> site_filter_hist_curv;
-        double sfcutoff = curvature(site_filter_hist, site_filter_hist_curv);
-        int ncells_min = (int)round(sfcutoff);
-        
-        // Blacklist sites that don't pass this cutoff.
-        for (int i = 0; i < nvars; ++i){
-            if (site_ncells[i] < ncells_min){
-                mask_global.reset(i);
-            }
-        }
-        fprintf(stderr, "%ld sites passed filtering\n", mask_global.count());
+        sort(clsort.begin(), clsort.end());
     }
-    
-    // Now, with filters set, create a bitset haplotype string for any
-    // cell that survived filtering, at the variable sites that passed
-    // filtering.
-
-    for (robin_hood::unordered_map<unsigned long, var_counts>::iterator hc = 
-        hap_counter.begin(); hc != hap_counter.end(); ++hc){
-        
-        if (cell2hetmiss[hc->first] <= hetmiss_max){    
-            hap h;
-            h.vars.reset();
-            h.mask.reset();
-            
-            for (int i = 0; i < nvars; ++i){
-                if (mask_global.test(i)){    
-                    int count1 = hc->second.counts1[i];
-                    int count2 = hc->second.counts2[i];
-                    
-                    if (count1 + count2 > 0){    
-                        double dhom1 = dbinom(count1+count2, count2, 0.001);
-                        double dhom2 = dbinom(count1+count2, count2, 0.999);
-                        double dhet = dbinom(count1+count2, count2, 0.5);
-                           
-                        if (dhom1 > dhet && dhom1 > dhom2){
-                            h.mask.set(i);
-                        }
-                        else if (dhom2 > dhet && dhom2 > dhom1){
-                            h.mask.set(i);
-                            h.vars.set(i);
-                        }
-                        else{
-                            // Unusable in this cell.
-
-                        }
-                    }
-                }
-            }
-            // Double check that the cell is informative before storing
-            if (h.mask.count() > 0){
-                bc2hap.emplace(hc->first, h);
-            }
-        }
-    }
-    fprintf(stderr, "%ld cell barcodes passed filtering\n", bc2hap.size());
+    fprintf(stderr, "%ld cell barcodes in data set\n", bc2hap.size());
 }
-
-
 
 /**
  * Assign barcodes of cells to a mitochondrial haplotype.
@@ -679,12 +736,16 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
     vector<hapstr>& haps_final, 
     hapstr& mask_global,
     int nvars,
-    bool nodoublet){
+    double doublet_rate,
+    bool use_filter,
+    robin_hood::unordered_set<unsigned long>& cell_filter){
      
     vector<int> all_model_idx;
     for (int i = 0; i < haps_final.size(); ++i){
-        all_model_idx.push_back(i);
-        if (!nodoublet){
+        if (doublet_rate < 1.0){
+            all_model_idx.push_back(i);
+        }
+        if (doublet_rate > 0.0){
             for (int j = i + 1; j < haps_final.size(); ++j){
                 int k = hap_comb_to_idx(i, j, haps_final.size());
                 all_model_idx.push_back(k);
@@ -692,10 +753,17 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
         }
     }
     sort(all_model_idx.begin(), all_model_idx.end());
+    
+    int progress = 1000;
+    int n_assigned = 0;
 
     for (robin_hood::unordered_map<unsigned long, var_counts>::iterator hc = 
         hap_counter.begin(); hc != hap_counter.end(); ++hc){
         
+        if (use_filter && cell_filter.find(hc->first) == cell_filter.end()){
+            continue;
+        }
+
         map<int, map<int, double> > llrs;
         for (int i = 0; i < all_model_idx.size()-1; ++i){
             int idx1 = all_model_idx[i];
@@ -706,7 +774,22 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
             for (int j = i + 1; j < all_model_idx.size(); ++j){
                 int idx2 = all_model_idx[j];
                 if (llrs[idx1].count(idx2) == 0){
-                    llrs[idx1].insert(make_pair(idx2, 0.0));
+                    // Start with prior
+                    // Don't bother with prior if both singlet or
+                    // both doublet -- since dealing only with
+                    // likelihood ratios
+                    double init_llr = 0.0;
+                    if (idx1 < haps_final.size() && 
+                        idx2 >= haps_final.size()){
+                        init_llr = log2(1.0-doublet_rate) - 
+                            log2(doublet_rate);
+                    }
+                    else if (idx2 < haps_final.size() &&
+                        idx1 >= haps_final.size()){
+                        init_llr = log2(doublet_rate) - 
+                            log2(1.0-doublet_rate);
+                    }
+                    llrs[idx1].insert(make_pair(idx2, init_llr));
                 }
             }
         }
@@ -795,11 +878,18 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
         
         double llr;
         int best_assignment = collapse_llrs(llrs, llr);
-        assignments.emplace(hc->first, best_assignment);
-        assignments_llr.emplace(hc->first, llr);
+        if (llr > 0){
+            assignments.emplace(hc->first, best_assignment);
+            assignments_llr.emplace(hc->first, llr);
+        }       
+        ++n_assigned;
+        if (!use_filter && n_assigned % progress == 0){
+            fprintf(stderr, "%d cells assigned\r", n_assigned);
+        }
     }
-    
-    hap_counter.clear();
+    if (!use_filter){
+        fprintf(stderr, "%d cells assigned\n", n_assigned);
+    }
 }
 
 /**
@@ -875,9 +965,7 @@ void find_vars_in_bam(string& bamfile,
     string& mito_chrom, 
     int minmapq, 
     int minbaseq, 
-    float minfreq,
     deque<varsite>& vars,
-    bool gex,
     bool has_bc_whitelist,
     set<unsigned long>& bc_whitelist){
     
@@ -985,9 +1073,7 @@ n_targets %d\n", tid, infile.fp_hdr->n_targets);
                     }
                 }
                 else{
-                    //if (p->is_refskip){
-                        n_skip++;
-                    //}
+                    n_skip++;
                 }
             }
             
@@ -1001,13 +1087,6 @@ n_targets %d\n", tid, infile.fp_hdr->n_targets);
                 float freq1;
                 float freq2;
                 int num_pass = 0;
-                
-                if (gex){
-                    // If in RNA-seq mode, splicing can do weird things. Allow
-                    // any read covering the position, even if it's a skipped
-                    // position, to count toward the coverage total.
-                    cov += n_skip;
-                }
                 
                 vector<pair<double, char> > allelesort;
                 for (int i = 0; i < n_alleles; ++i){
@@ -1024,10 +1103,10 @@ n_targets %d\n", tid, infile.fp_hdr->n_targets);
                 varsite v;
                 v.pos = pos;
                 v.cov = cov;
-                    v.allele1 = allele1;
-                    v.allele2 = allele2;
-                    v.freq1 = freq1;
-                    v.freq2 = freq2;
+                v.allele1 = allele1;
+                v.allele2 = allele2;
+                v.freq1 = freq1;
+                v.freq2 = freq2;
                 vars_unfiltered.insert(make_pair(pos, v));
             }
         }
@@ -1040,8 +1119,8 @@ n_targets %d\n", tid, infile.fp_hdr->n_targets);
     bam_mplp_destroy(plp);
     
     vector<pair<double, int> > vs_sort;
-    for (map<int, varsite>::iterator v = vars_unfiltered.begin(); v != vars_unfiltered.end();
-        ++v){
+    for (map<int, varsite>::iterator v = vars_unfiltered.begin(); v != 
+        vars_unfiltered.end(); ++v){
         vs_sort.push_back(make_pair(-(double)v->second.freq2, v->first));
     }
     sort(vs_sort.begin(), vs_sort.end());
@@ -1059,121 +1138,6 @@ n_targets %d\n", tid, infile.fp_hdr->n_targets);
             vars.push_back(v->second);
         }
     }
-    return;
-
-
-    // Now use a mixture model to try to separate true SNPs from fake
-    // variation induced by mapping/sequencing error.
-    vector<vector<double> > em_input;
-    vector<int> em_input2var;
-    double meancov = 0.0;
-    double meanfreq = 0.0;
-    double covmax = 0.0;
-    for (map<int, varsite>::iterator v = vars_unfiltered.begin(); v != vars_unfiltered.end();
-        ++v){
-        vector<double> row;
-        // Look at minor allele frequency
-        if (v->second.freq2 > 0.01){
-            row.push_back((double)v->second.cov);
-            
-            em_input.push_back(row);
-            
-            em_input2var.push_back(v->first);
-        }
-        if (!gex){
-            // Also look at coverage, if not RNA-seq. RNA-seq coverage
-            // is allowed to fluctuate.
-            //row.push_back((double)v->second.cov);
-        }
-        meancov += (1.0/(double)vars_unfiltered.size()) * (double)v->second.cov;
-        meanfreq += (1.0/(double)vars_unfiltered.size()) * (double)v->second.freq2;
-        if (v->second.cov > covmax){
-            covmax = v->second.cov;
-        }
-    }
-    fprintf(stderr, "meancov %f meanfreq %f\n", meancov, meanfreq); 
-    vector<mixtureDist> dists;
-    //mixtureDist err("beta", vector<double>{0.01*10, (1-0.01)*10});
-    mixtureDist err("normal", vector<double>{10, covmax/4.0});
-    dists.push_back(err);
-    //mixtureDist snp("beta", vector<double>{0.1*100, (1-0.1)*100});
-    mixtureDist snp("normal", vector<double>{meancov, covmax/4.0});
-    dists.push_back(snp);
-    mixtureModel mod(dists);
-    mod.fit(em_input);
-    mod.print();
-    exit(0);
-
-    map<int, int> pos2idx;
-    float cov_max = 0.0;
-    for (map<int, varsite>::iterator v = vars_unfiltered.begin(); v != vars_unfiltered.end(); ++v){
-        fprintf(stdout, "%d\t%f\n", v->second.cov, v->second.freq2);
-        /*
-        cov_all.push_back(v->second.cov);
-        cov_em.push_back((float)v->second.cov);
-        freq_em.push_back((float)v->second.freq2);
-        //freq_em.push_back(v->second.freq2 * (float)v->second.cov);
-        if ((float)v->second.cov > cov_max){
-            cov_max = (float)v->second.cov;
-        }
-        pos2idx.insert(make_pair(v->first, cov_em.size()-1));
-        */
-    }
-    exit(0);
-    /*
-    vector<float> cov_mu;
-    cov_mu.push_back(0.0);
-    cov_mu.push_back(cov_max);
-    vector<float> cov_sd;
-    cov_sd.push_back(cov_max/4.0);
-    cov_sd.push_back(cov_max/4.0);
-    vector<float> cov_weight;
-    cov_weight.push_back(0.5);
-    cov_weight.push_back(0.5);
-    set<int> cov_bl;
-    if (!gex){
-        // Blacklist low-coverage sites
-        gaussEM_blacklist(cov_em, cov_weight, cov_mu, cov_sd, cov_bl, true);
-    }
-    else{
-        // Blacklist low-frequency sites
-        gaussEM_blacklist(freq_em, cov_weight, cov_mu, cov_sd, cov_bl, true);
-    }
-    for (map<int, varsite>::iterator v = vars_unfiltered.begin(); v != vars_unfiltered.end(); ){
-        if (cov_bl.find(pos2idx[v->first]) == cov_bl.end()){
-            vars.push_back(v->second);
-        }
-        vars_unfiltered.erase(v++);
-    }
-    fprintf(stderr, "%ld vars passed coverage threshold\n", vars.size());
-    return;
-    
-    
-    
-    sort(cov_all.begin(), cov_all.end());
-    
-    // Find median coverage
-    
-    int cov_med = -1;
-    if (cov_all.size() % 2 == 0){
-        cov_med = (int)round(((float)cov_all[cov_all.size() / 2 - 1] + (float)cov_all[cov_all.size() / 2]) / 2.0);
-    }
-    else{
-        cov_med = cov_all[(cov_all.size() - 1) / 2];
-    }
-    cov_all.clear();
-
-    fprintf(stderr, "MEDIAN COV: %d\n", cov_med);
-    for (map<int, varsite>::iterator v = vars_unfiltered.begin(); v != vars_unfiltered.end(); ){
-        //bool pass = true;
-        //bool pass = v->second.cov >= 0.5*(float)cov_med && v->second.cov <= 2.0*(float)cov_med;
-        bool pass = v->second.cov >= (int)round(0.5*(float)cov_med);
-        if (pass){
-            vars.push_back(v->second);
-        }   
-        vars_unfiltered.erase(v++);
-    }
-    */
 }
 
 /**
@@ -1187,8 +1151,7 @@ void count_vars_barcodes(string& bamfile,
     deque<varsite>& vars, 
     bool has_bc_whitelist, 
     set<unsigned long> & bc_whitelist, 
-    robin_hood::unordered_map<unsigned long, var_counts>& hap_counter,
-    bool gex){
+    robin_hood::unordered_map<unsigned long, var_counts>& hap_counter){
 
     int vars_idx = 0;
     
@@ -1209,7 +1172,8 @@ void count_vars_barcodes(string& bamfile,
             bc bc_hashable;
 
             if (str2bc(bc_str.c_str(), bc_hashable, 16) && (
-                !has_bc_whitelist || bc_whitelist.find(bc_hashable.to_ulong()) != bc_whitelist.end())){ 
+                !has_bc_whitelist || bc_whitelist.find(bc_hashable.to_ulong()) != 
+                bc_whitelist.end())){ 
                  
                 // Remove any variants already done with
                 while (vars.size() > 0 && vars.front().pos < reader.reference_start){
@@ -1217,9 +1181,11 @@ void count_vars_barcodes(string& bamfile,
                     vars_idx++;
                 }
 
-                if (vars.size() > 0 && vars.front().pos >= reader.reference_start && vars.front().pos <= reader.reference_end){
+                if (vars.size() > 0 && vars.front().pos >= reader.reference_start && 
+                    vars.front().pos <= reader.reference_end){
                     int vars_idx2 = 0;
-                    for (deque<varsite>::iterator var = vars.begin(); var != vars.end(); ++var){
+                    for (deque<varsite>::iterator var = vars.begin(); var != vars.end(); 
+                        ++var){
                         if (var->pos > reader.reference_end){
                             break;
                         }
@@ -1227,15 +1193,9 @@ void count_vars_barcodes(string& bamfile,
                             // Look for variant in read.
                             char base = reader.get_base_at(var->pos + 1);
                             
-                            if (gex && base == '-'){
-                                // Treat a skipped reference base as major allele.
-                                //base = var->allele1;
-                            }
-                            
                             // Make sure an entry for this barcode exists.
                             if (hap_counter.count(bc_hashable.to_ulong()) == 0){
                                 var_counts v;
-                                //hap_counter.insert(make_pair(bc_hashable.to_ulong(), v));           
                                 hap_counter.emplace(bc_hashable.to_ulong(), v);
                             }
                             if (base == var->allele1){
@@ -1253,7 +1213,11 @@ void count_vars_barcodes(string& bamfile,
     }
 }
 
-pair<int, float> infer_clusters2(hapstr& mask_global, 
+/**
+ * Returns chosen number of clusters and LLR sum of assignments,
+ * disallowing doublet assignments.
+ */
+pair<int, float> infer_clusters(hapstr& mask_global, 
     robin_hood::unordered_map<unsigned long, hap>& haplotypes, 
     int nvars,
     vector<pair<long int, int> >& clades_sort,
@@ -1262,7 +1226,9 @@ pair<int, float> infer_clusters2(hapstr& mask_global,
     map<int, robin_hood::unordered_set<unsigned long> >& clades_not,
     vector<hapstr>& haps_final,
     bool exact_matches_only,
-    int nclust_max){
+    int nclust_max,
+    robin_hood::unordered_set<unsigned long>& cellset,
+    robin_hood::unordered_map<unsigned long, var_counts>& hap_counter){
     
     hapstr mask;
 
@@ -1274,23 +1240,14 @@ pair<int, float> infer_clusters2(hapstr& mask_global,
     vector<set<unsigned long> > hapgroups_prev;
     vector<set<unsigned long> > hapgroups_not_prev;
 
-    double llr_prev = 0.0;
-    int nclust_prev = -1;
-    int totcells_prev = -1;
-
-    // What were the mean sizes of true and erroneous
-    // clusters with the previous set of sites/haplotypes?
-    double exp_size1_prev = -1;
-    double exp_size2_prev = -1;
-    
-    // What were the mean sizes of true and erroneous
-    // clusters with the first set of sites that give us
-    // the current number of haplotypes? 
-    double exp_size1_thisnclust = -1;
-    double exp_size2_thisnclust = -1;
-    
     int nsites_included = 0;
+    vector<int> sites_order;
+    vector<vector<hapstr> > haps_final_order;
+    vector<hapstr> mask_order;
+    vector<hapstr> haps_final_prev;
     
+    int nclust_prev = -1;
+
     // Try including each site in decreasing order of confidence that
     // it is a true SNP (proxy for this: MAF)
     for (int i = 0; i < clades_sort.size(); ++i){
@@ -1353,7 +1310,7 @@ pair<int, float> infer_clusters2(hapstr& mask_global,
                 site != collapsed_to_orig[sitekey].end(); ++site){
                 mask.set(*site);
             }
-            
+
             // Build the new set of haplotypes that include
             // this site.         
             vector<hapstr> hapsites_new;
@@ -1439,7 +1396,7 @@ pair<int, float> infer_clusters2(hapstr& mask_global,
     
         }
 
-        // Now determine likelist number of haplotypes, given the current
+        // Now determine likeliest number of haplotypes, given the current
         // set of sites & clades.
         
         // Compute the size of each currently-tracked haplotype    
@@ -1448,71 +1405,23 @@ pair<int, float> infer_clusters2(hapstr& mask_global,
         vector<pair<int, int> > sizepairs;
         
         for (int i = 0; i < hapgroups.size(); ++i){
-            sizes.push_back((int)hapgroups[i].size());
-            sizepairs.push_back(make_pair((int)hapgroups[i].size(), i));
+            if (hapgroups[i].size() > 0){
+                sizes.push_back((int)hapgroups[i].size());
+                sizepairs.push_back(make_pair((int)hapgroups[i].size(), i));
+            }
         }
         
-        // Test the current group sizes to determine which seem real 
-        // and which seem like errors. 
-        // es1 is the mean/expected size of real clusters
-        // es2 is the mean/expected size of erroneous clusters
+        int nclust = choose_nclust(sizes);
+        if (nclust > nclust_prev){
+            fprintf(stderr, "Found %d haplotypes with %d sites included\n", 
+                nclust, nsites_included);
+        }
 
-        double llr; // log likelihood ratio of best to second best choice for # clusts
-        double es1; // expected size of true clusters under best model
-        double es2; // expected size of erroneous clusters under best model
-        int totcells_model; // total number of cells in clusters under best model
-        int smallest_group; // size of smallest true cluster under best model
-        
-        int nclust = choose_nclust(sizes, llr, es1, es2, totcells_model, smallest_group);
-        
-        // There's a danger in including too many sites -- if we add
-        // many true sites in a row, we can gradually whittle down
-        // the sizes of groups. This can result in a new, erroneous
-        // site being treated as a real SNP and throwing off haplotypes
-        // and group numbers.
-        
-        // For example, if we have 5 haplotypes with 200 cells each, and
-        // we continue adding sites to these haplotypes until our group
-        // membership narrows down to 30 cells each (but still the same 
-        // haplotypes), a future site could make us jump from these 5 
-        // haplotypes to 8, each containing only 15 cells.
-        //
-        // To guard against this, we store the expected sizes of true and
-        // erroneous clusters from earlier iterations, when group sizes
-        // were bigger. If the current mean size of a true cluster is more 
-        // likely to be an error than a true cluster under an earlier set 
-        // of sites that gave us the same number of haplotypes, then we 
-        // have gone too far and should stop.
-        //
-        // This can pose a problem if we have not yet seen enough sites,
-        // though. To do this heuristic check, we require that we've already
-        // included at least 3 sites, and that we have included enough sites
-        // to build at least 4*(the current number of true clusters)
-        // haplotypes. This is because very early on, group sizes are huge
-        // (i.e. with one site, we're including most cell barcodes, and we have
-        // only 2 groups, both of which are probably supersets of multiple
-        // haplotypes). We want to make sure group sizes have shrunk to more
-        // realistic levels before doing the test.
-        
-        bool enough_sites_seen = (nsites_included > 2 && nsites_included > log2(4*nclust));
-        
-        if (nclust == nclust_prev){
-            if (!enough_sites_seen){
-                // If we haven't seen enough sites yet, disable the check to see
-                // whether group sizes have become too small.
-                exp_size1_thisnclust = es1;
-                exp_size2_thisnclust = es2;
-            }   
-        }
-        else{
-            // This is the first time seeing a new, higher number of clusters.
-            // Store the mean sizes of true / false clusters, so we can tell
-            // when group sizes are becoming too small.
-            exp_size1_thisnclust = es1;
-            exp_size2_thisnclust = es2;
-        }
-            
         // Should we stop adding sites here?
+    
+        // At first, we just want to get the set of sites that results in the 
+        // maximum number of clusters (we will deal with the possibility that
+        // we included too many + erroneous sites later).
         bool terminate = false;
         
         if (nclust_max != -1 && nclust > nclust_max){
@@ -1527,36 +1436,9 @@ pair<int, float> infer_clusters2(hapstr& mask_global,
             // too many sites.
             terminate = true;
         }
-        else if (nclust > nclust_prev){
-            if (enough_sites_seen && nclust_prev != -1){
-                // We just increased the number of clusters. Check to see
-                // whether too many sites may have been included. 
-                //double mean_clustsize = (float)totcells_prev / (float)nclust;
-                float ll1 = dpois(smallest_group, exp_size1_prev);
-                float ll2 = dpois(smallest_group, exp_size2_prev);
-                if (ll2 > ll1){
-                    terminate = true;
-                }  
-            } 
-        }
-        else if (nclust == nclust_prev){
-            if (!terminate && nclust > 1 && 
-                exp_size1_thisnclust != -1 &&
-                exp_size2_thisnclust != -1){
-                // We have stayed at the same number of clusters. Check to see
-                // whether group sizes have fallen too far by testing whether
-                // the current true cluster size is more likely to be an error
-                // than a true cluster under the original model that produced
-                // this number of clusters.
-                float ll1 = dpois(smallest_group, exp_size1_thisnclust);
-                float ll2 = dpois(smallest_group, exp_size2_thisnclust);
-                if (ll2 > ll1){
-                    terminate = true;
-                }
-            } 
-        }
         
         if (terminate){
+            
             // Don't include the last site.
             mask.reset(sitekey);
             
@@ -1572,17 +1454,14 @@ pair<int, float> infer_clusters2(hapstr& mask_global,
         }
         else{
             
-            exp_size1_prev = es1;
-            exp_size2_prev = es2;
             nclust_prev = nclust;
-            totcells_prev = totcells_model;
-            llr_prev = llr;
 
             haps_final.clear();
             sort(sizepairs.begin(), sizepairs.end());
             
             for (int i = sizepairs.size()-1; i >= sizepairs.size()-nclust; --i){
                 haps_final.push_back(hapsites[sizepairs[i].second]);
+                /*
                 fprintf(stderr, "\tsize %d [ ", sizepairs[i].first);
                 for (int x = 0; x < nvars; ++x){
                     if (mask[x] && hapsites[sizepairs[i].second][x]){
@@ -1590,6 +1469,27 @@ pair<int, float> infer_clusters2(hapstr& mask_global,
                     }
                 }
                 fprintf(stderr, "]\n");
+                */
+            }
+            
+            // Store haps_final and mask, if haps_final is different from the 
+            // previous version
+            bool hf_changed = false;
+            if (haps_final.size() != haps_final_prev.size()){
+                hf_changed = true;
+            }         
+            else{
+                for (int i = 0; i < haps_final.size(); ++i){
+                    if (haps_final_prev[i] != haps_final[i]){
+                        hf_changed = true;
+                        break;
+                    }
+                }
+            }
+            if (hf_changed){
+                sites_order.push_back(sitekey);        
+                haps_final_order.push_back(haps_final);
+                mask_order.push_back(mask);
             }
             
             if (!exact_matches_only){
@@ -1616,274 +1516,85 @@ pair<int, float> infer_clusters2(hapstr& mask_global,
             }
         }
     }
-    fprintf(stderr, "%d clusts\n", nclust_prev);
-    return make_pair(nclust_prev, llr_prev);
-}
+    
+    fprintf(stderr, "Iteratively removing sites to test for improved\n");
+    fprintf(stderr, "   assignment LLRs...\n"); 
 
-void get_clades(hapstr& mask_global,
-    robin_hood::unordered_map<unsigned long, hap>& haplotypes,
-    int nvars,
-    map<int, robin_hood::unordered_set<unsigned long> >& clades,
-    map<int, robin_hood::unordered_set<unsigned long> >& clades_not,
-    map<int, robin_hood::unordered_set<unsigned long> >& clades_mask,
-    vector<pair<long int, int> >& clsort){
+    // One last step: we chose the set of included sites to maximize
+    // the number of haplotypes. This guarantees we included enough
+    // sites to see the true number of haplotypes, but it also 
+    // risks having included too many sites and are seeing small numbers
+    // of erroneous haplotypes. 
+
+    // To combat this, go through all valid cells (defined as having coverage
+    // at the maximum-frequency site) and choose the best fit haplotype
+    // based on actual read counts. Erroneous sites will have low read counts
+    // and not affect the totals much.
+
+    // Then reinfer the number of clusters from this, and finally, remove
+    // from all haplotypes any sites that are not informative for distinguishing
+    // between chosen clusters.
     
-    // First, transform cell haplotypes & variant positions into
-    // clades. A clade is a group of cells informed by a specific
-    // variant.
-    // Any given variant creates a set of cells that are covered/
-    // visible at its position (clades_mask),
-    // a set of cells that have the minor allele (clades)
-    // and a set of cellst hat have the major allele (clades_not)
-    
-    for (int i = 0; i < nvars; ++i){
-        if (mask_global[i]){
-            
-            robin_hood::unordered_set<unsigned long> cl;
-            clades.insert(make_pair(i, cl));
-            clades_not.insert(make_pair(i, cl));
-            clades_mask.insert(make_pair(i, cl));
-            
-            for (robin_hood::unordered_map<unsigned long, hap>::iterator h = haplotypes.begin(); h != 
-                haplotypes.end(); ++h){
-                if (h->second.mask[i] & h->second.vars[i]){
-                    clades[i].insert(h->first);
-                }
-                else if (h->second.mask[i] & !h->second.vars[i]){
-                    clades_not[i].insert(h->first);
-                }
-                
-                if (h->second.mask[i]){
-                    clades_mask[i].insert(h->first);
-                }
-            }
-            
-            if (clades[i].size() == 0){
-                // No information at this site; erase it.
-                clades.erase(i); 
-                clades_mask.erase(i);
-                clades_not.erase(i);   
+    robin_hood::unordered_map<unsigned long, int> assn;
+    robin_hood::unordered_map<unsigned long, double> assn_llr;
+    double llrsum = 0.0;
+    assign_bcs(hap_counter, assn, assn_llr, haps_final, mask, nvars, 0.0, true, cellset);
+    for (robin_hood::unordered_map<unsigned long, double>::iterator al = assn_llr.begin();
+        al != assn_llr.end(); ++al){
+        llrsum += al->second;
+    }
+    double llrsum_orig = llrsum;
+
+    int n_rm = 0; 
+    // Try iteratively deleting sites backward until we maximize llrsum
+    if (haps_final_order.size() > 2){
+        for (int site_idx = haps_final_order.size()-2; site_idx >= 0; --site_idx){
+            if (haps_final_order[site_idx].size() == 1){
+                // Don't consider single haplotype case.
+                haps_final = haps_final_order[site_idx+1];
+                mask = mask_order[site_idx+1];
+                break;
             }
             else{
-                clsort.push_back(make_pair(-clades[i].size(), i));
-            }
-        }
-    }
-    
-    // Now, sort sites in decreasing order of MAF (informative clade size)
-    sort(clsort.begin(), clsort.end());
-    
-
-}
-
-void collapse_sites(hapstr& mask_global,
-    robin_hood::unordered_map<unsigned long, hap>& haplotypes,
-    int nvars,
-    map<int, robin_hood::unordered_set<unsigned long> >& clades,
-    map<int, robin_hood::unordered_set<unsigned long> >& clades_not,
-    map<int, robin_hood::unordered_set<unsigned long> >& clades_mask,
-    map<int, int>& orig_to_collapsed,
-    map<int, set<int> >& collapsed_to_orig,
-    vector<pair<long int, int> >& clsort){
-    
-    for (int i = 0; i < clsort.size()-1; ++i){
-        int idx1 = clsort[i].second;
-        
-        // If it's already been collapsed, stop looking
-        if (orig_to_collapsed.count(idx1) > 0){
-            continue;
-        }
-        else{
-            // Put self in self group
-            orig_to_collapsed.insert(make_pair(idx1, idx1));
-            if (collapsed_to_orig.count(idx1) == 0){
-                set<int> s;
-                collapsed_to_orig.insert(make_pair(idx1, s));
-            }
-            collapsed_to_orig[idx1].insert(idx1);
-        }
-
-        double errsize_tot_this = 0.0;
-        double errsize_count_this = 0.0;
-
-        for (int j = i + 1; j < clsort.size(); ++j){
-            int idx2 = clsort[j].second;
-            
-            // How many members of A are covered in B?
-            int cladesize_A = 0;
-            // How many members of B are covered in A?
-            int cladesize_B = 0;
-            // How many members are common to both clades?
-            int cladesize_both = 0;
-            // How many unique to A?
-            int cladesize_AminusB = 0;
-            // How many unique to B?
-            int cladesize_BminusA = 0;
-
-            for (robin_hood::unordered_set<unsigned long>::iterator a = 
-                clades[idx1].begin(); a != clades[idx1].end(); ++a){
-                if (clades_mask[idx2].find(*a) != clades_mask[idx2].end()){
-                    cladesize_A++;
-                    if (clades[idx2].find(*a) != clades[idx2].end()){
-                        cladesize_both++;
-                    }
-                    else{
-                        cladesize_AminusB++;
-                    }
+                ++n_rm;
+                assn.clear();
+                assn_llr.clear();
+                double llrsum_new = 0;
+                assign_bcs(hap_counter, assn, assn_llr, haps_final_order[site_idx],
+                    mask_order[site_idx], nvars, 0.0, true, cellset);
+                for (robin_hood::unordered_map<unsigned long, double>::iterator al = 
+                    assn_llr.begin(); al != assn_llr.end(); ++al){
+                    llrsum_new += al->second;
                 }
-            }
-            for (robin_hood::unordered_set<unsigned long>::iterator b = 
-                clades[idx2].begin(); b != clades[idx2].end(); ++b){
-                if (clades_mask[idx1].find(*b) != clades_mask[idx1].end()){
-                    cladesize_B++;
-                    if (clades[idx1].find(*b) == clades[idx1].end()){
-                        cladesize_BminusA++;
-                    }
-                }
-            }
-
-            // If clade B looks more like an error at this point than
-            // it looks like A, it's safe to stop looking to merge
-            // (clades will only get smaller).
-            if (errsize_count_this > 0.0){
-                double errsize_mean = errsize_tot_this/errsize_count_this;
-                if (dpois(cladesize_B, errsize_mean) > 
-                    dpois(cladesize_B, cladesize_A)){
+                if (llrsum_new < llrsum){
+                    // Finished
+                    haps_final = haps_final_order[site_idx+1];
+                    mask = mask_order[site_idx+1];
                     break;
                 }
-            }
-
-            // At this point, neither is an error.
-
-            // Use smaller clade to represent "true" counts.
-            vector<pair<int, int> > cladetype_sort;
-            cladetype_sort.push_back(make_pair(-cladesize_both, 0));
-            cladetype_sort.push_back(make_pair(-cladesize_AminusB, 1));
-            cladetype_sort.push_back(make_pair(-cladesize_BminusA, 2));
-            sort(cladetype_sort.begin(), cladetype_sort.end());
-            
-            // Ask how many things.
-            double maxll = 0.0;
-            int maxtruecount = -1;
-
-            for (int truecount = 1; truecount <= 3; ++truecount){
-                double mean_true = 0.0;
-                for (int i = 0; i < truecount; ++i){
-                    mean_true += 1.0/(double)truecount * -(double)cladetype_sort[i].first;
-                }
-                double ll = 0.0;
-                for (int i = 0; i < truecount; ++i){
-                    ll += dpois(-(double)cladetype_sort[i].first, mean_true);
-                }
-                if (truecount < 3){
-                    double mean_err = 0.0;
-                    for (int i = truecount; i < 3; ++i){
-                        mean_err += 1.0/(double)(3.0-truecount) * -(double)cladetype_sort[i].first;
+                else{
+                    if (haps_final_order[site_idx].size() != 
+                        haps_final_order[site_idx+1].size()){
+                        fprintf(stderr, "%ld haplotypes after removing %d sites\n", 
+                            haps_final_order[site_idx].size(), n_rm);
+                        fprintf(stderr, "\timprovement: %f\n", llrsum_new-llrsum_orig);
                     }
-                    for (int i = truecount; i < 3; ++i){
-                        ll += dpois(-(double)cladetype_sort[i].first, mean_err);
-                    }
-                }
-                if (maxtruecount == -1 || ll > maxll){
-                    maxll = ll;
-                    maxtruecount = truecount;
+                    llrsum = llrsum_new;
                 }
             }
-            
-            if (maxtruecount == 1 && cladetype_sort[0].second == 0){
-                
-                //fprintf(stdout, "Collapse %d -> %d\n", idx2, idx1);
-                //fprintf(stdout, "%d\t%d\t%d\t%d\t%d\t%d\n", cladesize_A, cladesize_B, 
-                //    cladesize_AminusB, cladesize_BminusA, cladesize_both, maxtruecount);     
-                
-                // There's one true clade, and it's the intersection of both.
-                // Collapse these two clades into one and mark the sizes
-                // of the erroneous clades for later.
-                
-                orig_to_collapsed.insert(make_pair(idx2, idx1));
-                collapsed_to_orig[idx1].insert(idx2);
-                
-                errsize_tot_this += (double)cladesize_AminusB;
-                errsize_tot_this += (double)cladesize_BminusA;
-                errsize_count_this += 2.0;
-            }
-
-        }
+        } 
     }
-    fprintf(stderr, "%ld collapsed site groups remaining\n", collapsed_to_orig.size());
+
+    fprintf(stderr, "Final clustering: %ld haplotypes\n", haps_final.size());
+    int nhaps = (int)haps_final.size();
+    double llr = llrsum;
+    
+    // Make sure we don't look at sites that weren't included in final haplotypes.
+    mask_global &= mask;
+
+    return make_pair(nhaps, llrsum);
 }
 
-vector<hapstr> infer_clusters(hapstr& mask_global, 
-    robin_hood::unordered_map<unsigned long, hap>& haplotypes, 
-    int nvars,
-    bool exact_matches_only,
-    int num_expected,
-    bool gex,
-    float collapse_thresh,
-    int& nclust_model,
-    float& llr_model){
-    
-    map<int, robin_hood::unordered_set<unsigned long> > clades;
-    map<int, robin_hood::unordered_set<unsigned long> > clades_not;
-    map<int, robin_hood::unordered_set<unsigned long> > clades_mask;
-   
-    map<int, set<int> > collapsed_to_orig;
-    map<int, int> orig_to_collapsed;
-    
-    vector<pair<long int, int> > clades_sort;
-   
-    get_clades(mask_global, haplotypes, nvars, clades, clades_not, clades_mask,
-        clades_sort);
-
-    collapse_sites(mask_global, haplotypes, nvars, clades, clades_not, clades_mask, 
-        orig_to_collapsed, collapsed_to_orig, clades_sort);
-    
-    // Now that we have collapsed sets of identical sites, we need to dump the 
-    // clades together and sort these new clades in decreasing order of frequency.
-
-    clades_sort.clear();
-
-    for (map<int, set<int> >::iterator co = collapsed_to_orig.begin(); co != collapsed_to_orig.end(); ++co){
-        
-        for (set<int>::iterator member = co->second.begin(); member != co->second.end(); ++member){
-            for (robin_hood::unordered_set<unsigned long>::iterator cl = clades[*member].begin(); 
-                cl != clades[*member].end(); ++cl){
-                clades_mask[co->first].insert(*cl);
-                if (clades_not[co->first].find(*cl) == clades_not[co->first].end()){
-                    clades[co->first].insert(*cl);
-                }
-            }
-            for (robin_hood::unordered_set<unsigned long>::iterator cl = clades_not[*member].begin();
-                cl != clades_not[*member].end(); ++cl){
-                clades_mask[co->first].insert(*cl);
-                if (clades[co->first].find(*cl) == clades[co->first].end()){
-                    clades_not[co->first].insert(*cl);
-                }
-            }
-        }  
-        clades_sort.push_back(make_pair(-clades[co->first].size(), co->first));
-    }
-
-    sort(clades_sort.begin(), clades_sort.end());
-    
-    // Store the cluster haplotypes learned by the model at the end 
-    vector<hapstr> haps_final;
-    
-    pair<int, float> modelfit = infer_clusters2(mask_global, haplotypes, 
-        nvars, clades_sort, 
-        collapsed_to_orig, clades, clades_not,
-        haps_final, exact_matches_only, num_expected);
-    
-    nclust_model = modelfit.first;
-    llr_model = modelfit.second;
-
-    mask_global.reset();
-    for (int i = 0; i < haps_final.size(); ++i){
-        mask_global |= haps_final[i];
-    }
-    return haps_final;
-   
-}
 
 void parse_idsfile(string& idsfilename, vector<string>& ids){
     ifstream infile(idsfilename.c_str());
@@ -1893,30 +1604,251 @@ void parse_idsfile(string& idsfilename, vector<string>& ids){
     }
 }
 
+void write_bchaps(string& haps_out,
+    int nvars,
+    hapstr& mask_global,
+    robin_hood::unordered_map<unsigned long, hap>& haplotypes,
+    string& bc_group){
+    
+    // Open output file
+    FILE* haps_outf = fopen(haps_out.c_str(), "w");
+    
+    // Write header
+    fprintf(haps_outf, "bc\t");
+    bool firstprint = true;
+    int varidx = 0;
+    for (int i = 0; i < nvars; ++i){
+        if (mask_global.test(i)){
+            if (!firstprint){
+                fprintf(haps_outf, "\t");
+            }
+            fprintf(haps_outf, "%d", i);
+            ++varidx;
+            firstprint = false;
+        }
+    }
+    fprintf(haps_outf, "\n");
+    
+    // Visit and print information for each cell barcode
+    for (robin_hood::unordered_map<unsigned long, hap>::iterator h = 
+        haplotypes.begin(); h != haplotypes.end(); ++h){
+        
+        bc bcbits(h->first);
+        string bcstr = bc2str(bcbits, 16);
+        if (bc_group != ""){
+            bcstr += "-" + bc_group;
+        }
+
+        if ((h->second.mask & mask_global).count() > 0){
+            firstprint = true;
+            fprintf(haps_outf, "%s\t", bcstr.c_str());
+        
+            for (int x = 0; x < nvars; ++x){
+                if (mask_global[x]){
+                    if (!firstprint){
+                        fprintf(haps_outf, "\t");
+                    }
+                    firstprint = false;
+                    if (h->second.mask[x]){
+                        if (h->second.vars[x]){
+                            fprintf(haps_outf, "1");
+                        }
+                        else{
+                            fprintf(haps_outf, "0");
+                        }
+                    }
+                    else{
+                        fprintf(haps_outf, "NA");
+                    }
+                }
+            }
+            fprintf(haps_outf, "\n");
+        }
+    }
+    fclose(haps_outf);
+}
+
+void write_clusthaps(string& clusthapsfile,
+    hapstr& mask_global,
+    vector<hapstr>& clusthaps){
+    
+    FILE* clusthaps_f = fopen(clusthapsfile.c_str(), "w");
+    for (int i = 0; i < clusthaps.size(); ++i){
+        for (int x = 0; x < nvars; ++x){
+            if (mask_global[x]){
+                if (clusthaps[i].test(x)){
+                    fprintf(clusthaps_f, "1");
+                }
+                else{
+                    fprintf(clusthaps_f, "0");
+                }
+            }
+        }
+        fprintf(clusthaps_f, "\n");
+    }
+    fclose(clusthaps_f);
+}
+
+void load_clusthaps(string& hapsfilename,
+    hapstr& mask_global,
+    vector<hapstr>& clusthaps){
+
+    ifstream infile(hapsfilename.c_str());
+    string hapstring;
+    bool first = true;
+    while (infile >> hapstring ){
+        if (first){
+            first = false;
+            nvars = hapstring.length();
+            for (int i = 0; i < nvars; ++i){
+                mask_global.set(i);
+            }
+        }
+        hapstr h;
+        for (int i = 0; i < nvars; ++i){
+            if (hapstring[i] == '0'){
+            }
+            else if (hapstring[i] == '1'){
+                h.set(i);
+            }
+        }
+        clusthaps.push_back(h);
+    }
+}
+
+/**
+ * Print barcode-identity assignments to disk.
+ */
+void write_assignments(string& assn_out,
+    robin_hood::unordered_map<unsigned long, int>& assignments,
+    robin_hood::unordered_map<unsigned long, double>& assignments_llr,
+    string& barcode_group,
+    vector<string>& clust_ids,
+    int nhaps,
+    map<string, int>& id_counter,
+    int& tot_cells,
+    int& doub_cells){
+    
+    tot_cells = 0;
+    doub_cells = 0;
+
+    FILE* assn_outf = fopen(assn_out.c_str(), "w");
+    char namebuf[100];
+    for (robin_hood::unordered_map<unsigned long, int>::iterator assn = 
+        assignments.begin(); assn != assignments.end(); ++assn){
+        tot_cells++;
+        string name;
+        char s_d;
+        if (clust_ids.size() > 0){
+            name = idx2name(assn->second, clust_ids);
+            if (assn->second >= nhaps){
+                s_d = 'D';
+                doub_cells++;
+            }
+            else{
+                s_d = 'S';
+            }
+        }
+        else{
+            if (assn->second < nhaps){
+                sprintf(&namebuf[0], "%d", assn->second);
+                s_d = 'S';
+            }
+            else{
+                pair<int, int> combo = idx_to_hap_comb(assn->second, 
+                    nhaps);
+                sprintf(&namebuf[0], "%d+%d", combo.first, combo.second);
+                s_d = 'D';
+                doub_cells++;
+            }
+            name = namebuf;
+        }
+        if (id_counter.count(name) == 0){
+            id_counter.insert(make_pair(name, 0));
+        }
+        id_counter[name]++;
+        bc as_bitset(assn->first);
+        string bc_str = bc2str(as_bitset, 16);
+        if (barcode_group != ""){
+            bc_str += "-" + barcode_group;
+        }
+        fprintf(assn_outf, "%s\t%s\t%c\t%f\n", bc_str.c_str(),
+            name.c_str(), s_d, assignments_llr[assn->first]);
+    } 
+    fclose(assn_outf);
+}
+
+void write_statsfile(string& statsfilename,
+    string& output_prefix,
+    int nclust_model,
+    double llrsum_model,
+    int tot_cells,
+    int doub_cells,
+    map<string, int>& id_counter,
+    double doublet_rate,
+    string& hapsfilename,
+    string& varsfilename){
+
+    FILE* statsfilef = fopen(statsfilename.c_str(), "w");
+    
+    fprintf(statsfilef, "%s\tparam.doublet_rate\t%f\n", output_prefix.c_str(),
+        doublet_rate);
+
+    if (nclust_model != -1){
+        // Clusters were inferred.
+        fprintf(statsfilef, "%s\tnum_clusters\t%d\n", output_prefix.c_str(), 
+            nclust_model);
+        fprintf(statsfilef, "%s\tllr_sum\t%f\n", output_prefix.c_str(), llrsum_model);
+    }
+    else{
+        // Clusters were loaded
+        fprintf(statsfilef, "%s\tparam.hapsfile\t%s\n", output_prefix.c_str(),
+            hapsfilename.c_str());
+        fprintf(statsfilef, "%s\tparam.varsfile\t%s\n", output_prefix.c_str(),
+            varsfilename.c_str());
+    }
+    fprintf(statsfilef, "%s\ttot_cells\t%d\n", output_prefix.c_str(), tot_cells);
+    if (doublet_rate > 0 && doublet_rate < 1){
+        // Prevent NaN from division by zero
+        if (tot_cells == 0){
+            tot_cells = 1;
+        }
+        fprintf(statsfilef, "%s\tdoublets\t%d\n", output_prefix.c_str(), 
+            doub_cells);
+        fprintf(statsfilef, "%s\tfrac_doublets\t%.3f\n", output_prefix.c_str(), 
+            (float)doub_cells/(float)tot_cells);
+    }
+    vector<pair<int, string> > idcounts_sorted;
+    for (map<string, int>::iterator idc = id_counter.begin(); idc != 
+        id_counter.end(); ++idc){
+        idcounts_sorted.push_back(make_pair(-idc->second, idc->first));
+    }
+    sort(idcounts_sorted.begin(), idcounts_sorted.end());
+    for (vector<pair<int, string> >::iterator idcs = idcounts_sorted.begin(); 
+        idcs != idcounts_sorted.end(); ++idcs){
+        fprintf(statsfilef, "%s\t%s\t%d\n", output_prefix.c_str(), 
+            idcs->second.c_str(), -idcs->first);   
+    }
+    fclose(statsfilef);
+}
+
 int main(int argc, char *argv[]) {    
     
     static struct option long_options[] = {
        {"bam", required_argument, 0, 'b'},
        {"output_prefix", required_argument, 0, 'o'},
        {"barcodes", required_argument, 0, 'B'},
+       {"barcodes_filter", required_argument, 0, 'f'},
+       {"barcode_group", required_argument, 0, 'g'},
        {"mapq", required_argument, 0, 'q'},
        {"baseq", required_argument, 0, 'Q'},
-       {"exact", no_argument, 0, 'e'},
-       {"freq", required_argument, 0, 'f'},
-       {"nclust", required_argument, 0, 'n'},
-       {"cov", required_argument, 0, 'c'},
+       {"nclust_max", required_argument, 0, 'n'},
        {"mito", required_argument, 0, 'm'},
-       {"mincount", required_argument, 0, 'C'},
-       {"missing_thresh", required_argument, 0, 'M'},
-       {"minsites", required_argument, 0, 's'},
        {"dump", no_argument, 0, 'd'},
-       {"dump_raw", no_argument, 0, 'r'},
        {"vars", required_argument, 0, 'v'},
-       {"nodoublet", no_argument, 0, 'N'},
-       {"gex", no_argument, 0, 'g'},
+       {"doublet_rate", required_argument, 0, 'D'},
        {"haps", required_argument, 0, 'H'},
        {"ids", required_argument, 0, 'i'},
-       {"identity_thresh", required_argument, 0, 'I'},
        {0, 0, 0, 0} 
     };
     
@@ -1925,24 +1857,19 @@ int main(int argc, char *argv[]) {
     string output_prefix;
     int minmapq = 20;
     int minbaseq = 20;
-    float minfreq = 0.001;
     int nclust = -1;
     bool dump = false;
-    bool dump_raw = false;
-    float missing_thresh = 0.25;
     string mito_chrom = "chrM";
     string varsfile;
     bool varsfile_given = false;
     string barcodesfilename;
+    string barcodes_filter_filename;
     string hapsfilename;
     bool hapsfile_given = false;
-    bool nodoublet = false;
-    bool gex = false;
-    bool exact_matches_only = false;
+    double doublet_rate = 0.5;
     bool ids_given = false;
-    float collapse_thresh = 0;
-    bool collapse_thresh_given = false;
     string idsfile;
+    string barcode_group = "";
 
     int option_index = 0;
     int ch;
@@ -1950,13 +1877,19 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:o:B:q:Q:f:n:m:v:H:i:I:egNrdh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:o:B:f:g:q:Q:n:m:v:H:i:D:dh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
                 break;
             case 'h':
                 help(0);
+                break;
+            case 'D':
+                doublet_rate = atof(optarg);
+                break;
+            case 'g':
+                barcode_group = optarg;
                 break;
             case 'H':
                 hapsfilename = optarg;
@@ -1969,26 +1902,20 @@ int main(int argc, char *argv[]) {
             case 'b':
                 bamfile = optarg;
                 break;
-            case 'e':
-                exact_matches_only = true;
-                break;
             case 'o':
                 output_prefix = optarg;
                 break;
             case 'B':
                 barcodesfilename = optarg;
                 break;
+            case 'f':
+                barcodes_filter_filename = optarg;
+                break;
             case 'q':
                 minmapq = atoi(optarg);
                 break;
             case 'Q':
                 minbaseq = atoi(optarg);
-                break;
-            case 'f':
-                minfreq = atof(optarg);
-                break;
-            case 'n':
-                nclust = atoi(optarg);
                 break;
             case 'm':
                 mito_chrom = optarg;
@@ -1999,19 +1926,6 @@ int main(int argc, char *argv[]) {
                 break;
             case 'd':
                 dump = true;
-                break;
-            case 'r':
-                dump_raw = true;
-                break;
-            case 'g':
-                gex = true;
-                break;
-            case 'N':
-                nodoublet = true;
-                break;
-            case 'I':
-                collapse_thresh = atof(optarg);
-                collapse_thresh_given = true;
                 break;
             default:
                 help(0);
@@ -2028,24 +1942,29 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: output_prefix is required\n");
         exit(1);
     }
-    if (minfreq < 0 || minfreq > 0.5){
-        fprintf(stderr, "ERROR: invalid value of --minfreq -f; should be 0 <= -f <= 0.5\n");
-        exit(1);
-    }
     if (hapsfile_given && !varsfile_given){
         fprintf(stderr, "ERROR: If --haps / -H is given, --vars / -v is also required\n");
         exit(1);
     }
-    if (!collapse_thresh_given && gex){
-        collapse_thresh = 0.07;
+    if (doublet_rate < 0 || doublet_rate > 1){
+        fprintf(stderr, "ERROR: doublet rate must be between 0 and 1, inclusive\n");
+        exit(1);
     }
-    
+
     set<unsigned long> bc_whitelist;
     bool has_bc_whitelist = false;
-    if (barcodesfilename.length() > 0){
-        parse_barcode_file(barcodesfilename, bc_whitelist);
+    if (barcodes_filter_filename.length() > 0){
+        parse_barcode_file(barcodes_filter_filename, bc_whitelist);
         if (bc_whitelist.size() > 0){
             has_bc_whitelist = true;
+        }
+    }
+    set<unsigned long> bc_filter_assn;
+    bool has_bc_filter_assn = false;
+    if (barcodesfilename.length() > 0){
+        parse_barcode_file(barcodesfilename, bc_filter_assn);
+        if (bc_filter_assn.size() > 0){
+            has_bc_filter_assn = true;
         }
     }
 
@@ -2054,12 +1973,13 @@ int main(int argc, char *argv[]) {
     map<int, varsite> vars_unfiltered;
     
     if (varsfile_given){
+        fprintf(stderr, "Loading variants from %s...\n", varsfile.c_str());
         load_vars_from_file(varsfile, vars); 
     }
     else{
         fprintf(stderr, "Finding variable sites on the mitochondrial genome...\n");
-        find_vars_in_bam(bamfile, mito_chrom, minmapq, minbaseq, minfreq,
-            vars, gex, has_bc_whitelist, bc_whitelist); 
+        find_vars_in_bam(bamfile, mito_chrom, minmapq, minbaseq, vars, 
+            has_bc_whitelist, bc_whitelist); 
     }
     
     // If loading previously-inferred clusters, did the user provide
@@ -2082,7 +2002,6 @@ int main(int argc, char *argv[]) {
         for (int i = MAX_SITES; i < vs.size(); ++i){
             pos_rm.insert(vs[i].second);
         }
-        fprintf(stderr, "WARNING: removing %ld sites with lowest-frequency alt alleles\n", pos_rm.size());
         for (deque<varsite>::iterator v = vars.begin(); v != vars.end(); ){
             if (pos_rm.find(v->pos) != pos_rm.end()){
                 v = vars.erase(v);
@@ -2094,16 +2013,16 @@ int main(int argc, char *argv[]) {
         
         // IMPORTANT: this sets the size of arrays in varcounts
         nvars = vars.size();
-
-        fprintf(stderr, "done\n");
     }
     
-    // Now need to go back through the BAM file. This time, look at individual barcodes and count reads overlapping each variant.
+    // Now need to go back through the BAM file. This time, 
+    // look at individual barcodes and count reads overlapping each variant.
     
-    // Store barcodes as bit strings of length 2*nbases, interpreted as unsigned longs to save space
-    //map<unsigned long, var_counts> hap_counter;
+    // Store barcodes as bit strings of length 2*nbases, interpreted as unsigned 
+    // longs to save space
     robin_hood::unordered_map<unsigned long, var_counts> hap_counter;
-        
+    
+    // Make a copy that will stay intact (we will iterate destructively) 
     deque<varsite> vars2 = vars;
 
     // Get counts of each variant allele for each cell barcode
@@ -2112,261 +2031,117 @@ int main(int argc, char *argv[]) {
     // inferring cluster haplotypes (if not provided),
     // and assigning barcodes to individual IDs
     
+    fprintf(stderr, "Counting alleles at variable sites in BAM...\n");
     count_vars_barcodes(bamfile, mito_chrom, minmapq, vars, 
-        has_bc_whitelist, bc_whitelist, hap_counter, gex);     
+        has_bc_whitelist, bc_whitelist, hap_counter);     
     
     // Still need to filter variant sites based on coverage across cells
-    set<int> vars_blacklist;
-    //bitset<MAX_SITES> mask_global;
     hapstr mask_global;
     // Also translate variant counts into haplotype strings
-
     robin_hood::unordered_map<unsigned long, hap> haplotypes;
     
-    if (dump_raw){
+    if (dump){
+        // We will be dumping variants before filtering.
         write_vars(mito_chrom, output_prefix, vars2, mask_global, false);
     }
     
-    fprintf(stderr, "turn var counts into cell haplotypes...\n");
+    fprintf(stderr, "Building cell haplotypes from allele counts...\n");
 
-    process_var_counts(hap_counter, haplotypes, vars_blacklist, varsfile_given,
-        mask_global, nvars, gex, has_bc_whitelist);  
+    map<int, int> orig_to_collapsed;
+    map<int, set<int> > collapsed_to_orig;
+    map<int, robin_hood::unordered_set<unsigned long> > site_minor;
+    map<int, robin_hood::unordered_set<unsigned long> > site_major;
+    map<int, robin_hood::unordered_set<unsigned long> > site_mask;
+    vector<pair<long int, int> > clsort;
+    process_var_counts(hap_counter, haplotypes, varsfile_given,
+        hapsfile_given || dump, mask_global, nvars, has_bc_whitelist, site_minor,
+        site_major, site_mask, orig_to_collapsed, collapsed_to_orig,
+        clsort);  
+   
     
-    if (dump_raw){
+    // Define output file for cell haplotypes 
+    string haps_out = output_prefix + ".cellhaps";
+    if (dump){
+        write_bchaps(haps_out, nvars, mask_global, haplotypes, barcode_group); 
         return 0; // finished
     }
 
     // Store haplotypes of clusters (whether inferred or loaded)
     vector<hapstr> clusthaps;
     
-    string statsfilename = output_prefix + ".summary";
     FILE* statsfilef = NULL;
+    
+    int nclust_model = -1;
+    double llrsum_model = 0.0;
 
-    if (!dump){
-        if (!hapsfile_given){
+    if (!hapsfile_given){
         
-            
-            int nclust_model;
-            float llr_model;
+        // Need to infer clusters.
 
-            clusthaps = infer_clusters(mask_global, 
-                haplotypes, nvars, exact_matches_only, 
-                nclust, gex, collapse_thresh, 
-                nclust_model, llr_model);
-            
-            if (statsfilef == NULL){
-                statsfilef = fopen(statsfilename.c_str(), "w");
-                
-            }  
-            fprintf(statsfilef, "%s\tnum_clusters\t%d\n", output_prefix.c_str(), nclust_model);
-            fprintf(statsfilef, "%s\tllr_num_clusters\t%f\n", output_prefix.c_str(), llr_model);
-            
-            // Write haplotypes to output file
-            string clusthapsfile = output_prefix + ".clusthaps";
-            FILE* clusthaps_f = fopen(clusthapsfile.c_str(), "w");
+        fprintf(stderr, "Inferring clusters...\n");
+        
+        bool exact_matches_only = false;
 
-            for (int i = 0; i < clusthaps.size(); ++i){
-                for (int x = 0; x < nvars; ++x){
-                    if (mask_global[x]){
-                   
-                        if (clusthaps[i].test(x)){
-                            fprintf(clusthaps_f, "1");
-                        }
-                        else{
-                            fprintf(clusthaps_f, "0");
-                        }
-              
-                    }
-                }
-                fprintf(clusthaps_f, "\n");
-            }
+        pair<int, float> results = infer_clusters(mask_global,
+            haplotypes, nvars, clsort, collapsed_to_orig,
+            site_minor, site_major, clusthaps, exact_matches_only,
+            nclust, site_mask[clsort[0].second], hap_counter);
 
-            fclose(clusthaps_f);
-  
-        }
-        else{
-            // Load clusters.
-            ifstream infile(hapsfilename.c_str());
-            string hapstring;
-            bool first = true;
-            while (infile >> hapstring ){
-                if (first){
-                    first = false;
-                    nvars = hapstring.length();
-                    for (int i = 0; i < nvars; ++i){
-                        mask_global.set(i);
-                    }
-                }
-                hapstr h;
-                //hap h;
-                //h.vars.reset();
-                //h.mask.reset();
-                for (int i = 0; i < nvars; ++i){
-                    if (hapstring[i] == '0'){
-                        //h.mask.set(i);
-                    }
-                    else if (hapstring[i] == '1'){
-                        //h.mask.set(i);
-                        //h.vars.set(i);
-                        h.set(i);
-                    }
-                }
-                clusthaps.push_back(h);
-            }
-        }
+        nclust_model = results.first;
+        llrsum_model = results.second;
+       
+        // Write haplotypes to output file
+        string clusthapsfile = output_prefix + ".haps";
+        write_clusthaps(clusthapsfile, mask_global, clusthaps); 
+    }
+    else{
+        // Load clusters.
+        load_clusthaps(hapsfilename, mask_global, clusthaps);
     }
     
     // Avoid writing out vars file only if it would overwrite a preexisting vars file.
     if (!varsfile_given || (output_prefix + ".vars" != varsfile)){ 
         // Write variants file
-         
         write_vars(mito_chrom, output_prefix, vars2, mask_global, true); 
     }
     
-    if (true){
-    //if (!hapsfile_given){
-        // Write barcode haps file
-
-        string haps_out = output_prefix + ".bchaps";
-        FILE* haps_outf = fopen(haps_out.c_str(), "w");
-        
-        fprintf(haps_outf, "bc\t");
-
-        bool firstprint = true;
-        int varidx = 0;
-        for (int i = 0; i < nvars; ++i){
-            if (mask_global.test(i)){
-                if (!firstprint){
-                    fprintf(haps_outf, "\t");
-                }
-                fprintf(haps_outf, "%d", i);
-                ++varidx;
-                firstprint = false;
-            }
-        }
-        fprintf(haps_outf, "\n");
-        
-        for (robin_hood::unordered_map<unsigned long, hap>::iterator h = 
-            haplotypes.begin(); h != haplotypes.end(); ++h){
-            
-            bc bcbits(h->first);
-            string bcstr = bc2str(bcbits, 16);
-
-            //if ((float)(h->second.mask & mask_global).count() / (float)mask_global.count() >= 0.25){
-            if ((h->second.mask & mask_global).count() > 0){
-                firstprint = true;
-                
-                fprintf(haps_outf, "%s\t", bcstr.c_str());
-            
-                for (int x = 0; x < nvars; ++x){
-                    if (mask_global[x]){
-                        if (!firstprint){
-                            fprintf(haps_outf, "\t");
-                        }
-                        firstprint = false;
-                        if (h->second.mask[x]){
-                            if (h->second.vars[x]){
-                                fprintf(haps_outf, "1");
-                            }
-                            else{
-                                fprintf(haps_outf, "0");
-                            }
-                        }
-                        else{
-                            fprintf(haps_outf, "NA");
-                        }
-                    }
-                }
-                fprintf(haps_outf, "\n");
-            }
-        }
-        fclose(haps_outf);
-        
-        if (dump){
-            return 0;
-        }
-    }
+    // Write barcode haps file
+    write_bchaps(haps_out, nvars, mask_global, haplotypes, barcode_group);
     
     // Assign all cell barcodes to a haplotype ID.
     map<unsigned long, int> bc2hap;
     
     map<int, map<int, float> > sites_doublet_probs;
     
-    string assn_out = output_prefix + ".assignments";
-    FILE* assn_outf = fopen(assn_out.c_str(), "w");
-
     robin_hood::unordered_map<unsigned long, int> assignments;
     robin_hood::unordered_map<unsigned long, double> assignments_llr;
-
+    
+    // oversight -- need to convert type of set here
+    robin_hood::unordered_set<unsigned long> cell_filter;
+    if (has_bc_filter_assn){
+        for (set<unsigned long>::iterator cell = bc_filter_assn.begin();
+            cell != bc_filter_assn.end(); ++cell){
+            cell_filter.insert(*cell);
+        }
+    }
     assign_bcs(hap_counter, assignments, assignments_llr, clusthaps,
-        mask_global, nvars, nodoublet);
+        mask_global, nvars, doublet_rate, has_bc_filter_assn, cell_filter);
     
     map<string, int> id_counter;
     int tot_cells = 0;
     int doub_cells = 0;
-
-    // Dump to output file
-    char namebuf[100];
-    for (robin_hood::unordered_map<unsigned long, int>::iterator assn = 
-        assignments.begin(); assn != assignments.end(); ++assn){
-        tot_cells++;
-        string name;
-        char s_d;
-        if (clust_ids.size() > 0){
-            name = idx2name(assn->second, clust_ids);
-            if (assn->second >= clusthaps.size()){
-                s_d = 'D';
-                doub_cells++;
-            }
-            else{
-                s_d = 'S';
-            }
-        }
-        else{
-            if (assn->second < clusthaps.size()){
-                sprintf(&namebuf[0], "%d", assn->second);
-                s_d = 'S';
-            }
-            else{
-                pair<int, int> combo = idx_to_hap_comb(assn->second, 
-                    clusthaps.size());
-                sprintf(&namebuf[0], "%d+%d", combo.first, combo.second);
-                s_d = 'D';
-                doub_cells++;
-            }
-            name = namebuf;
-        }
-        if (id_counter.count(name) == 0){
-            id_counter.insert(make_pair(name, 0));
-        }
-        id_counter[name]++;
-        bc as_bitset(assn->first);
-        string bc_str = bc2str(as_bitset, 16);
-        fprintf(assn_outf, "%s\t%s\t%c\t%f\n", bc_str.c_str(),
-            name.c_str(), s_d, assignments_llr[assn->first]);
-    } 
-    fclose(assn_outf);
     
-    if (statsfilef == NULL){
-        statsfilef = fopen(statsfilename.c_str(), "w");
-    }
-    fprintf(statsfilef, "%s\ttot_cells\t%d\n", output_prefix.c_str(), tot_cells);
-    if (!nodoublet){
-        fprintf(statsfilef, "%s\tdoublets\t%d\n", output_prefix.c_str(), doub_cells);
-        fprintf(statsfilef, "%s\tfrac_doublets\t%f\n", output_prefix.c_str(), (float)doub_cells/(float)tot_cells);
-    }
-    vector<pair<int, string> > idcounts_sorted;
-    for (map<string, int>::iterator idc = id_counter.begin(); idc != id_counter.end(); ++idc){
-        idcounts_sorted.push_back(make_pair(-idc->second, idc->first));
-    }
-    sort(idcounts_sorted.begin(), idcounts_sorted.end());
-    for (vector<pair<int, string> >::iterator idcs = idcounts_sorted.begin(); idcs != idcounts_sorted.end(); ++idcs){
-        fprintf(statsfilef, "%s\t%s\t%d\n", output_prefix.c_str(), idcs->second.c_str(), -idcs->first);   
-    }
+    string assn_out = output_prefix + ".assignments";
 
-    if (statsfilef != NULL){
-        fclose(statsfilef);
-    }
+    write_assignments(assn_out, assignments, assignments_llr,
+        barcode_group, clust_ids, clusthaps.size(), id_counter, 
+        tot_cells, doub_cells);
+   
+    string statsfilename = output_prefix + ".summary";
+    
+    write_statsfile(statsfilename, output_prefix, nclust_model, 
+        llrsum_model, tot_cells, doub_cells, id_counter, 
+        doublet_rate, hapsfilename, varsfile);
 
     return 0;
 }
