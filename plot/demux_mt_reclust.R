@@ -20,8 +20,8 @@ if (length(args) < 1){
     write("    mitochondrial haplotypes. Shows cluster assignments next to\n", stderr())
     write("    hierarchically clustered cells, so users can evaluate whether\n", stderr())
     write("    the cluster assignments look reasonable.\n", stderr())
-    write("Creates PDF and PNG plots named <output_prefix>.pdf and\n", stderr())
-    write("    <output_prefix>.png.\n", stderr())
+    write("Creates PDF and PNG plots named <output_prefix>.clust.pdf and\n", stderr())
+    write("    <output_prefix>.clust.png.\n", stderr())
     q()
 }
 
@@ -30,8 +30,8 @@ if (length(args) > 1){
     frac <- as.numeric(args[2])
 }
 
-pdf_out <- paste(args[1], '.pdf', sep="")
-png_out <- paste(args[1], '.png', sep="")
+pdf_out <- paste(args[1], '.clust.pdf', sep="")
+png_out <- paste(args[1], '.clust.png', sep="")
 
 fn <- paste(args[1], ".cellhaps", sep="")
 tab <- read.table(fn, header=T)
