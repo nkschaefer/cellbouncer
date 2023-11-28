@@ -1790,6 +1790,11 @@ all possible individuals\n", idfile.c_str());
     
     robin_hood::unordered_map<unsigned long, map<int, float> > fracs;
     
+    // Print progress message every n sites
+    int progress = 1000;
+    // What was the last number of sites for which a message was printed?
+    int last_print = 0;
+
     if (load_counts){
 
         // Figure out the appropriate file name from the previous run and
@@ -1869,8 +1874,9 @@ all possible individuals\n", idfile.c_str());
                         neg_drops, negdrop_cell);
                     ++cursnp2;
                 }
-                if (nsnp_processed > 0 && nsnp_processed % 1000 == 0){
+                if ((nsnp_processed - last_print) % progress == 0){
                     fprintf(stderr, "Processed %d of %d SNPs\r", nsnp_processed, nsnps); 
+                    last_print = nsnp_processed;
                 }
             }
             
@@ -1898,9 +1904,10 @@ all possible individuals\n", idfile.c_str());
                     
                     ++nsnp_processed;        
                 
-                    if (nsnp_processed % 1000 == 0){
+                    if ((nsnp_processed - last_print) % progress == 0){
                         fprintf(stderr, "Processed %d of %d SNPs\r", nsnp_processed, 
                             nsnps); 
+                        last_print = nsnp_processed;
                     }
                 }
             }
