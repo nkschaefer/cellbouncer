@@ -132,9 +132,9 @@ def main(args):
     os.unlink('{}.bcmap'.format(options.out))
 
     # Generate plots
-    subprocess.call(['Rscript', '{}/../plot/demux_mt_reclust.R'.format(script_dir), \
+    subprocess.call(['Rscript', '{}/../plot/demux_mt_clust.R'.format(script_dir), \
         '{}'.format(options.out)])
-    subprocess.call(['Rscript', '{}/../plot/demux_mt_all.R'.format(script_dir), \
+    subprocess.call(['Rscript', '{}/../plot/demux_mt_unclust.R'.format(script_dir), \
         '{}'.format(options.out)])
 
 if __name__ == '__main__':

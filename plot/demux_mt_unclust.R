@@ -5,7 +5,7 @@ args <- commandArgs(trailingOnly=TRUE)
 
 if (length(args) < 1){
     write("USAGE:\n", stderr())
-    write("demux_mt_all.R <output_prefix>\n", stderr())
+    write("demux_mt_unclust.R <output_prefix>\n", stderr())
     write("Creates PDF and PNG plots named <output_prefix>.unclust.pdf and\n", stderr())
     write("    <output_prefix>.unclust.png.\n", stderr())
     write("In contrast to demux_mt_reclust.R, does not hierarchically cluster\n", stderr())
