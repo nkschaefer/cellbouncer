@@ -1413,7 +1413,7 @@ pair<int, float> infer_clusters(hapstr& mask_global,
         
         int nclust = choose_nclust(sizes);
         if (nclust > nclust_prev){
-            fprintf(stderr, "Found %d haplotypes with %d sites included\n", 
+            fprintf(stderr, "Found %d haplotypes with %d site groups included\n", 
                 nclust, nsites_included);
         }
 
@@ -1517,7 +1517,7 @@ pair<int, float> infer_clusters(hapstr& mask_global,
         }
     }
     
-    fprintf(stderr, "Iteratively removing sites to test for improved\n");
+    fprintf(stderr, "Iteratively removing site groups to test for improved\n");
     fprintf(stderr, "   assignment LLRs...\n"); 
 
     // One last step: we chose the set of included sites to maximize
