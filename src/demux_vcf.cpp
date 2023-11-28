@@ -1335,8 +1335,12 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
         
         double llr_final;
         int assn = collapse_llrs(llrs, llr_final);
-        assignments.emplace(x->first, assn);
-        assignments_llr.emplace(x->first, llr_final);
+        // Only store information if an assignment has been made (don't accept equal
+        // likelihood of two choices)
+        if (llr_final > 0.0){
+            assignments.emplace(x->first, assn);
+            assignments_llr.emplace(x->first, llr_final);
+        }
     }            
 }
 
