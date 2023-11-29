@@ -1,6 +1,6 @@
 [submodule "mixtureDist"]
-	path = mixtureDist
+	path = dependencies/mixtureDist
 	url = git@github.com:nkschaefer/mixtureDist.git
 [submodule "htswrapper"]
-	path = htswrapper
+	path = dependencies/htswrapper
 	url = git@github.com:nkschaefer/htswrapper.git

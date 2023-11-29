@@ -31,13 +31,13 @@ build/nnls.o: src/nnls.c src/nnls.h
 build/common.o: src/common.cpp src/common.h
 	$(COMP) $(IFLAGS) $(FLAGS) src/common.cpp -c -o build/common.o
 
-lib/libhtswrapper.a:
-	cd htswrapper && $(MAKE) PREFIX=..
-	cd htswrapper && $(MAKE) install PREFIX=..
+lib/libhtswrapper.a: dependencies/htswrapper/lib/libhtswrapper.a
+	cd dependencies/htswrapper && $(MAKE) PREFIX=../..
+	cd dependencies/htswrapper && $(MAKE) install PREFIX=../..
 
-lib/libmixturedist.a:
-	cd mixtureDist && $(MAKE) PREFIX=..
-	cd mixtureDist && $(MAKE) install PREFIX=..
+lib/libmixturedist.a: dependencies/mixtureDist/lib/libmixturedist.a
+	cd dependencies/mixtureDist && $(MAKE) PREFIX=../..
+	cd dependencies/mixtureDist && $(MAKE) install PREFIX=../..
 
 clean:
 	rm build/*.o
