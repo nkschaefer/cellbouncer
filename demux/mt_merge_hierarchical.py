@@ -70,11 +70,25 @@ def main(args):
 
     # Next, create a "bcmap" file mapping cells to haplotypes.
     bcmap_out = open('{}.bcmap'.format(options.out), 'w')
+    
+    idx2name = {}
+    if os.path.isfile('{}.ids'.format(options.root)):
+        f = open('{}.ids'.format(options.root), 'r')
+        for idx, line in enumerate(f):
+            line = line.rstrip()
+            idx2name[idx] = line
+        f.close()
+    else:
+        f = open('{}.haps'.format(options.root), 'r')
+        for idx, line in enumerate(f):
+            idx2name[idx] = str(idx)
+        f.close()
+
     # Determine which clusters to keep from the root clustering
     keep_root = []
     for leafIdx, fn in enumerate(options.leaves):
         if fn == 'NA' or fn == 'na':
-            keep_root.append(str(leafIdx))
+            keep_root.append(idx2name[leafIdx])
     if len(keep_root) > 0:
         keep_root = set(keep_root)
         f = open('{}.assignments'.format(options.root), 'r')
@@ -92,7 +106,7 @@ def main(args):
                 line = line.rstrip()
                 dat = line.split('\t')
                 if dat[2] == 'S':
-                    clust_id = '{}_{}'.format(leafIdx, dat[1])
+                    clust_id = '{}_{}'.format(idx2name[leafIdx], dat[1])
                     print("{}\t{}".format(dat[0], clust_id), file=bcmap_out)
             f.close()
     bcmap_out.close()
@@ -131,7 +145,7 @@ def main(args):
     # Clean up
     os.unlink('{}.bcmap'.format(options.out))
 
-    # Generate plots
+    # Make plots
     subprocess.call(['Rscript', '{}/../plot/demux_mt_clust.R'.format(script_dir), \
         '{}'.format(options.out)])
     subprocess.call(['Rscript', '{}/../plot/demux_mt_unclust.R'.format(script_dir), \

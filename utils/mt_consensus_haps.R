@@ -21,6 +21,7 @@ tab <- read.table(paste(inbase, '.cellhaps', sep=''), header=T)
 bcs <- read.table(bcmap, sep='\t')
 colnames(bcs) <- c("bc", "clust")
 tab <- merge(tab, bcs, by='bc')
+
 melted <- melt(tab, id.vars=c("bc", "clust"))
 melted$count <- 1
 
@@ -42,8 +43,16 @@ dropsites <- unique(merged[which(merged$tot / merged$cells < dscutoff),]$site)
 
 merged$frac <- merged$sum / merged$tot
 merged$val <- 0
-merged[which(merged$frac > 0.9),]$val <- 1
-#merged[which(merged$frac < 0.1),]$val <- 0
+
+ll1 <- dbinom(merged$sum, merged$tot, 0.99, log=TRUE)
+ll2 <- dbinom(merged$sum, merged$tot, 0.01, log=TRUE)
+ll3 <- dbinom(merged$tot, merged$cells, 0.01, log=TRUE)
+
+merged[which(ll1 > ll2 & ll1 > ll3),]$val <- 1
+if (sum(ll3 > ll1 & ll3 > ll2) > 0){
+    merged[which(ll3 > ll1 & ll3 > ll2),]$val <- NA
+}
+#merged[which(merged$frac > 0.9),]$val <- 1
 
 casted <- dcast(merged, clust ~ site, value.var='val')
 clusts <- data.frame(clust=casted$clust)
@@ -57,10 +66,21 @@ cols$clean <- as.numeric(gsub("X", "", cols$col))
 # If more than one cluster, only keep sites that are variable across clusters.
 # If only one cluster, keep all sites.
 if (length(unique(bcs$clust)) > 1){
-    keeps <- cols[which(cols$col %in% colnames(casted)[which(colSums(casted) > 0)]),]
-    casted <- casted[,which(colSums(casted) > 0)]
+    keeps <- cols[which(cols$col %in% colnames(casted)[which(colSums(casted, na.rm=TRUE) > 0)]),]
+    casted <- casted[,which(colSums(casted, na.rm=TRUE) > 0)]
 } else{
     keeps <- cols
+}
+
+# To do:
+# Check for and remove identical haplotypes, ignoring NAs?
+
+# Convert NA to - and 0/1 to string
+for (col in colnames(casted)){
+    casted[[col]] <- as.character(casted[[col]])
+    if (sum(is.na(casted[[col]])) > 0){
+        casted[which(is.na(casted[[col]])),][[col]] <- "-"
+    }
 }
 
 vars <- vars[which(vars$idx %in% keeps$clean),]

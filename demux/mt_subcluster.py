@@ -40,6 +40,32 @@ def main(args):
         dat = line.split('\t')
         chrM = dat[0]
         break
+    
+    # Translate haplotype names to numeric IDs, so we have everything
+    # in the order it appears in the file.
+    clustname2idx = {}
+    clustname_sorted = []
+    if os.path.isfile('{}.ids'.format(options.inbase)):
+        f = open('{}.ids'.format(options.inbase))
+        for idx, line in enumerate(f):
+            line = line.rstrip()
+            if line != "":
+                clustname2idx[line] = idx
+                clustname_sorted.append(line)
+        f.close()
+    else:
+        f = open('{}.haps'.format(options.inbase))
+        for idx, line in enumerate(f):
+            line = line.rstrip()
+            if line != "":
+                clustname2idx['{}'.format(idx)] = idx
+                clustname_sorted.append('{}'.format(idx))
+        f.close()
+    
+    for clust in options.clusts:
+        if clust not in clustname2idx:
+            print("ERROR: cluster {} not found in cluster IDs.".format(clust), file=sys.stderr)
+            exit(1)
 
     # Note: here, we allow doublets and ignore doublet calls, to make 
     # sure we get the cleanest possible haplotypes.
@@ -59,15 +85,15 @@ def main(args):
     
     for clust in options.clusts:
         if clust not in clust2bc:
-            print("ERROR: cluster {} not found in assignments {}.assignments".format(\
-                clust, options.out), file=sys.stderr)
+            print("ERROR: cluster {} not found in assignments file {}.assignments".format(\
+                clust, options.inbase), file=sys.stderr)
             exit(1)
     
     clustset = set(options.clusts)
     merge_str = []
 
     # Write out barcode files
-    for clust in clust2bc:
+    for clust in clustname_sorted:
         if clust in clustset:
             f = open('{}.{}.bcs'.format(options.out, clust), 'w')
             for bc in clust2bc[clust]:
@@ -79,10 +105,8 @@ def main(args):
             # Keep root when merging hierarchically
             merge_str.append('NA')
     
-    fnroot_all = []
     outs_cleanup = []
-    for clust in sorted(list(clustset)):
-        fnroot_all.append('{}.{}'.format(options.out, clust))
+    for clust in sorted(clustset):
         print("Subcluster root cluster {}...".format(clust), file=sys.stderr)
         cmd = ['{}/demux_mt'.format(script_dir), '-b', options.bam, '-m', \
             chrM, '-f', '{}.{}.bcs'.format(options.out, clust), \
