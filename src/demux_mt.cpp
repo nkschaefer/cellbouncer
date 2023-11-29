@@ -105,6 +105,19 @@ struct var_counts{
 struct hap{
     hapstr vars;
     hapstr mask;
+    
+    hap(){};
+    hap(const hapstr& m, const hapstr& v){
+        this->mask = m;
+        this->vars = v;
+    };
+    hap(const hap& h){
+        this->vars = h.vars;
+        this->mask = h.mask;
+    };
+    bool operator==(const hap& h){
+        return this->vars == h.vars && this->mask == h.mask;
+    };
 };
 
 /**
@@ -123,7 +136,6 @@ void help(int code){
     fprintf(stderr, "every cell in the data set, and the assignment of every cell to its\n");
     fprintf(stderr, "most likely mitochondrial haplotype (optionally including doublet\n");
     fprintf(stderr, "combinations).\n");
-    fprintf(stderr, "[OPTIONS]:\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "   ===== Options for both run modes =====\n");
     fprintf(stderr, "   ---------- I/O Options ----------\n");
@@ -160,7 +172,7 @@ void help(int code){
     fprintf(stderr, "       identification altogether. Default = 0.5\n");
     fprintf(stderr, "   --help -h Display this message and exit.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "   |===== Inferring clusters from a BAM file =====|\n");
+    fprintf(stderr, "   ===== Inferring clusters from a BAM file =====\n");
     fprintf(stderr, "   ---------- I/O options ----------\n");
     fprintf(stderr, "   --bam -b The BAM file containing the data to use. (REQUIRED)\n");
     fprintf(stderr, "   --barcodes_filter -f Distinct from the -B option (above), which limits\n");
@@ -181,7 +193,7 @@ void help(int code){
     fprintf(stderr, "       up to that many haplotypes will be inferred. It's possible that\n");
     fprintf(stderr, "       fewer than that number of haplotypes will be found, however.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "   |===== Assigning cells to previously-inferred haplotypes =====|\n");
+    fprintf(stderr, "   ===== Assigning cells to previously-inferred haplotypes =====\n");
     fprintf(stderr, "   ---------- I/O Options ----------\n");
     fprintf(stderr, "   --haps -H Cluster haplotypes from a previous run. Should be that\n");
     fprintf(stderr, "       run's [output_prefix].haps. (REQUIRED)\n");
@@ -299,7 +311,13 @@ static int readaln_bcs(void *data, bam1_t *b){
 
 
 /**
- * Returns optimal number of clusters rather than cutoff.
+ * Given a list of numbers representing sizes of clusters, finds the optimal way
+ * to partition these sizes into true clusters and erroneous clusters. Assumes 
+ * that true clusters have sizes drawn from the same Poisson distribution, and that
+ * erroneous clusters have sizes drawn from a different Poisson distribution with
+ * lower mean.
+ *
+ * Returns the inferred number of true clusters.
  */
 int choose_nclust(vector<int>& clust_sizes){
 
@@ -386,6 +404,11 @@ void write_vars(string& mito_chrom,
 
 }
 
+/**
+ * Given a histogram, approximates the first derivative of
+ * the histogram and puts it in datp. Does not apply
+ * kernel smoothing.
+ */
 void derivative(map<double, double>& dat, map<double, double>& datp){
     // Store half-open intervals
     bool setfirst = false;
@@ -415,10 +438,11 @@ void derivative(map<double, double>& dat, map<double, double>& datp){
 }
 
 /**
- * Returns x val with maximum curvature.
+ * Given a histogram, finds the "knee" point, defined as the
+ * point of maximum curvature. Returns the x-coordinate of
+ * the maximum curvature point.
  */
-double curvature(map<double, double>& x,
-    map<double, double>& k){
+double find_knee(map<double, double>& x){
     
     map<double, double> xprime1;
     derivative(x, xprime1);
@@ -431,16 +455,15 @@ double curvature(map<double, double>& x,
     for (map<double, double>::iterator xp = xprime1.begin(); xp != 
         xprime1.end(); ++xp){
         
+        // Compute curvature at this point 
         double xk = abs(xprime2[xp->first]) / 
             pow(1 + pow(xp->second, 2), 1.5);
-        k.insert(make_pair(xp->first, xk));
         
         if (xk > maxk){
             maxk = xk;
             maxk_x = xp->first;
         }
     }
-
     return maxk_x;
 }
 
@@ -452,12 +475,15 @@ void collapse_sites(hapstr& mask_global,
     map<int, int>& orig_to_collapsed,
     map<int, set<int> >& collapsed_to_orig,
     vector<pair<long int, int> >& clsort,
-    bool keep_all_vars){
+    bool keep_all_vars,
+    double one){
     
+    double zero = 1.0-one;
+
     // What sites appear to be erroneous and should be removed?
     // (NOTE: maybe dangerous to do this here)
     set<int> rm_err;
-    
+
     for (int i = 0; i < clsort.size()-1; ++i){
         int idx1 = clsort[i].second;
         
@@ -515,9 +541,9 @@ void collapse_sites(hapstr& mask_global,
             }
             
             // First, see if B looks like an error from A's perspective.
-            if (dbinom(cladesize_A, cladesize_B, 0.001) > 
+            if (dbinom(cladesize_A, cladesize_B, zero) > 
                 dbinom(cladesize_A, cladesize_B, 0.5) &&
-                dbinom(cladesize_A, cladesize_B, 0.999)){
+                dbinom(cladesize_A, cladesize_B, one)){
                 if (!keep_all_vars){
                     // Remove site? (risky)
                     //mask_global.reset(idx2);
@@ -526,12 +552,12 @@ void collapse_sites(hapstr& mask_global,
             }
             else{
                 // Two sites are same haplotype if A&B == A == B
-                if (dbinom(cladesize_A, cladesize_both, 0.999) > 
+                if (dbinom(cladesize_A, cladesize_both, one) > 
                     dbinom(cladesize_A, cladesize_both, 0.5) && 
-                    dbinom(cladesize_A, cladesize_both, 0.001) &&
-                    dbinom(cladesize_B, cladesize_both, 0.999) > 
+                    dbinom(cladesize_A, cladesize_both, zero) &&
+                    dbinom(cladesize_B, cladesize_both, one) > 
                     dbinom(cladesize_B, cladesize_both, 0.5) && 
-                    dbinom(cladesize_B, cladesize_both, 0.001)){
+                    dbinom(cladesize_B, cladesize_both, zero)){
                     
                     orig_to_collapsed.insert(make_pair(idx2, idx1));
                     collapsed_to_orig[idx1].insert(idx2);
@@ -579,7 +605,10 @@ void process_var_counts(robin_hood::unordered_map<unsigned long, var_counts>& ha
     map<int, robin_hood::unordered_set<unsigned long> >& site_mask,
     map<int, int>& orig_to_collapsed,
     map<int, set<int> >& collapsed_to_orig,
-    vector<pair<long int, int> >& clsort){
+    vector<pair<long int, int> >& clsort,
+    double one){
+
+    double zero = 1.0-one;
 
     // Set up global mask -- include all sites by default
     mask_global.reset();
@@ -619,9 +648,9 @@ void process_var_counts(robin_hood::unordered_map<unsigned long, var_counts>& ha
                 int maj = hc->second.counts1[i];
                 int min = hc->second.counts2[i];
                 if (maj + min > 0){
-                    double dmaj = dbinom(maj+min, min, 0.001);
+                    double dmaj = dbinom(maj+min, min, zero);
                     double dhet = dbinom(maj+min, min, 0.5);
-                    double dmin = dbinom(maj+min, min, 0.999);
+                    double dmin = dbinom(maj+min, min, one);
                     if (!keep_all_vars && dmin > dmaj){
                         site_homsum[i] += dmin;
                         site_hetsum[i] += dhet;
@@ -673,8 +702,11 @@ void process_var_counts(robin_hood::unordered_map<unsigned long, var_counts>& ha
         sort(sitesort.begin(), sitesort.end());
 
         // Now collapse sites & dump cell groups together.
-        collapse_sites(mask_global, nvars, site_minor, site_major,
-            site_mask, orig_to_collapsed, collapsed_to_orig, sitesort, keep_all_vars);
+        // Be more lenient with definition of 0 and 1 probability here -- for
+        // identifying sites in cells, we want to be conservative, but for collapsing
+        // sets of sites, we want to be more liberal.
+        collapse_sites(mask_global, nvars, site_minor, site_major, site_mask, 
+            orig_to_collapsed, collapsed_to_orig, sitesort, keep_all_vars, 0.99);
     
         // For each set of collapsed sites, dump cells together.
         for (map<int, int>::iterator oc = orig_to_collapsed.begin();
@@ -733,13 +765,16 @@ void process_var_counts(robin_hood::unordered_map<unsigned long, var_counts>& ha
 void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counter, 
     robin_hood::unordered_map<unsigned long, int>& assignments,
     robin_hood::unordered_map<unsigned long, double>& assignments_llr,
-    vector<hapstr>& haps_final, 
+    vector<hap>& haps_final, 
     hapstr& mask_global,
     int nvars,
     double doublet_rate,
     bool use_filter,
-    robin_hood::unordered_set<unsigned long>& cell_filter){
+    robin_hood::unordered_set<unsigned long>& cell_filter,
+    double one){
      
+    double zero = 1.0-one;
+    
     vector<int> all_model_idx;
     for (int i = 0; i < haps_final.size(); ++i){
         if (doublet_rate < 1.0){
@@ -808,61 +843,87 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                 // var set in hapstr == count2 is expected
                 for (int i = 0; i < all_model_idx.size()-1; ++i){
                     int idx1 = all_model_idx[i];
+                    bool covered_idx1 = true;
                     // how many minor alleles?
                     int nmin1 = 0;
                     // how many total?
                     int ntot1 = 1;
                     if (idx1 >= haps_final.size()){
                         pair<int, int> comb = idx_to_hap_comb(idx1, haps_final.size());
-                        ntot1 = 2;
-                        if (haps_final[comb.first][site]){
-                            nmin1++;
+                        if (!haps_final[comb.first].mask[site] || 
+                            !haps_final[comb.second].mask[site]){
+                            covered_idx1 = false;
                         }
-                        if (haps_final[comb.second][site]){
-                            nmin1++;
+                        else{
+                            ntot1 = 2;
+                            if (haps_final[comb.first].vars[site]){
+                                nmin1++;
+                            }
+                            if (haps_final[comb.second].vars[site]){
+                                nmin1++;
+                            }
                         }
                     }
                     else{
-                        if (haps_final[idx1][site]){
+                        if (!haps_final[idx1].mask[site]){
+                            covered_idx1 = false;
+                        }
+                        else if (haps_final[idx1].vars[site]){
                             nmin1++;
                         }
                     }
+                    if (!covered_idx1){
+                        continue;
+                    }
                     for (int j = i + 1; j < all_model_idx.size(); ++j){
                         int idx2 = all_model_idx[j];
+                        bool covered_idx2 = true;
                         int nmin2 = 0;
                         int ntot2 = 1;
                         if (idx2 >= haps_final.size()){
                             pair<int, int> comb = idx_to_hap_comb(idx2, haps_final.size());
-                            ntot2 = 2;
-                            if (haps_final[comb.first][site]){
-                                nmin2++;
+                            if (!haps_final[comb.first].mask[site] ||
+                                !haps_final[comb.second].mask[site]){
+                                covered_idx2 = false;
                             }
-                            if (haps_final[comb.second][site]){
-                                nmin2++;
+                            else{
+                                ntot2 = 2;
+                                if (haps_final[comb.first].vars[site]){
+                                    nmin2++;
+                                }
+                                if (haps_final[comb.second].vars[site]){
+                                    nmin2++;
+                                }
                             }
                         }
                         else{
-                            if (haps_final[idx2][site]){
+                            if (!haps_final[idx2].mask[site]){
+                                covered_idx2 = false;
+                            }
+                            else if (haps_final[idx2].vars[site]){
                                 nmin2++;
                             }
                         }
                         
+                        if (!covered_idx2){
+                            continue;
+                        }
                         double exp_frac1 = (double)nmin1/(double)ntot1;
                         double exp_frac2 = (double)nmin2/(double)ntot2;
 
                         if (exp_frac1 != exp_frac2){
                             
                             if (exp_frac1 == 0){
-                                exp_frac1 = 0.001;
+                                exp_frac1 = zero;
                             }
                             else if (exp_frac1 == 1){
-                                exp_frac1 = 0.999;
+                                exp_frac1 = one;
                             }
                             if (exp_frac2 == 0){
-                                exp_frac2 = 0.001;
+                                exp_frac2 = zero;
                             }
                             else if (exp_frac2 == 1){
-                                exp_frac2 = 0.999;
+                                exp_frac2 = one;
                             }
 
                             double ll1 = dbinom(count1+count2, count2, exp_frac1);
@@ -1224,11 +1285,12 @@ pair<int, float> infer_clusters(hapstr& mask_global,
     map<int, set<int> >& collapsed_to_orig,
     map<int, robin_hood::unordered_set<unsigned long> >& clades,
     map<int, robin_hood::unordered_set<unsigned long> >& clades_not,
-    vector<hapstr>& haps_final,
+    vector<hap>& haps_final,
     bool exact_matches_only,
     int nclust_max,
     robin_hood::unordered_set<unsigned long>& cellset,
-    robin_hood::unordered_map<unsigned long, var_counts>& hap_counter){
+    robin_hood::unordered_map<unsigned long, var_counts>& hap_counter,
+    double one){
     
     hapstr mask;
 
@@ -1242,9 +1304,9 @@ pair<int, float> infer_clusters(hapstr& mask_global,
 
     int nsites_included = 0;
     vector<int> sites_order;
-    vector<vector<hapstr> > haps_final_order;
+    vector<vector<hap> > haps_final_order;
     vector<hapstr> mask_order;
-    vector<hapstr> haps_final_prev;
+    vector<hap> haps_final_prev;
     
     int nclust_prev = -1;
 
@@ -1460,7 +1522,11 @@ pair<int, float> infer_clusters(hapstr& mask_global,
             sort(sizepairs.begin(), sizepairs.end());
             
             for (int i = sizepairs.size()-1; i >= sizepairs.size()-nclust; --i){
-                haps_final.push_back(hapsites[sizepairs[i].second]);
+                hap h;
+                h.mask = mask;
+                h.vars = hapsites[sizepairs[i].second];
+                haps_final.push_back(h);
+                //haps_final.push_back(hapsites[sizepairs[i].second]);
                 /*
                 fprintf(stderr, "\tsize %d [ ", sizepairs[i].first);
                 for (int x = 0; x < nvars; ++x){
@@ -1480,7 +1546,8 @@ pair<int, float> infer_clusters(hapstr& mask_global,
             }         
             else{
                 for (int i = 0; i < haps_final.size(); ++i){
-                    if (haps_final_prev[i] != haps_final[i]){
+                    if (haps_final_prev[i].mask != haps_final[i].mask ||
+                        haps_final_prev[i].vars != haps_final[i].vars){
                         hf_changed = true;
                         break;
                     }
@@ -1538,11 +1605,24 @@ pair<int, float> infer_clusters(hapstr& mask_global,
     robin_hood::unordered_map<unsigned long, int> assn;
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     double llrsum = 0.0;
-    assign_bcs(hap_counter, assn, assn_llr, haps_final, mask, nvars, 0.0, true, cellset);
+    assign_bcs(hap_counter, assn, assn_llr, haps_final, mask, nvars, 0.0, true, cellset, one);
+    //map<int, int> grpsizes;
     for (robin_hood::unordered_map<unsigned long, double>::iterator al = assn_llr.begin();
         al != assn_llr.end(); ++al){
         llrsum += al->second;
+        //if (grpsizes.count(assn[al->first]) == 0){
+        //    grpsizes.insert(make_pair(assn[al->first], 0));
+        //}
+        //grpsizes[assn[al->first]]++;
     }
+    /*
+    vector<int> sizevec;
+    for (map<int, int>::iterator gs = grpsizes.begin(); gs != grpsizes.end(); ++gs){
+        sizevec.push_back(gs->second);
+    }
+    int nclust_from_assn = choose_nclust(sizevec);
+    fprintf(stderr, "size from assn: %d\n", nclust_from_assn);
+    */
     double llrsum_orig = llrsum;
 
     int n_rm = 0; 
@@ -1561,11 +1641,25 @@ pair<int, float> infer_clusters(hapstr& mask_global,
                 assn_llr.clear();
                 double llrsum_new = 0;
                 assign_bcs(hap_counter, assn, assn_llr, haps_final_order[site_idx],
-                    mask_order[site_idx], nvars, 0.0, true, cellset);
+                    mask_order[site_idx], nvars, 0.0, true, cellset, one);
+                //grpsizes.clear();
+                //sizevec.clear();
                 for (robin_hood::unordered_map<unsigned long, double>::iterator al = 
                     assn_llr.begin(); al != assn_llr.end(); ++al){
                     llrsum_new += al->second;
+                    //if (grpsizes.count(assn[al->first]) == 0){
+                    //    grpsizes.insert(make_pair(assn[al->first], 0));
+                    //}
+                    //grpsizes[assn[al->first]]++;
                 }
+                /*
+                for (map<int, int>::iterator gs = grpsizes.begin(); gs != grpsizes.end();
+                    ++gs){
+                    sizevec.push_back(gs->second);
+                }
+                nclust_from_assn = choose_nclust(sizevec);
+                fprintf(stderr, "nclust from assn: %d\n", nclust_from_assn);
+                */
                 if (llrsum_new < llrsum){
                     // Finished
                     haps_final = haps_final_order[site_idx+1];
@@ -1670,17 +1764,22 @@ void write_bchaps(string& haps_out,
 
 void write_clusthaps(string& clusthapsfile,
     hapstr& mask_global,
-    vector<hapstr>& clusthaps){
+    vector<hap>& clusthaps){
     
     FILE* clusthaps_f = fopen(clusthapsfile.c_str(), "w");
     for (int i = 0; i < clusthaps.size(); ++i){
         for (int x = 0; x < nvars; ++x){
             if (mask_global[x]){
-                if (clusthaps[i].test(x)){
-                    fprintf(clusthaps_f, "1");
+                if (clusthaps[i].mask.test(i)){
+                    if (clusthaps[i].vars.test(x)){
+                        fprintf(clusthaps_f, "1");
+                    }
+                    else{
+                        fprintf(clusthaps_f, "0");
+                    }
                 }
                 else{
-                    fprintf(clusthaps_f, "0");
+                    fprintf(clusthaps_f, "-");
                 }
             }
         }
@@ -1691,7 +1790,7 @@ void write_clusthaps(string& clusthapsfile,
 
 void load_clusthaps(string& hapsfilename,
     hapstr& mask_global,
-    vector<hapstr>& clusthaps){
+    vector<hap>& clusthaps){
 
     ifstream infile(hapsfilename.c_str());
     string hapstring;
@@ -1704,12 +1803,14 @@ void load_clusthaps(string& hapsfilename,
                 mask_global.set(i);
             }
         }
-        hapstr h;
+        hap h;
         for (int i = 0; i < nvars; ++i){
             if (hapstring[i] == '0'){
+                h.mask.set(i);
             }
             else if (hapstring[i] == '1'){
-                h.set(i);
+                h.mask.set(i);
+                h.vars.set(i);
             }
         }
         clusthaps.push_back(h);
@@ -1967,6 +2068,9 @@ int main(int argc, char *argv[]) {
             has_bc_filter_assn = true;
         }
     }
+    
+    // How should we represent zero/one probability in binomial dist?
+    double one = 0.999;
 
     // Get an ordered list of variable sites on the mitochondrial sequence
     deque<varsite> vars;
@@ -2056,7 +2160,7 @@ int main(int argc, char *argv[]) {
     process_var_counts(hap_counter, haplotypes, varsfile_given,
         hapsfile_given || dump, mask_global, nvars, has_bc_whitelist, site_minor,
         site_major, site_mask, orig_to_collapsed, collapsed_to_orig,
-        clsort);  
+        clsort, one);  
    
     
     // Define output file for cell haplotypes 
@@ -2067,7 +2171,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Store haplotypes of clusters (whether inferred or loaded)
-    vector<hapstr> clusthaps;
+    vector<hap> clusthaps;
     
     FILE* statsfilef = NULL;
     
@@ -2085,7 +2189,7 @@ int main(int argc, char *argv[]) {
         pair<int, float> results = infer_clusters(mask_global,
             haplotypes, nvars, clsort, collapsed_to_orig,
             site_minor, site_major, clusthaps, exact_matches_only,
-            nclust, site_mask[clsort[0].second], hap_counter);
+            nclust, site_mask[clsort[0].second], hap_counter, one);
 
         nclust_model = results.first;
         llrsum_model = results.second;
@@ -2125,7 +2229,7 @@ int main(int argc, char *argv[]) {
         }
     }
     assign_bcs(hap_counter, assignments, assignments_llr, clusthaps,
-        mask_global, nvars, doublet_rate, has_bc_filter_assn, cell_filter);
+        mask_global, nvars, doublet_rate, has_bc_filter_assn, cell_filter, one);
     
     map<string, int> id_counter;
     int tot_cells = 0;
