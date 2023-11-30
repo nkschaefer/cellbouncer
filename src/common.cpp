@@ -12,6 +12,7 @@
 #include <set>
 #include <cstdlib>
 #include <utility>
+#include <htswrapper/bc_hash.h>
 /**
  * Contains functions used by more than one program in this
  * repository.
@@ -26,21 +27,24 @@ using namespace std;
  * to individual IDs.
  */
 void parse_barcode_map(string& fn, 
-    map<string, string>& bc2hap,
+    map<unsigned long, string>& bc2hap,
     set<string>& barcode_groups,
     double llr_cutoff,
     bool keep_doublets){
 
     ifstream infile(fn.c_str());
     
-    string bc;
+    string bc_str;
     string hap_str;
     char singdoub;
     double llr;
 
-    while (infile >> bc >> hap_str >> singdoub >> llr){
+    while (infile >> bc_str >> hap_str >> singdoub >> llr){
         if ((keep_doublets || singdoub == 'S') && llr >= llr_cutoff){
-            bc2hap.insert(make_pair(bc, hap_str));
+            // Trim any trailing stuff off of the barcode, so it can
+            // be interpreted as a bitset
+            unsigned long bc_hashed = hash_bc(bc_str); 
+            bc2hap.insert(make_pair(bc_hashed, hap_str));
             barcode_groups.insert(hap_str);
         }
     }

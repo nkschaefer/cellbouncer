@@ -129,7 +129,7 @@ file (-a) required\n");
         }
     }
     
-    map<string, string> barcode_map;
+    map<unsigned long, string> barcode_map;
     set<string> barcode_groups;
     parse_barcode_map(assignment_file, barcode_map, barcode_groups, 
         llr_thresh, keep_doublets);
@@ -158,8 +158,11 @@ file (-a) required\n");
     while(reader.next()){
         // Skip records for which there is no barcode -> individual assignment
         if (reader.has_cb_z){
-            if (barcode_map.count(reader.cb_z) > 0){
-                reader.add_read_group_read(barcode_map[reader.cb_z]);
+            bc as_bitset;
+            str2bc(reader.cb_z, as_bitset, 16);
+            unsigned long as_ulong = as_bitset.to_ulong();
+            if (barcode_map.count(as_ulong) > 0){
+                reader.add_read_group_read(barcode_map[as_ulong]);
                 reader.write_record(outf);
             }
         }

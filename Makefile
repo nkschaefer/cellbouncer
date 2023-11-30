@@ -20,15 +20,15 @@ demux/demux_mt: src/demux_mt.cpp src/robin_hood.h src/common.h build/common.o $(
 	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o -lz -lhts lib/libmixturedist.a lib/libhtswrapper.a
 
 utils/bam_indiv_rg: src/bam_indiv_rg.cpp build/common.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_indiv_rg.cpp -o utils/bam_indiv_rg build/common.o -lhts -lhtswrapper
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_indiv_rg.cpp -o utils/bam_indiv_rg build/common.o -lz -lhts lib/libhtswrapper.a
 
 utils/bam_split_bcs: src/bam_split_bcs.cpp build/common.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_split_bcs.cpp -o utils/bam_split_bcs build/common.o -lhts -lhtswrapper
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_split_bcs.cpp -o utils/bam_split_bcs build/common.o -lz -lhts lib/libhtswrapper.a
 
 build/nnls.o: src/nnls.c src/nnls.h
 	$(CCOMP) $(CFLAGS) -c src/nnls.c -o build/nnls.o
 
-build/common.o: src/common.cpp src/common.h
+build/common.o: src/common.cpp src/common.h lib/libhtswrapper.a
 	$(COMP) $(IFLAGS) $(FLAGS) src/common.cpp -c -o build/common.o
 
 lib/libhtswrapper.a: dependencies/htswrapper/lib/libhtswrapper.a

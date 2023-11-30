@@ -19,6 +19,7 @@
 #include <htslib/sam.h>
 #include <zlib.h>
 #include <htswrapper/bam.h>
+#include <htswrapper/bc_hash.h>
 #include "common.h"
 
 using std::cout;
@@ -124,7 +125,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
     
-    map<string, string> barcode_map;
+    map<unsigned long, string> barcode_map;
     set<string> barcode_groups;
     parse_barcode_map(assignment_file, barcode_map, barcode_groups, llr_thresh, keep_doublets);
     
@@ -161,8 +162,11 @@ int main(int argc, char *argv[]) {
     
     while(reader.next()){
         if (reader.has_cb_z){
-            if (barcode_map.count(reader.cb_z) > 0){
-                string indv = barcode_map[reader.cb_z];
+            bc as_bitset;
+            str2bc(reader.cb_z, as_bitset, 16);
+            unsigned long as_ulong = as_bitset.to_ulong();
+            if (barcode_map.count(as_ulong) > 0){
+                string indv = barcode_map[as_ulong];
                 // Add sample-specific read group
                 reader.add_read_group_read(indv);
                 // Write to specific output file

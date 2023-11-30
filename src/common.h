@@ -14,6 +14,7 @@
 #include <set>
 #include <cstdlib>
 #include <utility>
+#include <htswrapper/bc_hash.h>
 /**
  * Contains functions used by more than one program in this
  * repository.
@@ -24,7 +25,7 @@ using std::endl;
 using namespace std;
 
 void parse_barcode_map(std::string& fn, 
-    std::map<std::string, std::string>& bc2hap,
+    std::map<unsigned long, std::string>& bc2hap,
     std::set<std::string>& barcode_groups,
     double llr_cutoff,
     bool keep_doublets);
