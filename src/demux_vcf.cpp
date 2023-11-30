@@ -1878,7 +1878,7 @@ all possible individuals\n", idfile.c_str());
                         neg_drops, negdrop_cell);
                     ++cursnp2;
                 }
-                if ((nsnp_processed - last_print) % progress == 0){
+                if (nsnp_processed % progress == 0 && nsnp_processed > last_print){
                     fprintf(stderr, "Processed %d of %d SNPs\r", nsnp_processed, nsnps); 
                     last_print = nsnp_processed;
                 }
@@ -1908,7 +1908,7 @@ all possible individuals\n", idfile.c_str());
                     
                     ++nsnp_processed;        
                 
-                    if ((nsnp_processed - last_print) % progress == 0){
+                    if (nsnp_processed % progress == 0 && nsnp_processed > last_print){
                         fprintf(stderr, "Processed %d of %d SNPs\r", nsnp_processed, 
                             nsnps); 
                         last_print = nsnp_processed;
