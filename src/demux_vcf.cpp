@@ -103,6 +103,78 @@ bool nn_lstsq(vector<vector<double> >& a,
     delete[] index;
     return true;
 }
+
+
+bool weighted_nn_lstsq(vector<vector<double> >& a,
+    vector<double>& b,
+    vector<double>& weights,
+    vector<double>& result_coefficients){
+    
+    int M = a.size(); // rows of A
+    int N = a[0].size(); // cols of A
+    int NRHS = 1; // cols of X
+    int MDA = M; // min(1, M)
+    int LDB = max(N,M); // rows of Y
+    
+    // Store results
+    double* x = new double[N];
+    
+    // Allocate workspace variables    
+    double* work = new double[N];
+    double* zz = new double[M];
+    int* index = new int[2*N];
+    if (M != b.size()){
+        fprintf(stderr, "dimensions do not match\n");
+        exit(1);
+    }
+    
+    // Populate A matrix
+    // NOTE: entries are in order of columns, then rows
+    double* a_lapack = new double[M*N];
+    int k = 0;
+    for (int j = 0; j < N; ++j){
+        for (int i = 0; i < M; ++i){
+            // Here's where the weights come in: multiply A entry
+            // by sqrt of corresponding row of weight vector
+            a_lapack[i+j*M] = a[i][j] * sqrt(weights[i]);
+        }
+    }
+    // Populate B (y) matrix
+    double* b_lapack = new double[LDB*NRHS];
+    for (int i = 0; i < b.size(); ++i){
+        // Incorporate weight into B vector
+        b_lapack[i] = b[i] * sqrt(weights[i]);
+    }
+    int mode;
+    double residual;
+    int ret = nnls_c(a_lapack, &MDA, &M, &N, b_lapack, x, &residual,
+        work, zz, index, &mode);
+    if (mode == 3){
+        fprintf(stderr, "Did not converge\n");
+        return false;
+    }
+    else if (mode == 2){
+        fprintf(stderr, "bad dimensions\n");
+        exit(1);
+    }
+    if (result_coefficients.size() < a[0].size()){
+        result_coefficients.clear();
+        for (int i = 0; i < a[0].size(); ++i){
+            result_coefficients.push_back(0.0);
+        }
+    }
+    for (int i = 0; i < a[0].size(); ++i){
+        result_coefficients[i] = x[i];
+    }
+    delete[] a_lapack;
+    delete[] b_lapack; 
+    delete[] x;
+    delete[] work;
+    delete[] zz;
+    delete[] index;
+    return true;
+}
+
 // ===== VCF-related functions =====
 
 /**
@@ -1064,7 +1136,9 @@ void populate_llr_table(map<pair<int, int>,
     map<int, map<int, double> >& llrs,
     vector<string>& samples,
     set<int>& allowed_assignments,
-    double doublet_rate){
+    double doublet_rate,
+    double error_rate_ref,
+    double error_rate_alt){
     
     for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = 
         counts.begin(); y != counts.end(); ++y){
@@ -1080,12 +1154,12 @@ void populate_llr_table(map<pair<int, int>,
         // 0 = homozygous ref (~0% alt allele)
         // 1 = heterozygous (~50% alt allele)
         // 2 = homozygous alt (~100% alt allele)
-        float exp1 = 0.001;
+        float exp1 = error_rate_ref;
         if (y->first.second == 1){
             exp1 = 0.5;
         }
         else if (y->first.second == 2){
-            exp1 = 0.999;
+            exp1 = 1.0-error_rate_alt;
         }
 
         for (map<pair<int, int>, pair<float, float> >::iterator z = 
@@ -1103,12 +1177,12 @@ void populate_llr_table(map<pair<int, int>,
             if (z->first.first != -1 && y->first.second != z->first.second){
                 
                 // Set default expectation for indv2
-                float exp2 = 0.001;
+                float exp2 = error_rate_ref;
                 if (z->first.second == 1){
                     exp2 = 0.5;
                 }
                 else if (z->first.second == 2){
-                    exp2 = 0.999;
+                    exp2 = 1.0-error_rate_alt;
                 }
                 
                 float exp3 = 0.5*exp1 + 0.5*exp2;
@@ -1262,7 +1336,9 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
     set<int>& allowed_assignments,
     bool negdrops,
     unsigned long negdrop_cell,
-    double doublet_rate){
+    double doublet_rate,
+    double error_rate_ref,
+    double error_rate_alt){
     
     // Left in for debugging purposes only: if print_llrs is true,
     // the user will be prompted for a cell barcode of interest.
@@ -1303,7 +1379,8 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
         // Get a table of log likelihood ratios between every possible
         // pair of identities
         map<int, map<int, double> > llrs;
-        populate_llr_table(x->second, llrs, samples, allowed_assignments, doublet_rate);
+        populate_llr_table(x->second, llrs, samples, allowed_assignments, doublet_rate,
+            error_rate_ref, error_rate_alt);
 
         // Debugging only: print this table and quit
         if (print_llrs){
@@ -1345,17 +1422,262 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
 }
 
 /**
+ * After assigning all cells to identities, use the assignments
+ * (weighted by log likelihood ratio of best assignment)
+ * to re-infer error rates (rate of reading ref alleles as
+ * alt, and rate of reading alt alleles as ref).
+ *
+ * Then we will re-assign identities using the newly-calculated
+ * error rates.
+ */
+pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, map<pair<int, int>, 
+    map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
+    int n_samples,
+    robin_hood::unordered_map<unsigned long, int>& assn,
+    robin_hood::unordered_map<unsigned long, double>& assn_llr){
+    
+    // First, figure out how to weight everything.
+    double llrmax = 0.0;
+    for (robin_hood::unordered_map<unsigned long, double>::iterator al = assn_llr.begin(); al != 
+        assn_llr.end(); ++al){
+        if (al->second > llrmax){
+            llrmax = al->second;
+        }
+    }
+
+    double wsum = 0.0;
+    for (robin_hood::unordered_map<unsigned long, double>::iterator al = assn_llr.begin();
+        al != assn_llr.end(); ++al){
+        wsum += pow(2, al->second - llrmax);
+    }
+
+    vector<double> weights;
+    for (robin_hood::unordered_map<unsigned long, double>::iterator al = assn_llr.begin();
+        al != assn_llr.end(); ++al){
+        double weight = pow(2, al->second - llrmax - wsum);
+        weights.push_back(weight);
+    }
+    
+    // We will likely lose some contributions of some cells. Keep track of
+    // total sum of weights used; will divide by this to account for dropped
+    // cells
+    double weightsum_kept = 0;
+
+    long int idx = 0;
+
+    // Error rate of misreading ref as alt
+    double err_rate_ref_sum = 0.0;
+    // Error rate of misreading alt as ref
+    double err_rate_alt_sum = 0.0;
+
+    for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin();
+        a != assn.end(); ++a){
+        double weight = weights[idx];
+        
+        // Store estimates of error rate
+        vector<double> e_est_ref;
+        vector<double> e_est_alt;
+        // Store numbers of reads used to calculate each estimate of error rate
+        vector<double> e_est_reads_ref;
+        vector<double> e_est_reads_alt;
+        // Store total number of reads in all calculations
+        double e_est_reads_ref_tot = 0;
+        double e_est_reads_alt_tot = 0;
+
+        unsigned long cell = a->first;
+        int assn = a->second;
+        
+        // First coefficient = ref error rate
+        // second coefficient = alt error rate
+        vector<vector<double> > A;
+        vector<double> b;
+        vector<double> weights_cell;
+        double weightsum_cell = 0;
+
+        if (a->second >= n_samples){
+            // Doublet
+            pair<int, int> combo = idx_to_hap_comb(assn, n_samples);
+            // Complicated
+            pair<int, int> key0_1 = make_pair(combo.first, 0);
+            pair<int, int> key0_2 = make_pair(combo.second, 0);
+            if (indv_allelecounts[a->first].count(key0_1) > 0 && 
+                indv_allelecounts[a->first][key0_1].count(key0_2) > 0){
+                double ref = indv_allelecounts[a->first][key0_1][key0_2].first;
+                double alt = indv_allelecounts[a->first][key0_1][key0_2].second;
+                if (ref + alt > 0){
+                    A.push_back(vector<double>{ 1.0, 0.0 });
+                    b.push_back(alt/(ref+alt));
+                    weights_cell.push_back(ref+alt);
+                    weightsum_cell += ref+alt;
+                }
+            } 
+            pair<int, int> key2_1 = make_pair(combo.first, 2);
+            pair<int, int> key2_2 = make_pair(combo.second, 2);
+            if (indv_allelecounts[a->first].count(key2_1) > 0 &&
+                indv_allelecounts[a->first][key2_1].count(key2_2) > 0){
+                double ref = indv_allelecounts[a->first][key2_1][key2_2].first;
+                double alt = indv_allelecounts[a->first][key2_1][key2_2].second;
+                if (ref + alt > 0){
+                    A.push_back(vector<double>{ 0.0, 1.0 });
+                    b.push_back(ref/(ref+alt));
+                    weights_cell.push_back(ref+alt);
+                    weightsum_cell += ref+alt;
+                }
+            }
+            pair<int, int> key11_1 = make_pair(combo.first, 1);
+            pair<int, int> key11_2 = make_pair(combo.second, 1);
+            if (indv_allelecounts[a->first].count(key11_1) > 0 &&
+                indv_allelecounts[a->first][key11_1].count(key11_2) > 0){
+                double ref = indv_allelecounts[a->first][key11_1][key11_2].first;
+                double alt = indv_allelecounts[a->first][key11_1][key11_2].second;
+                if (ref+alt > 0){
+                    A.push_back(vector<double>{ 1.0, -1.0 });
+                    b.push_back((2*alt)/(ref+alt) - 1);
+                    weights_cell.push_back(ref+alt);
+                    weightsum_cell += ref+alt;
+                }
+            }
+
+            pair<int, int> key01_1 = make_pair(combo.first, 0);
+            pair<int, int> key01_2 = make_pair(combo.second, 1);
+            if (indv_allelecounts[a->first].count(key01_1) > 0 && 
+                indv_allelecounts[a->first][key01_1].count(key01_2) > 0){
+                double ref = indv_allelecounts[a->first][key01_1][key01_2].first;
+                double alt = indv_allelecounts[a->first][key01_1][key01_2].second;
+                if (ref + alt > 0){
+                    A.push_back(vector<double>{ 3.0, -1.0 });
+                    b.push_back((4*alt)/(ref+alt) - 1.0);
+                    weights_cell.push_back(ref+alt);
+                    weightsum_cell += ref+alt;
+                }
+            }
+            pair<int, int> key10_1 = make_pair(combo.first, 1);
+            pair<int, int> key10_2 = make_pair(combo.second, 0);
+            if (indv_allelecounts[a->first].count(key10_1) > 0 && 
+                indv_allelecounts[a->first][key10_1].count(key10_2) > 0){
+                double ref = indv_allelecounts[a->first][key10_1][key10_2].first;
+                double alt = indv_allelecounts[a->first][key10_1][key10_2].second;
+                if (ref + alt > 0){
+                    A.push_back(vector<double>{ 3.0, -1.0 });
+                    b.push_back((4*alt)/(ref+alt) - 1.0);
+                    weights_cell.push_back(ref+alt);
+                    weightsum_cell += ref+alt;
+                }
+            }
+            pair<int, int> key12_1 = make_pair(combo.first, 1);
+            pair<int, int> key12_2 = make_pair(combo.second, 2);
+            if (indv_allelecounts[a->first].count(key12_1) > 0 && 
+                indv_allelecounts[a->first][key12_1].count(key12_2) > 0){
+                double ref = indv_allelecounts[a->first][key12_1][key12_2].first;
+                double alt = indv_allelecounts[a->first][key12_1][key12_2].second;
+                if (ref + alt > 0){
+                    A.push_back(vector<double>{ -1.0, 3.0 });
+                    b.push_back((4*ref)/(ref+alt) - 1.0);
+                    weights_cell.push_back(ref+alt);
+                    weightsum_cell += ref+alt;
+                }
+            }
+            pair<int, int> key21_1 = make_pair(combo.first, 2);
+            pair<int, int> key21_2 = make_pair(combo.second, 1);
+            if (indv_allelecounts[a->first].count(key21_1) > 0 && 
+                indv_allelecounts[a->first][key21_1].count(key21_2) > 0){
+                double ref = indv_allelecounts[a->first][key21_1][key21_2].first;
+                double alt = indv_allelecounts[a->first][key21_1][key21_2].second;
+                if (ref + alt > 0){
+                    A.push_back(vector<double>{ -1.0, 3.0 });
+                    b.push_back((4*ref)/(ref+alt) - 1.0);
+                    weights_cell.push_back(ref+alt);
+                    weightsum_cell += ref+alt;
+                }
+            }
+        }
+        else{
+            // Singlet
+            // Only consider hom ref and hom alt (error does not affect het)
+            pair<int, int> key0 = make_pair(assn, 0);
+            pair<int, int> key1 = make_pair(assn, 1);
+            pair<int, int> key2 = make_pair(assn, 2);
+            pair<int, int> nullkey = make_pair(-1,-1);
+            if (indv_allelecounts[cell].count(key0) > 0 && 
+                indv_allelecounts[cell][key0].count(nullkey) > 0){
+                double ref = indv_allelecounts[cell][key0][nullkey].first;
+                double alt = indv_allelecounts[cell][key0][nullkey].second;
+                if (ref + alt > 0){
+
+                    A.push_back(vector<double>{ 1.0, 0.0 });
+                    b.push_back(alt/(ref+alt));
+                    weights_cell.push_back(ref+alt);
+                    weightsum_cell += ref+alt;
+                
+                }
+            }
+            if (indv_allelecounts[cell].count(key1) > 0 &&
+                indv_allelecounts[cell][key1].count(nullkey) > 0){
+                double ref = indv_allelecounts[cell][key1][nullkey].first;
+                double alt = indv_allelecounts[cell][key1][nullkey].second;
+                if (ref + alt > 0){
+                    
+                    A.push_back(vector<double>{ 1.0, -1.0 });
+                    b.push_back( (2*alt)/(ref+alt) - 1 );
+                    weights_cell.push_back(ref+alt);
+                    weightsum_cell += ref+alt;
+                }
+            }
+            if (indv_allelecounts[cell].count(key2) > 0 &&
+                indv_allelecounts[cell][key2].count(nullkey) > 0){
+                double ref = indv_allelecounts[cell][key2][nullkey].first;
+                double alt = indv_allelecounts[cell][key2][nullkey].second;
+                if (ref+alt > 0){
+                    
+                    A.push_back(vector<double>{ 0.0, 1.0 });
+                    b.push_back(ref/(ref+alt));
+                    weights_cell.push_back(ref+alt);
+                    weightsum_cell += ref+alt;
+                
+                }
+            }
+        }
+        /*
+        for (int i = 0; i < weights_cell.size(); ++i){
+            weights_cell[i] /= weightsum_cell;
+        } 
+        */   
+
+        vector<double> results;
+        bool success = weighted_nn_lstsq(A, b, weights_cell, results);
+        if (success && results[0] < 1.0 && results[1] < 1.0){
+            // Allow this cell to contribute to the total.
+            err_rate_ref_sum += results[0] * weight;
+            err_rate_alt_sum += results[1] * weight;
+            weightsum_kept += weight; // keep track, will need to re-scale
+        }  
+
+        ++idx;
+    }
+    
+    err_rate_ref_sum /= weightsum_kept;
+    err_rate_alt_sum /= weightsum_kept;
+
+    fprintf(stderr, "Inferred error rates = %f %f\n", err_rate_ref_sum, err_rate_alt_sum);
+    return make_pair(err_rate_ref_sum, err_rate_alt_sum);
+}
+
+/**
  * Spill cell -> individual assignments to disk
  */
 void dump_assignments(FILE* outf,
     robin_hood::unordered_map<unsigned long, int>& assn_final,
     robin_hood::unordered_map<unsigned long, double>& assn_final_llr,
-    vector<string>& samples){
+    vector<string>& samples,
+    string& barcode_group){
 
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn_final.begin();
         a != assn_final.end(); ++a){
         bc as_bitset(a->first);
         string bc_str = bc2str(as_bitset, 16);
+        if (barcode_group != ""){
+            bc_str += "-" + barcode_group;
+        }
         string assn = idx2name(a->second, samples);
         double llr = assn_final_llr[a->first];
         char s_d = 'S';
@@ -1575,6 +1897,15 @@ void help(int code){
     fprintf(stderr, "       of two individuals rather than a single individual. \n");
     fprintf(stderr, "       default = 0.5 (set to 0 to disable checking for doublet \n");
     fprintf(stderr, "       combinations and to 1 to disable checking for single indvs\n");
+    fprintf(stderr, "    --barcode_group -g If you plan to combine cells from multiple runs\n");
+    fprintf(stderr, "       together, and there might be cell barcode collisions (i.e. the \n");
+    fprintf(stderr, "       same cell barcode could appear twice in the data set but represent\n");
+    fprintf(stderr, "       distinct cells, specify a unique string here to append to every\n");
+    fprintf(stderr, "       cell barcode in the data set. This is analysis to the batch names\n");
+    fprintf(stderr, "       passed to anndata.concatenate in scanpy -- it will be appended to\n");
+    fprintf(stderr, "       cell barcodes in the output assignment file, separated by a dash (-).\n");
+    fprintf(stderr, "       If you specify the same groups here as in scanpy, it will make it easy\n");
+    fprintf(stderr, "       to integrate assignments with the other data.\n"); 
     fprintf(stderr, "    --ids -i If the VCF file contains individuals that you do not \n");
     fprintf(stderr, "       expect to see in your sample, or if you expect to see some \n");
     fprintf(stderr, "       but not other combinations of two individuals that are \n");
@@ -1590,9 +1921,9 @@ void help(int code){
     fprintf(stderr, "       have relatively few SNPs, and much slower if you have a lot \n");
     fprintf(stderr, "       of SNPs.\n");
     fprintf(stderr, "    --dump_counts -D After loading variants and counting reads at \n");
-    fprintf(stderr, "       variant sites, print write these counts to \n");
-    fprintf(stderr, "       [output_prefix].counts and exit. They can then be loaded with \n");
-    fprintf(stderr, "        -L on a subsequent run.\n");
+    fprintf(stderr, "       variant sites, write these counts to [output_prefix].counts\n");
+    fprintf(stderr, "       before making assignments. These counts can then be loaded with \n");
+    fprintf(stderr, "       -L on a subsequent run to significantly speed up identification.\n");
     fprintf(stderr, "    --load_counts -L If a previous run was done with -d, load counts \n");
     fprintf(stderr, "       from that file and skip reading through the BAM file (output \n");
     fprintf(stderr, "       prefix must match).\n");
@@ -1612,6 +1943,7 @@ int main(int argc, char *argv[]) {
        {"load_counts", no_argument, 0, 'L'},
        {"ids", required_argument, 0, 'i'},
        {"qual", required_argument, 0, 'q'},
+       {"barcode_group", required_argument, 0, 'g'},
        {0, 0, 0, 0} 
     };
     
@@ -1632,6 +1964,7 @@ int main(int argc, char *argv[]) {
     string idfile;
     bool idfile_given = false;
     double doublet_rate = 0.5;
+    string barcode_group = "";
 
     int option_index = 0;
     int ch;
@@ -1639,7 +1972,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:o:c:i:q:d:IDLh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:v:o:c:i:q:d:g:IDLh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -1655,6 +1988,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'o':
                 output_prefix = optarg;
+                break;
+            case 'g':
+                barcode_group = optarg;
                 break;
             case 'c':
                 cell_barcode = true;
@@ -1920,7 +2256,6 @@ all possible individuals\n", idfile.c_str());
         
         if (dump_counts){
             // Write the data just compiled to disk.
-
             string fname = output_prefix + ".counts";
             FILE* outf = fopen(fname.c_str(), "w");   
             fprintf(stderr, "Writing allele counts to disk...\n");
@@ -1931,22 +2266,43 @@ all possible individuals\n", idfile.c_str());
     }
         
     // Map cell barcodes to numeric IDs of best individual assignments 
-    robin_hood::unordered_map<unsigned long, int> assn_final;
+    robin_hood::unordered_map<unsigned long, int> assn;
 
     // Map cell barcodes to log likelihood ratio of best individual assignments
-    robin_hood::unordered_map<unsigned long, double> assn_final_llr;
+    robin_hood::unordered_map<unsigned long, double> assn_llr;
     
     fprintf(stderr, "Finding likeliest identities of cells...\n");
-    // Get assignments of cell barcodes
-    assign_ids(indv_allelecounts, samples, assn_final, assn_final_llr, 
-        allowed_ids, neg_drops, negdrop_cell, doublet_rate);
     
+    // Get assignments of cell barcodes
+    
+    // On this first pass, assume that the error rate (the rate of sampling an alt
+    //  allele at a homozygous reference site or a ref allele at a homozygous alt site)
+    //  is 0.001
+    
+    assign_ids(indv_allelecounts, samples, assn, assn_llr, 
+        allowed_ids, neg_drops, negdrop_cell, doublet_rate, 0.001, 0.001);
+    
+    // Now, from these assignments, compute the likeliest error rate, weighting by
+    //  log likelihood ratio of assignment.
+    
+    fprintf(stderr, "Finding likeliest alt/ref switch error rates...\n"); 
+    pair<double, double> err_new = infer_error_rates(indv_allelecounts, samples.size(),
+        assn, assn_llr);
+    
+    // Re-assign individuals using this new error rate
+    robin_hood::unordered_map<unsigned long, int> assn_final;
+    robin_hood::unordered_map<unsigned long, double> assn_final_llr;
+    
+    fprintf(stderr, "Re-inferring identities of cells...\n");
+    assign_ids(indv_allelecounts, samples, assn_final, assn_final_llr,
+        allowed_ids, neg_drops, negdrop_cell, doublet_rate, err_new.first, err_new.second);
+
     // Write these best assignments to disk
     {
         string fname = output_prefix + ".assignments";
         FILE* outf = fopen(fname.c_str(), "w");
         fprintf(stderr, "Writing cell-individual assignments to disk...\n");
-        dump_assignments(outf, assn_final, assn_final_llr, samples);
+        dump_assignments(outf, assn_final, assn_final_llr, samples, barcode_group);
         fclose(outf);
     }
     
