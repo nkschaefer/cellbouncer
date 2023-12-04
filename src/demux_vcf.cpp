@@ -1212,8 +1212,27 @@ void populate_llr_table(map<pair<int, int>,
                     exp2 = 1.0-error_rate_alt;
                 }
                 
-                float exp3 = 0.5*exp1 + 0.5*exp2;
-               
+                float exp3;
+                if (y->first.second == 0 && z->first.second == 0){
+                    exp3 = error_rate_ref;
+                }
+                else if (y->first.second == 2 && z->first.second == 2){
+                    exp3 = 1.0 - error_rate_alt;
+                }
+                else if ((y->first.second == 1 && z->first.second == 1) ||
+                        (y->first.second == 0 && z->first.second == 2) ||
+                        (y->first.second == 2 && z->first.second == 0)){
+                    exp3 = 0.5*( 1.0 - error_rate_alt + error_rate_ref);
+                }
+                else if ((y->first.second == 0 && z->first.second == 1) ||
+                    (y->first.second == 1 && z->first.second == 0)){
+                    exp3 = 0.25*(1 - error_rate_alt + 3*error_rate_ref);
+                }
+                else if ((y->first.second == 1 && z->first.second == 2) ||
+                    (y->first.second == 2 && z->first.second == 1)){
+                    exp3 = 0.25*(3.0 - 3*error_rate_alt + error_rate_ref);
+                }
+
                 int i = y->first.first;
                 int j = z->first.first;
                 int k = hap_comb_to_idx(i, j, samples.size());
@@ -1465,7 +1484,8 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
     double& ref_mm_reads,
     double& ref_m_reads,
     double& alt_mm_reads,
-    double& alt_m_reads){
+    double& alt_m_reads,
+    vector<string>& samples){
     
     ref_mm_reads = 0;
     ref_m_reads = 0;
@@ -1517,119 +1537,117 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
         double weightsum_cell = 0;
 
         if (a->second >= n_samples){
+            
+            bc as_bitset(a->first);
+            string bc_str = bc2str(as_bitset, 16);
+            
+            string assn_str = idx2name(a->second, samples);
+
             // Doublet
             pair<int, int> combo = idx_to_hap_comb(assn, n_samples);
-            // Complicated
-            pair<int, int> key0_1 = make_pair(combo.first, 0);
-            pair<int, int> key0_2 = make_pair(combo.second, 0);
-            if (indv_allelecounts[a->first].count(key0_1) > 0 && 
-                indv_allelecounts[a->first][key0_1].count(key0_2) > 0){
-                double ref = indv_allelecounts[a->first][key0_1][key0_2].first;
-                double alt = indv_allelecounts[a->first][key0_1][key0_2].second;
-                if (ref + alt > 0){
-                    A.push_back(vector<double>{ 1.0, 0.0 });
-                    b.push_back(alt/(ref+alt));
-                    weights_cell.push_back(ref+alt);
-                    weightsum_cell += ref+alt;
+            
+            // Store each category of read counts
+            double ref_00 = 0;
+            double alt_00 = 0;
+            double ref_01 = 0;
+            double alt_01 = 0;
+            double ref_02 = 0;
+            double alt_02 = 0;
+            double ref_11 = 0;
+            double alt_11 = 0;
+            double ref_12 = 0;
+            double alt_12 = 0;
+            double ref_22 = 0;
+            double alt_22 = 0;
 
-                    match_ref_expected_this += ref + alt;
-                }
-            } 
-            pair<int, int> key2_1 = make_pair(combo.first, 2);
-            pair<int, int> key2_2 = make_pair(combo.second, 2);
-            if (indv_allelecounts[a->first].count(key2_1) > 0 &&
-                indv_allelecounts[a->first][key2_1].count(key2_2) > 0){
-                double ref = indv_allelecounts[a->first][key2_1][key2_2].first;
-                double alt = indv_allelecounts[a->first][key2_1][key2_2].second;
-                if (ref + alt > 0){
-                    A.push_back(vector<double>{ 0.0, 1.0 });
-                    b.push_back(ref/(ref+alt));
-                    weights_cell.push_back(ref+alt);
-                    weightsum_cell += ref+alt;
-
-                    match_alt_expected_this += ref + alt;
-                }
-            }
-            pair<int, int> key11_1 = make_pair(combo.first, 1);
-            pair<int, int> key11_2 = make_pair(combo.second, 1);
-            if (indv_allelecounts[a->first].count(key11_1) > 0 &&
-                indv_allelecounts[a->first][key11_1].count(key11_2) > 0){
-                double ref = indv_allelecounts[a->first][key11_1][key11_2].first;
-                double alt = indv_allelecounts[a->first][key11_1][key11_2].second;
-                if (ref+alt > 0){
-                    A.push_back(vector<double>{ 1.0, -1.0 });
-                    b.push_back((2*alt)/(ref+alt) - 1);
-                    weights_cell.push_back(ref+alt);
-                    weightsum_cell += ref+alt;
-
-                    match_ref_expected_this += 0.5*(ref+alt);
-                    match_alt_expected_this += 0.5*(ref+alt);
-                }
-            }
-
-            pair<int, int> key01_1 = make_pair(combo.first, 0);
-            pair<int, int> key01_2 = make_pair(combo.second, 1);
-            if (indv_allelecounts[a->first].count(key01_1) > 0 && 
-                indv_allelecounts[a->first][key01_1].count(key01_2) > 0){
-                double ref = indv_allelecounts[a->first][key01_1][key01_2].first;
-                double alt = indv_allelecounts[a->first][key01_1][key01_2].second;
-                if (ref + alt > 0){
-                    A.push_back(vector<double>{ 3.0, -1.0 });
-                    b.push_back((4*alt)/(ref+alt) - 1.0);
-                    weights_cell.push_back(ref+alt);
-                    weightsum_cell += ref+alt;
-
-                    match_ref_expected_this += 0.75*(ref+alt);
-                    match_alt_expected_this += 0.25*(ref+alt);
+            for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = 
+                indv_allelecounts[a->first].begin(); y != indv_allelecounts[a->first].end(); 
+                ++y){
+                for (map<pair<int, int>, pair<float, float> >::iterator z = y->second.begin();
+                    z != y->second.end(); ++z){
+                    if (y->first.first == combo.first && z->first.first == combo.second){
+                        int type1 = y->first.second;
+                        int type2 = z->first.second;
+                        double ref = z->second.first;
+                        double alt = z->second.second;
+                        if (type1 == 0 && type2 == 0){
+                            ref_00 += ref;
+                            alt_00 += alt;
+                        }
+                        else if ((type1 == 0 && type2 == 1) || (type1 == 1 && type2 == 0)){
+                            ref_01 += ref;
+                            alt_01 += alt;
+                        }
+                        else if ((type1 == 0 && type2 == 2) || (type1 == 2 && type1 == 0)){
+                            ref_02 += ref;
+                            alt_02 += alt;
+                        }
+                        else if (type1 == 1 && type2 == 1){
+                            ref_11 += ref;
+                            alt_11 += alt;
+                        }
+                        else if ((type1 == 1 && type2 == 2) || (type1 == 2 && type2 == 1)){
+                            ref_12 += ref;
+                            alt_12 += alt;
+                        }
+                        else if (type1 == 2 && type2 == 2){
+                            ref_22 += ref;
+                            alt_22 += alt;
+                        }
+                        /*
+                        fprintf(stdout, "%s\t%s\t%f\t%d\t%d\t%f\t%f\n", bc_str.c_str(),
+                            assn_str.c_str(), llr, y->first.second, z->first.second,
+                            z->second.first, z->second.second);
+                        */
+                    }
                 }
             }
-            pair<int, int> key10_1 = make_pair(combo.first, 1);
-            pair<int, int> key10_2 = make_pair(combo.second, 0);
-            if (indv_allelecounts[a->first].count(key10_1) > 0 && 
-                indv_allelecounts[a->first][key10_1].count(key10_2) > 0){
-                double ref = indv_allelecounts[a->first][key10_1][key10_2].first;
-                double alt = indv_allelecounts[a->first][key10_1][key10_2].second;
-                if (ref + alt > 0){
-                    A.push_back(vector<double>{ 3.0, -1.0 });
-                    b.push_back((4*alt)/(ref+alt) - 1.0);
-                    weights_cell.push_back(ref+alt);
-                    weightsum_cell += ref+alt;
 
-                    match_ref_expected_this += 0.75*(ref+alt);
-                    match_alt_expected_this += 0.25*(ref+alt);
-                }
+            if (ref_00 + alt_00 > 0){
+                //fprintf(stdout, "%s\t%s\t%f\t0\t0\t%f\t%f\n", bc_str.c_str(),
+                //    assn_str.c_str(), llr, ref_00, alt_00);
+                A.push_back(vector<double>{ 1.0, 0.0 });
+                b.push_back(alt_00/(ref_00+alt_00));
+                weights_cell.push_back(ref_00+alt_00);
+                match_ref_expected_this += ref_00 + alt_00;
             }
-            pair<int, int> key12_1 = make_pair(combo.first, 1);
-            pair<int, int> key12_2 = make_pair(combo.second, 2);
-            if (indv_allelecounts[a->first].count(key12_1) > 0 && 
-                indv_allelecounts[a->first][key12_1].count(key12_2) > 0){
-                double ref = indv_allelecounts[a->first][key12_1][key12_2].first;
-                double alt = indv_allelecounts[a->first][key12_1][key12_2].second;
-                if (ref + alt > 0){
-                    A.push_back(vector<double>{ -1.0, 3.0 });
-                    b.push_back((4*ref)/(ref+alt) - 1.0);
-                    weights_cell.push_back(ref+alt);
-                    weightsum_cell += ref+alt;
-
-                    match_ref_expected_this += 0.25*(ref+alt);
-                    match_alt_expected_this += 0.75*(ref+alt);
-                }
+            if (ref_01 + alt_01 > 0){
+                //fprintf(stdout, "%s\t%s\t%f\t0\t1\t%f\t%f\n", bc_str.c_str(),
+                //    assn_str.c_str(), llr, ref_01, alt_01);
+                A.push_back(vector<double>{ 3.0, -1.0 });
+                b.push_back(4*alt_01/(ref_01+alt_01) - 1.0);
+                weights_cell.push_back(ref_01+alt_01);
+                match_ref_expected_this += 0.75*(ref_01 + alt_01);
+                match_alt_expected_this += 0.25*(ref_01 + alt_01);
             }
-            pair<int, int> key21_1 = make_pair(combo.first, 2);
-            pair<int, int> key21_2 = make_pair(combo.second, 1);
-            if (indv_allelecounts[a->first].count(key21_1) > 0 && 
-                indv_allelecounts[a->first][key21_1].count(key21_2) > 0){
-                double ref = indv_allelecounts[a->first][key21_1][key21_2].first;
-                double alt = indv_allelecounts[a->first][key21_1][key21_2].second;
-                if (ref + alt > 0){
-                    A.push_back(vector<double>{ -1.0, 3.0 });
-                    b.push_back((4*ref)/(ref+alt) - 1.0);
-                    weights_cell.push_back(ref+alt);
-                    weightsum_cell += ref+alt;
-
-                    match_ref_expected_this += 0.25*(ref+alt);
-                    match_alt_expected_this += 0.75*(ref+alt);
-                }
+            // 1,1 (both het) has same expectation as 0,2 and 2,0 (homR + homA)
+            ref_11 += ref_02;
+            alt_11 += alt_02;
+            if (ref_11 + alt_11 > 0){
+                //fprintf(stdout, "%s\t%s\t%f\t1\t1\t%f\t%f\n", bc_str.c_str(),
+                //    assn_str.c_str(), llr, ref_11, alt_11);
+                A.push_back(vector<double>{ 1.0, -1.0 });
+                b.push_back(2*alt_11/(ref_11+alt_11) - 1.0);
+                weights_cell.push_back(ref_11+alt_11);
+                match_ref_expected_this += 0.5*(ref_11+alt_11);
+                match_alt_expected_this += 0.5*(ref_11+alt_11);
+            }
+            if (ref_12 + alt_12 > 0){
+                //fprintf(stdout, "%s\t%s\t%f\t1\t2\t%f\t%f\n", bc_str.c_str(),
+                //    assn_str.c_str(), llr, ref_12, alt_12);
+                A.push_back(vector<double>{ 1.0, -3.0 });
+                b.push_back(4*alt_12/(ref_12+alt_12) - 3.0);
+                weights_cell.push_back(ref_12+alt_12);
+                match_ref_expected_this += 0.25*(ref_12+alt_12);
+                match_alt_expected_this += 0.75*(ref_12+alt_12);
+            }
+            if (ref_22 + alt_22 > 0){
+                //fprintf(stdout, "%s\t%s\t%f\t2\t2\t%f\t%f\n", bc_str.c_str(),
+                //    assn_str.c_str(), llr, ref_22, alt_22);
+                A.push_back(vector<double>{ 0.0, 1.0 });
+                b.push_back(ref_22/(ref_22+alt_22));
+                weights_cell.push_back(ref_22+alt_22);
+                match_alt_expected_this += ref_22+alt_22;
             }
         }
         else{
@@ -1684,14 +1702,12 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
                 }
             }
         }
-        /*
-        for (int i = 0; i < weights_cell.size(); ++i){
-            weights_cell[i] /= weightsum_cell;
-        } 
-        */   
-
+        
+        // Attempt to infer error rates for ref and alt alleles using
+        // non-negative least squares
         vector<double> results;
         bool success = weighted_nn_lstsq(A, b, weights_cell, results);
+        
         if (success && results[0] > 0.0 && results[1] > 0.0 && 
             results[0] < 1.0 && results[1] < 1.0){
             
@@ -1717,24 +1733,6 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
     err_rate_ref_sum /= weightsum;
     err_rate_alt_sum /= weightsum;
     
-
-    /*
-    double varsum_ref = 0.0;
-    double varsum_alt = 0.0;
-    for (int i = 0; i < err_rates_ref.size(); ++i){
-        varsum_ref += weights[i] * pow(err_rates_ref[i] - err_rate_ref_sum, 2);
-        varsum_alt += weights[i] * pow(err_rates_alt[i] - err_rate_alt_sum, 2);
-    }
-    varsum_ref /= weightsum;
-    varsum_alt /= weightsum;
-
-    // fit beta dists with method of moments
-    pair<double, double> bmref = beta_moments(err_rate_ref_sum, varsum_ref);
-    pair<double, double> bmalt = beta_moments(err_rate_alt_sum, varsum_alt);
-    fprintf(stderr, "Variances %f %f\n", varsum_ref, varsum_alt);
-    fprintf(stderr, "a b ref %f %f\n", bmref.first, bmalt.first);
-    fprintf(stderr, "a b alt %f %f\n", bmalt.first, bmalt.second);
-    */
     double mmre = 0.0;
     double mre = 0.0;
     double mmae = 0.0;
@@ -2540,7 +2538,7 @@ all possible individuals\n", idfile_doublet.c_str());
         double alt_mm_reads;
         double alt_m_reads;
         pair<double, double> err_new = infer_error_rates(indv_allelecounts, samples.size(),
-            assn, assn_llr, ref_mm_reads, ref_m_reads, alt_mm_reads, alt_m_reads);
+            assn, assn_llr, ref_mm_reads, ref_m_reads, alt_mm_reads, alt_m_reads, samples);
         
         // Use beta-binomial update rule to get posterior error rate estimates
         ref_mm_alpha += ref_mm_reads;
