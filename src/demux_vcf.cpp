@@ -566,7 +566,8 @@ void dump_vcs_counts(robin_hood::unordered_map<unsigned long, pair<float, float>
  */
 void parse_idfile(string& idfile, 
     vector<string>& samples,
-    set<int>& ids_allowed){
+    set<int>& ids_allowed,
+    bool add_all_doublets){
 
     map<string, int> name2idx;
     for (int i = 0; i < samples.size(); ++i){
@@ -641,6 +642,30 @@ void parse_idfile(string& idfile,
     }
     for (set<int>::iterator a = adds.begin(); a != adds.end(); ++a){
         ids_allowed.insert(*a);
+    }
+    if (add_all_doublets){
+        // We also need to add in every possible combination of two individuals provided.
+        set<int> adds;
+        vector<int> singles;
+        for (set<int>::iterator id = ids_allowed.begin(); id != ids_allowed.end(); ++id){
+            if (*id < samples.size()){
+                singles.push_back(*id);
+            }
+        }
+        sort(singles.begin(), singles.end());
+        for (int i = 0; i < singles.size()-1; ++i){
+            int idx1 = singles[i];
+            for (int j = i + 1; j < singles.size(); ++j){
+                int idx2 = singles[j];
+                int k = hap_comb_to_idx(idx1, idx2, samples.size());
+                if (ids_allowed.find(k) == ids_allowed.end()){
+                    adds.insert(k);
+                }
+            }
+        }
+        for (set<int>::iterator k = adds.begin(); k != adds.end(); ++k){
+            ids_allowed.insert(*k);
+        }
     }
 }
 
@@ -1156,7 +1181,8 @@ void populate_llr_table(map<pair<int, int>,
         // 2 = homozygous alt (~100% alt allele)
         float exp1 = error_rate_ref;
         if (y->first.second == 1){
-            exp1 = 0.5;
+            //exp1 = 0.5;
+            exp1 = 0.5*(1.0 - error_rate_alt + error_rate_ref);
         }
         else if (y->first.second == 2){
             exp1 = 1.0-error_rate_alt;
@@ -1179,7 +1205,8 @@ void populate_llr_table(map<pair<int, int>,
                 // Set default expectation for indv2
                 float exp2 = error_rate_ref;
                 if (z->first.second == 1){
-                    exp2 = 0.5;
+                    //exp2 = 0.5;
+                    exp2 = 0.5*(1.0 - error_rate_alt + error_rate_ref);
                 }
                 else if (z->first.second == 2){
                     exp2 = 1.0-error_rate_alt;
@@ -1434,46 +1461,40 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
     map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
     int n_samples,
     robin_hood::unordered_map<unsigned long, int>& assn,
-    robin_hood::unordered_map<unsigned long, double>& assn_llr){
+    robin_hood::unordered_map<unsigned long, double>& assn_llr,
+    double& ref_mm_reads,
+    double& ref_m_reads,
+    double& alt_mm_reads,
+    double& alt_m_reads){
     
-    // First, figure out how to weight everything.
-    double llrmax = 0.0;
-    for (robin_hood::unordered_map<unsigned long, double>::iterator al = assn_llr.begin(); al != 
-        assn_llr.end(); ++al){
-        if (al->second > llrmax){
-            llrmax = al->second;
-        }
-    }
+    ref_mm_reads = 0;
+    ref_m_reads = 0;
+    alt_mm_reads = 0;
+    alt_m_reads = 0;
 
-    double wsum = 0.0;
-    for (robin_hood::unordered_map<unsigned long, double>::iterator al = assn_llr.begin();
-        al != assn_llr.end(); ++al){
-        wsum += pow(2, al->second - llrmax);
-    }
-
+    vector<double> err_rates_ref;
+    vector<double> err_rates_alt;
     vector<double> weights;
-    for (robin_hood::unordered_map<unsigned long, double>::iterator al = assn_llr.begin();
-        al != assn_llr.end(); ++al){
-        double weight = pow(2, al->second - llrmax - wsum);
-        weights.push_back(weight);
-    }
-    
-    // We will likely lose some contributions of some cells. Keep track of
-    // total sum of weights used; will divide by this to account for dropped
-    // cells
-    double weightsum_kept = 0;
-
-    long int idx = 0;
+    double weightsum = 0.0;
 
     // Error rate of misreading ref as alt
     double err_rate_ref_sum = 0.0;
     // Error rate of misreading alt as ref
     double err_rate_alt_sum = 0.0;
+    
+    vector<double> mismatch_ref_expected;
+    vector<double> mismatch_alt_expected;
+    vector<double> match_ref_expected;
+    vector<double> match_alt_expected;
 
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin();
         a != assn.end(); ++a){
-        double weight = weights[idx];
         
+        double llr = assn_llr[a->first];
+        
+        double match_ref_expected_this = 0.0;
+        double match_alt_expected_this = 0.0;
+
         // Store estimates of error rate
         vector<double> e_est_ref;
         vector<double> e_est_alt;
@@ -1489,6 +1510,7 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
         
         // First coefficient = ref error rate
         // second coefficient = alt error rate
+        // third coefficient = mismatch between 2 doublet indvs
         vector<vector<double> > A;
         vector<double> b;
         vector<double> weights_cell;
@@ -1509,6 +1531,8 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
                     b.push_back(alt/(ref+alt));
                     weights_cell.push_back(ref+alt);
                     weightsum_cell += ref+alt;
+
+                    match_ref_expected_this += ref + alt;
                 }
             } 
             pair<int, int> key2_1 = make_pair(combo.first, 2);
@@ -1522,6 +1546,8 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
                     b.push_back(ref/(ref+alt));
                     weights_cell.push_back(ref+alt);
                     weightsum_cell += ref+alt;
+
+                    match_alt_expected_this += ref + alt;
                 }
             }
             pair<int, int> key11_1 = make_pair(combo.first, 1);
@@ -1535,6 +1561,9 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
                     b.push_back((2*alt)/(ref+alt) - 1);
                     weights_cell.push_back(ref+alt);
                     weightsum_cell += ref+alt;
+
+                    match_ref_expected_this += 0.5*(ref+alt);
+                    match_alt_expected_this += 0.5*(ref+alt);
                 }
             }
 
@@ -1549,6 +1578,9 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
                     b.push_back((4*alt)/(ref+alt) - 1.0);
                     weights_cell.push_back(ref+alt);
                     weightsum_cell += ref+alt;
+
+                    match_ref_expected_this += 0.75*(ref+alt);
+                    match_alt_expected_this += 0.25*(ref+alt);
                 }
             }
             pair<int, int> key10_1 = make_pair(combo.first, 1);
@@ -1562,6 +1594,9 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
                     b.push_back((4*alt)/(ref+alt) - 1.0);
                     weights_cell.push_back(ref+alt);
                     weightsum_cell += ref+alt;
+
+                    match_ref_expected_this += 0.75*(ref+alt);
+                    match_alt_expected_this += 0.25*(ref+alt);
                 }
             }
             pair<int, int> key12_1 = make_pair(combo.first, 1);
@@ -1575,6 +1610,9 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
                     b.push_back((4*ref)/(ref+alt) - 1.0);
                     weights_cell.push_back(ref+alt);
                     weightsum_cell += ref+alt;
+
+                    match_ref_expected_this += 0.25*(ref+alt);
+                    match_alt_expected_this += 0.75*(ref+alt);
                 }
             }
             pair<int, int> key21_1 = make_pair(combo.first, 2);
@@ -1588,6 +1626,9 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
                     b.push_back((4*ref)/(ref+alt) - 1.0);
                     weights_cell.push_back(ref+alt);
                     weightsum_cell += ref+alt;
+
+                    match_ref_expected_this += 0.25*(ref+alt);
+                    match_alt_expected_this += 0.75*(ref+alt);
                 }
             }
         }
@@ -1608,7 +1649,8 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
                     b.push_back(alt/(ref+alt));
                     weights_cell.push_back(ref+alt);
                     weightsum_cell += ref+alt;
-                
+                    
+                    match_ref_expected_this += ref + alt;        
                 }
             }
             if (indv_allelecounts[cell].count(key1) > 0 &&
@@ -1621,6 +1663,9 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
                     b.push_back( (2*alt)/(ref+alt) - 1 );
                     weights_cell.push_back(ref+alt);
                     weightsum_cell += ref+alt;
+
+                    match_ref_expected_this += 0.5*(ref+alt);
+                    match_alt_expected_this += 0.5*(ref+alt);
                 }
             }
             if (indv_allelecounts[cell].count(key2) > 0 &&
@@ -1633,6 +1678,8 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
                     b.push_back(ref/(ref+alt));
                     weights_cell.push_back(ref+alt);
                     weightsum_cell += ref+alt;
+
+                    match_alt_expected_this += ref + alt;
                 
                 }
             }
@@ -1645,20 +1692,64 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
 
         vector<double> results;
         bool success = weighted_nn_lstsq(A, b, weights_cell, results);
-        if (success && results[0] < 1.0 && results[1] < 1.0){
+        if (success && results[0] > 0.0 && results[1] > 0.0 && 
+            results[0] < 1.0 && results[1] < 1.0){
+            
             // Allow this cell to contribute to the total.
-            err_rate_ref_sum += results[0] * weight;
-            err_rate_alt_sum += results[1] * weight;
-            weightsum_kept += weight; // keep track, will need to re-scale
+            
+            err_rates_ref.push_back(results[0]);
+            err_rates_alt.push_back(results[1]);
+            
+            err_rate_ref_sum += results[0] * llr;
+            err_rate_alt_sum += results[1] * llr;
+            
+            mismatch_ref_expected.push_back(match_ref_expected_this * results[0]);
+            match_ref_expected.push_back(match_ref_expected_this * (1.0-results[0]));
+            mismatch_alt_expected.push_back(match_alt_expected_this * results[1]);
+            match_alt_expected.push_back(match_alt_expected_this * (1.0-results[1]));
+
+            weights.push_back(llr);
+            weightsum += llr;
         }  
 
-        ++idx;
     }
     
-    err_rate_ref_sum /= weightsum_kept;
-    err_rate_alt_sum /= weightsum_kept;
+    err_rate_ref_sum /= weightsum;
+    err_rate_alt_sum /= weightsum;
+    
 
-    fprintf(stderr, "Inferred error rates = %f %f\n", err_rate_ref_sum, err_rate_alt_sum);
+    /*
+    double varsum_ref = 0.0;
+    double varsum_alt = 0.0;
+    for (int i = 0; i < err_rates_ref.size(); ++i){
+        varsum_ref += weights[i] * pow(err_rates_ref[i] - err_rate_ref_sum, 2);
+        varsum_alt += weights[i] * pow(err_rates_alt[i] - err_rate_alt_sum, 2);
+    }
+    varsum_ref /= weightsum;
+    varsum_alt /= weightsum;
+
+    // fit beta dists with method of moments
+    pair<double, double> bmref = beta_moments(err_rate_ref_sum, varsum_ref);
+    pair<double, double> bmalt = beta_moments(err_rate_alt_sum, varsum_alt);
+    fprintf(stderr, "Variances %f %f\n", varsum_ref, varsum_alt);
+    fprintf(stderr, "a b ref %f %f\n", bmref.first, bmalt.first);
+    fprintf(stderr, "a b alt %f %f\n", bmalt.first, bmalt.second);
+    */
+    double mmre = 0.0;
+    double mre = 0.0;
+    double mmae = 0.0;
+    double mae = 0.0;
+    for (int i = 0; i < match_ref_expected.size(); ++i){
+        mmre += (weights[i]/weightsum) * mismatch_ref_expected[i];
+        mmae += (weights[i]/weightsum) * mismatch_alt_expected[i];
+        mre += (weights[i]/weightsum) * match_ref_expected[i];
+        mae += (weights[i]/weightsum) * match_alt_expected[i];
+    }
+
+    ref_mm_reads = mmre;
+    ref_m_reads = mre;
+    alt_mm_reads = mmae;
+    alt_m_reads = mae;
     return make_pair(err_rate_ref_sum, err_rate_alt_sum);
 }
 
@@ -1851,6 +1942,89 @@ void model_empty_drops(robin_hood::unordered_map<unsigned long,
 }
 
 /**
+ * Write summary information about a completed run to output file.
+ */
+void write_summary(FILE* outf, 
+    string& outpre,
+    robin_hood::unordered_map<unsigned long, int>& assn,
+    vector<string>& samples,
+    double ref_mm_rate_prior,
+    double ref_mm_sampsize_prior,
+    double alt_mm_rate_prior,
+    double alt_mm_sampsize_prior,
+    double ref_mm_rate_posterior,
+    double ref_mm_sampsize_posterior,
+    double alt_mm_rate_posterior,
+    double alt_mm_sampsize_posterior,
+    double inferred_error_rates){
+    
+    fprintf(outf, "%s\tref_mismatch_prior\t%f\n", outpre.c_str(),
+        ref_mm_rate_prior);
+    fprintf(outf, "%s\tref_mismatch_prior_sampsize\t%f\n", outpre.c_str(),
+        ref_mm_sampsize_prior);
+    fprintf(outf, "%s\talt_mismatch_prior\t%f\n", outpre.c_str(),
+        alt_mm_rate_prior);
+    fprintf(outf, "%s\talt_mismatch_prior_sampsize\t%f\n", outpre.c_str(),
+        alt_mm_sampsize_prior);
+    if (inferred_error_rates){
+        fprintf(outf, "%s\tref_mismatch_posterior\t%f\n", outpre.c_str(),
+            ref_mm_rate_posterior);
+        fprintf(outf, "%s\tref_mismatch_posterior_sampsize\t%f\n", outpre.c_str(),
+            ref_mm_sampsize_posterior);
+        fprintf(outf, "%s\talt_mismatch_posterior\t%f\n", outpre.c_str(),
+            alt_mm_rate_posterior);
+        fprintf(outf, "%s\talt_mismatch_posterior_sampsize\t%f\n", outpre.c_str(),
+            alt_mm_sampsize_posterior);
+    }
+    int count_doublets = 0;
+    map<int, int> idcounts;
+    map<int, int> idcounts_in_doublet;
+    for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin();
+        a != assn.end(); ++a){
+        if (a->second >= samples.size()){
+            count_doublets++;
+            pair<int, int> combo = idx_to_hap_comb(a->second, samples.size());
+            if (idcounts_in_doublet.count(combo.first) == 0){
+                idcounts_in_doublet.insert(make_pair(combo.first, 0));
+            }
+            if (idcounts_in_doublet.count(combo.second) == 0){
+                idcounts_in_doublet.insert(make_pair(combo.second, 0));
+            }
+            idcounts_in_doublet[combo.first]++;
+            idcounts_in_doublet[combo.second]++;
+        }
+        if (idcounts.count(a->second) == 0){
+            idcounts.insert(make_pair(a->second, 0));
+        }
+        idcounts[a->second]++;
+    }
+    fprintf(outf, "%s\tfrac_doublets\t%f\n", outpre.c_str(), 
+        (double)count_doublets / (double)assn.size());
+    
+    vector<pair<double, int> > fdisort;
+    for (map<int, int>::iterator icd = idcounts_in_doublet.begin();
+        icd != idcounts_in_doublet.end(); ++icd){
+        fdisort.push_back(make_pair(-(double)icd->second/(double)count_doublets, icd->first));
+    } 
+    sort(fdisort.begin(), fdisort.end());
+    for (int i = 0; i < fdisort.size(); ++i){
+        fprintf(outf, "%s\tdoublets_with_%s\t%f\n", outpre.c_str(),
+            idx2name(fdisort[i].second, samples).c_str(),
+            -fdisort[i].first);
+    }
+
+    vector<pair<int, int> > idcsort;
+    for (map<int, int>::iterator ic = idcounts.begin(); ic != idcounts.end(); ++ic){
+        idcsort.push_back(make_pair(-ic->second, ic->first));
+    }
+    sort(idcsort.begin(), idcsort.end());
+    for (int i = 0; i < idcsort.size(); ++i){
+        fprintf(outf, "%s\t%s\t%d\n", outpre.c_str(), 
+            idx2name(idcsort[i].second, samples).c_str(), -idcsort[i].first);
+    }
+}
+
+/**
  * Given a data structure storing the expected proportion of reads 
  * in empty droplets originating from each individual in the pool,
  * along with an output file handle and names of individuals,
@@ -1893,10 +2067,37 @@ void help(int code){
     fprintf(stderr, "       outs/filtered_feature_bc_matrix/barcodes.tsv or \n");
     fprintf(stderr, "       outs/filtered_feature_bc_matrix/barcodes.tsv.gz.\n");
     fprintf(stderr, "===== OPTIONAL =====\n");
-    fprintf(stderr, "    --doublet_rate -d Prior probability of a cell being a mixture \n");
+    fprintf(stderr, "----- Algorithm options -----\n");
+    fprintf(stderr, "    --doublet_rate -D Prior probability of a cell being a mixture \n");
     fprintf(stderr, "       of two individuals rather than a single individual. \n");
     fprintf(stderr, "       default = 0.5 (set to 0 to disable checking for doublet \n");
     fprintf(stderr, "       combinations and to 1 to disable checking for single indvs\n");
+    fprintf(stderr, "    --est_error_rate -e By default, uses a model of misreading reference\n");
+    fprintf(stderr, "       as alt and alt as reference at a frequency of 0.001. With this option\n");
+    fprintf(stderr, "       enabled, does one round of barcode->identity assignment, learns best fit\n");
+    fprintf(stderr, "       error parameters from confident assignments, and does a second round\n");
+    fprintf(stderr, "       of assignment with these new error parameters.\n");
+    fprintf(stderr, "    --prior_counts -p Error rates are modeled as beta distributions, with prior\n");
+    fprintf(stderr, "       mean = 0.001 and prior sample size = 1000. Specify an alternative prior\n");
+    fprintf(stderr, "       sample size here, if desired. This will slightly affect original\n");
+    fprintf(stderr, "       assignments, which use the beta-binomial distribution, but mostly affect\n");
+    fprintf(stderr, "       how strongly the prior affects posterior estimates of error rates.\n"); 
+    fprintf(stderr, "    --qual -q Minimum variant quality to consider (default 50)\n");
+    fprintf(stderr, "    --ids -i If the VCF file contains individuals that you do not\n");
+    fprintf(stderr, "       expect to see in your sample, specify individuals to include here.\n");
+    fprintf(stderr, "       These identities will be considered, as well as all possible doublet\n");
+    fprintf(stderr, "       combinations of them. Expects a text file, with one individual ID per\n");
+    fprintf(stderr, "       line, matching individual names in the VCF.\n");
+    fprintf(stderr, "    --ids_doublet -I Similar to --ids/-i argument above, but allows control\n");
+    fprintf(stderr, "       over which doublet identities are considered. Here, you can specify\n");
+    fprintf(stderr, "       individuals and combinations of two individuals to allow. Doublet\n");
+    fprintf(stderr, "       combinations not specified in this file will not be considered.\n");
+    fprintf(stderr, "       Single individuals involved in doublet combinations specified here\n");
+    fprintf(stderr ,"       but not explicitly listed in the file will still be considered.\n");
+    fprintf(stderr, "       Names of individuals must match those in the VCF, and combinations\n");
+    fprintf(stderr, "       of two individuals can be specified by giving both individual names\n");
+    fprintf(stderr, "       separated by \"+\" or \"x\", with names in either order.\n");
+    fprintf(stderr, "----- I/O options -----\n");
     fprintf(stderr, "    --barcode_group -g If you plan to combine cells from multiple runs\n");
     fprintf(stderr, "       together, and there might be cell barcode collisions (i.e. the \n");
     fprintf(stderr, "       same cell barcode could appear twice in the data set but represent\n");
@@ -1906,27 +2107,19 @@ void help(int code){
     fprintf(stderr, "       cell barcodes in the output assignment file, separated by a dash (-).\n");
     fprintf(stderr, "       If you specify the same groups here as in scanpy, it will make it easy\n");
     fprintf(stderr, "       to integrate assignments with the other data.\n"); 
-    fprintf(stderr, "    --ids -i If the VCF file contains individuals that you do not \n");
-    fprintf(stderr, "       expect to see in your sample, or if you expect to see some \n");
-    fprintf(stderr, "       but not other combinations of two individuals that are \n");
-    fprintf(stderr, "       present in the VCF, specify all allowed identities in a text \n");
-    fprintf(stderr, "       file, one per line. Names of individuals must match those in \n");
-    fprintf(stderr, "       the VCF, and combinations of two individuals can be specified \n");
-    fprintf(stderr, "       by giving both individual names separated by \"+\" or \"x\", \n");
-    fprintf(stderr, "       with names in either order.\n");
-    fprintf(stderr, "    --qual -q Minimum variant quality to consider (default 50)\n");
-    fprintf(stderr, "    --index_jump -I Instead of reading through the entire BAM file \n");
+    fprintf(stderr, "    --index_jump -j Instead of reading through the entire BAM file \n");
     fprintf(stderr, "       to count reads at variant positions, use the BAM index to \n");
     fprintf(stderr, "       jump to each variant position. This will be faster if you \n");
     fprintf(stderr, "       have relatively few SNPs, and much slower if you have a lot \n");
     fprintf(stderr, "       of SNPs.\n");
-    fprintf(stderr, "    --dump_counts -D After loading variants and counting reads at \n");
+    fprintf(stderr, "    --dump_counts -d After loading variants and counting reads at \n");
     fprintf(stderr, "       variant sites, write these counts to [output_prefix].counts\n");
     fprintf(stderr, "       before making assignments. These counts can then be loaded with \n");
     fprintf(stderr, "       -L on a subsequent run to significantly speed up identification.\n");
     fprintf(stderr, "    --load_counts -L If a previous run was done with -d, load counts \n");
     fprintf(stderr, "       from that file and skip reading through the BAM file (output \n");
     fprintf(stderr, "       prefix must match).\n");
+    fprintf(stderr, "\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
 }
@@ -1938,12 +2131,16 @@ int main(int argc, char *argv[]) {
        {"vcf", required_argument, 0, 'v'},
        {"output_prefix", required_argument, 0, 'o'},
        {"cell_barcode", required_argument, 0, 'c'},
-       {"index_jump", no_argument, 0, 'I'},
-       {"dump_counts", no_argument, 0, 'D'},
-       {"load_counts", no_argument, 0, 'L'},
+       {"index_jump", no_argument, 0, 'j'},
+       {"dump_counts", no_argument, 0, 'd'},
+       {"load_counts", no_argument, 0, 'l'},
+       {"doublet_rate", required_argument, 0, 'D'},
        {"ids", required_argument, 0, 'i'},
+       {"ids_doublet", required_argument, 0, 'I'},
        {"qual", required_argument, 0, 'q'},
        {"barcode_group", required_argument, 0, 'g'},
+       {"est_error_rate", no_argument, 0, 'e'},
+       {"prior_counts", required_argument, 0, 'p'},
        {0, 0, 0, 0} 
     };
     
@@ -1962,9 +2159,13 @@ int main(int argc, char *argv[]) {
     bool neg_drops = true;
     int vq = 50;
     string idfile;
+    string idfile_doublet;
     bool idfile_given = false;
+    bool idfile_doublet_given = false;
     double doublet_rate = 0.5;
     string barcode_group = "";
+    bool est_error_rate = false;
+    double prior_counts = 1000;
 
     int option_index = 0;
     int ch;
@@ -1972,7 +2173,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:o:c:i:q:d:g:IDLh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:v:o:c:i:I:q:D:g:p:ejdlh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -1996,24 +2197,34 @@ int main(int argc, char *argv[]) {
                 cell_barcode = true;
                 cell_barcode_file = optarg;
                 break;
-            case 'd':
+            case 'D':
                 doublet_rate = atof(optarg);
+                break;
+            case 'p':
+                prior_counts = atof(optarg);
                 break;
             case 'i':
                 idfile_given = true;
                 idfile = optarg;
                 break;
+            case 'I':
+                idfile_doublet_given = true;
+                idfile_doublet = optarg;
+                break;
             case 'q':
                 vq = atoi(optarg);
                 break;
-            case 'I':
+            case 'j':
                 stream = false;
                 break;
-            case 'D':
+            case 'd':
                 dump_counts = true;
                 break;
-            case 'L':
+            case 'l':
                 load_counts = true;
+                break;
+            case 'e':
+                est_error_rate = true;
                 break;
             default:
                 help(0);
@@ -2046,7 +2257,15 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: doublet rate must be between 0 and 1, inclusive.\n");
         exit(1);
     }
-    
+    if (idfile_given && idfile_doublet_given){
+        fprintf(stderr, "ERROR: only one of -i/-I is allowed.\n");
+        exit(1);
+    }
+    if (prior_counts <= 0){
+        fprintf(stderr, "ERROR: --prior_counts must be positive.\n");
+        exit(1);
+    }
+
     // Initialize barcode for negative drops - all A should be safe
     string negdrop_bc_str = "";
     for (int i = 0; i < 16; ++i){
@@ -2080,10 +2299,17 @@ int main(int argc, char *argv[]) {
     
     set<int> allowed_ids;
     if (idfile_given){
-        parse_idfile(idfile, samples, allowed_ids);
+        parse_idfile(idfile, samples, allowed_ids, true);
         if (allowed_ids.size() == 0){
             fprintf(stderr, "No valid individual names found in file %s; allowing \
 all possible individuals\n", idfile.c_str());
+        }
+    }
+    if (idfile_doublet_given){
+        parse_idfile(idfile_doublet, samples, allowed_ids, false);
+        if (allowed_ids.size() == 0){
+            fprintf(stderr, "No valid individual names found in file %s; allowing \
+all possible individuals\n", idfile_doublet.c_str());
         }
     }
     
@@ -2271,32 +2497,81 @@ all possible individuals\n", idfile.c_str());
     // Map cell barcodes to log likelihood ratio of best individual assignments
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     
+    robin_hood::unordered_map<unsigned long, int> assn_final;
+    robin_hood::unordered_map<unsigned long, double> assn_final_llr;
+    
     fprintf(stderr, "Finding likeliest identities of cells...\n");
     
+    // Compute beta dist parameters for errors
+    double ref_mm_rate = 0.001;
+    double alt_mm_rate = 0.001;
+    
+    double ref_sampsize = prior_counts;
+    double alt_sampsize = prior_counts;
+
+    double ref_mm_rate_posterior = ref_mm_rate;
+    double alt_mm_rate_posterior = alt_mm_rate;
+
+    double ref_sampsize_posterior = prior_counts;
+    double alt_sampsize_posterior = prior_counts;
+
     // Get assignments of cell barcodes
     
     // On this first pass, assume that the error rate (the rate of sampling an alt
     //  allele at a homozygous reference site or a ref allele at a homozygous alt site)
     //  is 0.001
+    if (est_error_rate){
+        
+        assign_ids(indv_allelecounts, samples, assn, assn_llr, 
+            allowed_ids, neg_drops, negdrop_cell, doublet_rate, 
+            ref_mm_rate, alt_mm_rate);
+        
+        // Now, from these assignments, compute the likeliest error rate, weighting by
+        //  log likelihood ratio of assignment.
+        
+        double ref_mm_alpha = ref_mm_rate*prior_counts;
+        double ref_mm_beta = (1.0-ref_mm_rate)*prior_counts;
+        double alt_mm_alpha = alt_mm_rate*prior_counts;
+        double alt_mm_beta = (1.0-alt_mm_rate)*prior_counts;
     
-    assign_ids(indv_allelecounts, samples, assn, assn_llr, 
-        allowed_ids, neg_drops, negdrop_cell, doublet_rate, 0.001, 0.001);
-    
-    // Now, from these assignments, compute the likeliest error rate, weighting by
-    //  log likelihood ratio of assignment.
-    
-    fprintf(stderr, "Finding likeliest alt/ref switch error rates...\n"); 
-    pair<double, double> err_new = infer_error_rates(indv_allelecounts, samples.size(),
-        assn, assn_llr);
-    
-    // Re-assign individuals using this new error rate
-    robin_hood::unordered_map<unsigned long, int> assn_final;
-    robin_hood::unordered_map<unsigned long, double> assn_final_llr;
-    
-    fprintf(stderr, "Re-inferring identities of cells...\n");
-    assign_ids(indv_allelecounts, samples, assn_final, assn_final_llr,
-        allowed_ids, neg_drops, negdrop_cell, doublet_rate, err_new.first, err_new.second);
+        fprintf(stderr, "Finding likeliest alt/ref switch error rates...\n"); 
+        double ref_mm_reads;
+        double ref_m_reads;
+        double alt_mm_reads;
+        double alt_m_reads;
+        pair<double, double> err_new = infer_error_rates(indv_allelecounts, samples.size(),
+            assn, assn_llr, ref_mm_reads, ref_m_reads, alt_mm_reads, alt_m_reads);
+        
+        // Use beta-binomial update rule to get posterior error rate estimates
+        ref_mm_alpha += ref_mm_reads;
+        ref_mm_beta += ref_m_reads;
+        alt_mm_alpha += alt_mm_reads;
+        alt_mm_beta += alt_m_reads;
 
+        ref_mm_rate_posterior = ref_mm_alpha/(ref_mm_alpha+ref_mm_beta);
+        alt_mm_rate_posterior = alt_mm_alpha/(alt_mm_alpha+alt_mm_beta);
+        
+        ref_sampsize_posterior = ref_mm_alpha+ref_mm_beta;
+        alt_sampsize_posterior = alt_mm_alpha+alt_mm_beta;
+            
+        fprintf(stderr, "Posterior error rates:\n");
+        fprintf(stderr, "\tref mismatch: %f\n", ref_mm_rate_posterior);
+        fprintf(stderr, "\talt mismatch: %f\n", alt_mm_rate_posterior);
+
+        // Re-assign individuals using posterior error rates
+        
+        fprintf(stderr, "Re-inferring identities of cells...\n");
+        assign_ids(indv_allelecounts, samples, assn_final, assn_final_llr,
+            allowed_ids, neg_drops, negdrop_cell, doublet_rate, 
+            ref_mm_rate_posterior, alt_mm_rate_posterior);
+    
+    }
+    else{
+        
+        assign_ids(indv_allelecounts, samples, assn_final, assn_final_llr,
+            allowed_ids, neg_drops, negdrop_cell, doublet_rate, ref_mm_rate, alt_mm_rate);
+
+    }
     // Write these best assignments to disk
     {
         string fname = output_prefix + ".assignments";
@@ -2306,11 +2581,23 @@ all possible individuals\n", idfile.c_str());
         fclose(outf);
     }
     
+    // Create summary file
+    {
+        string fname = output_prefix + ".summary";
+        FILE* outf = fopen(fname.c_str(), "w");
+        write_summary(outf, output_prefix, assn_final, samples, ref_mm_rate, 
+            ref_sampsize, alt_mm_rate, alt_sampsize, ref_mm_rate_posterior, 
+            ref_sampsize_posterior, alt_mm_rate_posterior, 
+            alt_sampsize_posterior, est_error_rate);
+        fclose(outf);
+    }
+
     // Finally, if a cell barcode list was provided, and given the allele counts 
     // at cells assigned to each individual, we can attempt to model the 
     // sum of all empty droplets as a mixture of genotypes of different individuals
     // and write that to a file.
-    if (neg_drops){
+    //if (neg_drops){
+    if (false){
         fprintf(stderr, "Modeling empty droplets as a mixture of individuals \
 present in the pool...\n");
         map<int, double> indvprops;
