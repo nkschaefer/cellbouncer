@@ -12,6 +12,8 @@
 #include <set>
 #include <cstdlib>
 #include <utility>
+#include <math.h>
+#include <mixtureDist/functions.h>
 #include <htswrapper/bc_hash.h>
 /**
  * Contains functions used by more than one program in this
@@ -267,4 +269,72 @@ int collapse_llrs(map<int, map<int, double> >& llrs, double& llr_final){
     // Nothing found
     llr_final = 0.0;
     return -1;
+}
+
+/**
+ * Given counts of identifications in a sample, compares the 
+ * counts of different doublet combinations to expectations,
+ * baed on the frequencies of each individual in the sample.
+ *
+ * Returns a chi-squared goodness of fit p-value.
+ *
+ * Low p-values indicate possibly incorrect doublet 
+ * identifications, which suggests demultiplexing was
+ * inaccurate.
+ */
+double doublet_chisq(map<int, int>& idcounts, int n_samples){
+    
+    int tot_single = 0;
+    int tot_double = 0;
+    map<int, int> singles;
+    map<int, int> doubles;
+    for (map<int, int>::iterator ic = idcounts.begin(); ic != idcounts.end();
+        ++ic){
+        if (ic->first < n_samples){
+            tot_single += ic->second;
+            singles.insert(make_pair(ic->first, ic->second));
+        }
+        else{
+            tot_double += ic->second;
+            doubles.insert(make_pair(ic->first, ic->second));
+        }
+    }
+    
+    // If no doublets, can't do anything
+    if (tot_double == 0){
+        return 1.0;
+    }
+
+    // Get frequency of each single combination
+    map<int, double> singfreq;
+    for (map<int, int>::iterator s = singles.begin(); s != singles.end(); ++s){
+        singfreq.insert(make_pair(s->first, (double)s->second/(double)tot_single));
+    }
+
+    // Get expectation of each doublet combination
+    map<int, double> doubfreq;
+    double doubfreq_tot = 0.0; // Need to re-scale probs since not including self+self doublets
+    for (map<int, int>::iterator d = doubles.begin(); d != doubles.end(); ++d){
+        pair<int, int> combo = idx_to_hap_comb(d->first, n_samples);
+        double expected = singfreq[combo.first] * singfreq[combo.second];
+        doubfreq_tot += expected;
+        doubfreq.insert(make_pair(d->first, expected));
+    }
+    for (map<int, double>::iterator df = doubfreq.begin(); df != doubfreq.end(); ++df){
+        df->second /= doubfreq_tot;
+    }
+
+    // Now do Chi-squared test
+    double chisq = 0.0;
+    int df = 0;
+    for (map<int, int>::iterator d = doubles.begin(); d != doubles.end(); ++d){
+        double expected = (double)tot_double*doubfreq[d->first];
+        if (expected > 0){
+            chisq += pow((double)d->second - expected, 2) / expected;
+        }
+        ++df;
+    }
+    // Degrees of freedom = number of categories minus 1
+    df -= 1;
+    return pchisq(chisq, (double)df);
 }

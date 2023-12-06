@@ -152,6 +152,17 @@ void help(int code){
     fprintf(stderr, "       barcodes.tsv.gz. NOTE: all barcodes in the BAM will still be used\n");
     fprintf(stderr, "       in clustering. To limit which barcodes are used to find variants\n");
     fprintf(stderr, "       and cluster, use the -f option.\n");
+    fprintf(stderr, "   --proportion -p When inferring whether a cell is a doublet combination\n");
+    fprintf(stderr, "       of mitochondrial haplotypes, the default is to assume a 50% mixture\n");
+    fprintf(stderr, "       of the two haplotypes under consideration. If you do not expect this\n");
+    fprintf(stderr, "       to be true and are interested in seeing whether certain mitochondrial\n");
+    fprintf(stderr, "       haplotypes occur at higher copy number than others in mixtures (such\n");
+    fprintf(stderr, "       as allotetraploid/composite cell lines), set this option. When\n");
+    fprintf(stderr, "       computing the likelihood ratios between each pair of possible identities\n");
+    fprintf(stderr, "       for each cell, it will first find the maximum-likelihood mixing proportion\n");
+    fprintf(stderr, "       of each pair of haplotypes for doublet models, instead of mixing them at\n");
+    fprintf(stderr, "       50%. Inferred mixing proportions for cells identified as doublets will be\n");
+    fprintf(stderr, "       written to [output_prefix].proportions.\n");
     fprintf(stderr, "   --barcode_group -g A string to append to each barcode in the \n");
     fprintf(stderr, "       output files. This is equivalent to the batch ID appended to \n");
     fprintf(stderr, "       cell barcodes by scanpy when concatenating multiple data sets.\n");
@@ -185,6 +196,12 @@ void help(int code){
     fprintf(stderr, "   --mito -m The name of the mitochondrial sequence in the reference\n");
     fprintf(stderr, "       genome (OPTIONAL; default: chrM)\n");
     fprintf(stderr, "   ---------- Filtering options ----------\n");
+    fprintf(stderr, "   --cov_filt -c Remove variable sites with low coverage across all cells.\n");
+    fprintf(stderr, "       The threshold will be determined by finding the knee in the curve of\n");
+    fprintf(stderr, "       coverage threshold (x-axis) vs number of passing sites (y-axis). The\n");
+    fprintf(stderr, "       knee is defined as the point of maximum curvature. This filtering\n");
+    fprintf(stderr, "       strategy may not be appropriate for RNA-seq, where coverage is expected\n");
+    fprintf(stderr, "       to vary even among true variant sites, due to expression differences.\n");
     fprintf(stderr, "   --mapq -q The minimum map quality filter (OPTIONAL; default 20)\n");
     fprintf(stderr, "   --baseq -Q The minimum base quality filter (OPTIONAL; default 20)\n");
     fprintf(stderr, "   ---------- General options ----------\n"); 
@@ -409,7 +426,7 @@ void write_vars(string& mito_chrom,
  * the histogram and puts it in datp. Does not apply
  * kernel smoothing.
  */
-void derivative(map<double, double>& dat, map<double, double>& datp){
+void derivative(map<double, double>& dat, map<double, double>& datp, int smooth){
     // Store half-open intervals
     bool setfirst = false;
     double prevX = -1;
@@ -435,6 +452,40 @@ void derivative(map<double, double>& dat, map<double, double>& datp){
         prevY = d->second;
         setfirst = true;
     }
+    
+    if (smooth > 0){
+        // Apply smoothing
+        vector<double> keys;
+        vector<double> sums;
+        for (map<double, double>::iterator d = datp.begin(); d != datp.end(); ++d){
+            keys.push_back(d->first);
+            sums.push_back(d->second);
+        }
+        for (int i = 0; i < keys.size(); ++i){
+            int count = 0;
+            int jlim = i-smooth+1;
+            if (jlim < 0){
+                jlim = 0;
+            }
+            for (int j = i-1; j >= jlim; --j){
+                count++;
+                sums[i] += datp[keys[j]];
+            }
+            jlim = i+smooth-1;
+            if (jlim > keys.size()-1){
+                jlim = keys.size()-1;
+            }
+            for (int j = i + 1; j <= jlim; ++j){
+                count++;
+                sums[i] += datp[keys[j]];
+            }
+            sums[i] /= (double)count;
+        }
+        datp.clear();
+        for (int i = 0; i < keys.size(); ++i){
+            datp.insert(make_pair(keys[i], sums[i]));
+        } 
+    }
 }
 
 /**
@@ -442,15 +493,19 @@ void derivative(map<double, double>& dat, map<double, double>& datp){
  * point of maximum curvature. Returns the x-coordinate of
  * the maximum curvature point.
  */
-double find_knee(map<double, double>& x){
-    
+double find_knee(map<double, double>& x, double min_frac_to_allow){
+    int smooth = 3;
+
     map<double, double> xprime1;
-    derivative(x, xprime1);
+    derivative(x, xprime1, smooth);
     map<double, double> xprime2;
-    derivative(xprime1, xprime2);
+    derivative(xprime1, xprime2, smooth);
 
     double maxk = -1;
     double maxk_x = -1;
+    
+    vector<double> keys;
+    vector<double> curv;
 
     for (map<double, double>::iterator xp = xprime1.begin(); xp != 
         xprime1.end(); ++xp){
@@ -458,12 +513,43 @@ double find_knee(map<double, double>& x){
         // Compute curvature at this point 
         double xk = abs(xprime2[xp->first]) / 
             pow(1 + pow(xp->second, 2), 1.5);
-        
-        if (xk > maxk){
-            maxk = xk;
-            maxk_x = xp->first;
+        keys.push_back(xp->first);
+        curv.push_back(xk);    
+    }
+
+    // How many total cells?
+    double tot_dat = x.begin()->second;
+
+    // Do smoothing
+    vector<double> smoothed;
+    for (int i = 0; i < keys.size(); ++i){
+        smoothed.push_back(curv[i]);
+        int jlim_low = i-smooth+1;
+        if (jlim_low < 0){
+            jlim_low = 0;
+        }
+        int jlim_high = i+smooth-1;
+        if (jlim_high > keys.size()-1){
+            jlim_high = keys.size()-1;
+        }
+        int count = 0;
+        for (int j = i -1 ; j >= jlim_low; --j){
+            smoothed[i] += curv[j];
+            count++;
+        }
+        for (int j = i + 1; j <= jlim_high; ++j){
+            smoothed[i] += curv[j];
+            count++;
+        }
+        smoothed[i] /= (double)count;
+        if (x[keys[i]] >= min_frac_to_allow*tot_dat){
+            if (maxk_x == -1 || smoothed[i] > maxk){
+                maxk = smoothed[i];
+                maxk_x = keys[i];
+            }
         }
     }
+
     return maxk_x;
 }
 
@@ -706,7 +792,7 @@ void process_var_counts(robin_hood::unordered_map<unsigned long, var_counts>& ha
         // identifying sites in cells, we want to be conservative, but for collapsing
         // sets of sites, we want to be more liberal.
         collapse_sites(mask_global, nvars, site_minor, site_major, site_mask, 
-            orig_to_collapsed, collapsed_to_orig, sitesort, keep_all_vars, 0.99);
+            orig_to_collapsed, collapsed_to_orig, sitesort, keep_all_vars, 0.999);
     
         // For each set of collapsed sites, dump cells together.
         for (map<int, int>::iterator oc = orig_to_collapsed.begin();
@@ -759,6 +845,53 @@ void process_var_counts(robin_hood::unordered_map<unsigned long, var_counts>& ha
     fprintf(stderr, "%ld cell barcodes in data set\n", bc2hap.size());
 }
 
+double infer_mixprop(var_counts& v,
+    int nvars,
+    hapstr& mask_global,
+    hap& hap1,
+    hap& hap2){
+    
+    vector<vector<double> > A;
+    vector<double> b;
+    // Solve the no-intercept linear regression problem (for each site type)
+    
+    // if site type is minor allele in individual 1:
+    // w*(total reads) = minor allele
+    // or if site type is major allele in individual 1:
+    // w*(total reads) = major allele
+    // w is the fraction of mitochondrial reads originating from individual 1
+    
+    double sum_xy = 0.0;
+    double sum_x2 = 0.0;
+
+    // prevent overflow
+    double divisor = 1e6;
+
+    for (int x = 0; x < nvars; ++x){
+        if (mask_global[x] && hap1.mask[x] && hap2.mask[x]){
+            if (hap1.vars.test(x) && !hap2.vars.test(x)){
+                double totreads = (double)(v.counts1[x] + v.counts2[x]);
+                double reads_minor = (double)v.counts2[x];
+                sum_xy += pow(2, log2(totreads) + log2(reads_minor) - log2(divisor));
+                sum_x2 += pow(2, 2*log2(totreads) - log2(divisor));
+            }
+            else if (!hap1.vars.test(x) && hap2.vars.test(x)){
+                double totreads = (double)(v.counts1[x] + v.counts2[x]);
+                double reads_major = (double)v.counts1[x];
+                sum_xy += pow(2, log2(totreads) + log2(reads_major) - log2(divisor));
+                sum_x2 += pow(2, 2*log2(totreads) - log2(divisor));    
+            }
+        }
+    } 
+    if (sum_x2 == 0.0){
+        // fall back on default of 0.5
+        return 0.5;
+    }
+    else{
+        return sum_xy/sum_x2;
+    }
+}
+
 /**
  * Assign barcodes of cells to a mitochondrial haplotype.
  */
@@ -771,8 +904,10 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
     double doublet_rate,
     bool use_filter,
     robin_hood::unordered_set<unsigned long>& cell_filter,
-    double one){
-     
+    double one,
+    bool infer_mixprops,
+    robin_hood::unordered_map<unsigned long, double>& doublet_mixprop){
+   
     double zero = 1.0-one;
     
     vector<int> all_model_idx;
@@ -828,6 +963,29 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                 }
             }
         }
+        
+        map<int, double> mixprops;
+        if (infer_mixprops){
+            for (int i = 0; i < all_model_idx.size(); ++i){
+                int idx = all_model_idx[i];
+                if (idx >= haps_final.size()){
+                    pair<int, int> combo = idx_to_hap_comb(idx, haps_final.size());
+                    double mp = infer_mixprop(hc->second, nvars, mask_global,
+                        haps_final[combo.first], haps_final[combo.second]);
+                    mixprops.insert(make_pair(idx, mp));
+
+                }
+            }
+        }
+        else{
+            // Use 0.5 for every mixture proportion
+            for (int i = 0; i < all_model_idx.size(); ++i){
+                int idx = all_model_idx[i];
+                if (idx >= haps_final.size()){
+                    mixprops.insert(make_pair(idx, 0.5));
+                }
+            }
+        }
 
         int tot_reads = 0;
         int missing_sites = 0;
@@ -844,10 +1002,8 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                 for (int i = 0; i < all_model_idx.size()-1; ++i){
                     int idx1 = all_model_idx[i];
                     bool covered_idx1 = true;
-                    // how many minor alleles?
-                    int nmin1 = 0;
-                    // how many total?
-                    int ntot1 = 1;
+                    // expected minor allele fraction this individual
+                    double exp_frac1;
                     if (idx1 >= haps_final.size()){
                         pair<int, int> comb = idx_to_hap_comb(idx1, haps_final.size());
                         if (!haps_final[comb.first].mask[site] || 
@@ -855,31 +1011,37 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                             covered_idx1 = false;
                         }
                         else{
-                            ntot1 = 2;
+                            int nmin1a = 0;
+                            int nmin1b = 0;
                             if (haps_final[comb.first].vars[site]){
-                                nmin1++;
+                                nmin1a++;
                             }
                             if (haps_final[comb.second].vars[site]){
-                                nmin1++;
+                                nmin1b++;
                             }
+                            double exp_frac1a = (double)nmin1a;
+                            double exp_frac1b = (double)nmin1b;
+                            exp_frac1 = mixprops[idx1]* exp_frac1a + (1.0-mixprops[idx1])*exp_frac1b;
                         }
                     }
                     else{
+                        int nmin1 = 0;
                         if (!haps_final[idx1].mask[site]){
                             covered_idx1 = false;
                         }
                         else if (haps_final[idx1].vars[site]){
                             nmin1++;
                         }
+                        exp_frac1 = (double)nmin1;
                     }
                     if (!covered_idx1){
                         continue;
                     }
+
                     for (int j = i + 1; j < all_model_idx.size(); ++j){
                         int idx2 = all_model_idx[j];
                         bool covered_idx2 = true;
-                        int nmin2 = 0;
-                        int ntot2 = 1;
+                        double exp_frac2;
                         if (idx2 >= haps_final.size()){
                             pair<int, int> comb = idx_to_hap_comb(idx2, haps_final.size());
                             if (!haps_final[comb.first].mask[site] ||
@@ -887,29 +1049,33 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                                 covered_idx2 = false;
                             }
                             else{
-                                ntot2 = 2;
+                                int nmin2a = 0;
+                                int nmin2b = 0;
                                 if (haps_final[comb.first].vars[site]){
-                                    nmin2++;
+                                    nmin2a++;
                                 }
                                 if (haps_final[comb.second].vars[site]){
-                                    nmin2++;
+                                    nmin2b++;
                                 }
+                                double exp_frac2a = (double)nmin2a;
+                                double exp_frac2b = (double)nmin2b;
+                                exp_frac2 = mixprops[idx2]*exp_frac2a + (1.0-mixprops[idx2])*exp_frac2b;
                             }
                         }
                         else{
+                            int nmin2 = 0;
                             if (!haps_final[idx2].mask[site]){
                                 covered_idx2 = false;
                             }
                             else if (haps_final[idx2].vars[site]){
                                 nmin2++;
                             }
+                            exp_frac2 = (double)nmin2;
                         }
                         
                         if (!covered_idx2){
                             continue;
                         }
-                        double exp_frac1 = (double)nmin1/(double)ntot1;
-                        double exp_frac2 = (double)nmin2/(double)ntot2;
 
                         if (exp_frac1 != exp_frac2){
                             
@@ -987,12 +1153,12 @@ void load_vars_from_file(string& filename, deque<varsite>& vars){
                 if (vars.size() > 0){
                     if (vars.back().pos == pos){
                         fprintf(stderr, "WARNING: vars file contains duplicate \
-    entries for position %d. Using the first occurrence in the file.\n", pos);   
+entries for position %d. Using the first occurrence in the file.\n", pos);   
                         add_var = false;
                     }
                     else if (vars.back().pos > pos){
                         fprintf(stderr, "ERROR: non-sorted variant sites detected \
-    in vars file.\n");
+in vars file.\n");
                         exit(1);
                     }
                 }
@@ -1015,6 +1181,12 @@ void load_vars_from_file(string& filename, deque<varsite>& vars){
             fld_idx++;
         }
     }
+    if (vars.size() > MAX_SITES){
+        fprintf(stderr, "ERROR: loaded %ld variants from %s, but demux_mt was only \
+compiled to allow up to %d variable sites.\n", vars.size(), filename.c_str(), MAX_SITES);
+        fprintf(stderr, "Please re-compile using MAX_SITES=%ld or higher.\n", vars.size());
+        exit(1);
+    }
 }
 
 /**
@@ -1028,7 +1200,8 @@ void find_vars_in_bam(string& bamfile,
     int minbaseq, 
     deque<varsite>& vars,
     bool has_bc_whitelist,
-    set<unsigned long>& bc_whitelist){
+    set<unsigned long>& bc_whitelist,
+    bool cov_filt){
     
     bam_mplp_t plp;
     
@@ -1077,6 +1250,8 @@ void find_vars_in_bam(string& bamfile,
     // Store initial set of variants, which will then be filtered for
     // coverage based on the median coverage across all found variants
     map<int, varsite> vars_unfiltered;
+    
+    vector<int> covsort;
 
     while ((ret = bam_mplp_auto(plp, &tid, &pos, &n, &p)) > 0){
         if (tid < 0){
@@ -1169,10 +1344,28 @@ n_targets %d\n", tid, infile.fp_hdr->n_targets);
                 v.freq1 = freq1;
                 v.freq2 = freq2;
                 vars_unfiltered.insert(make_pair(pos, v));
+                
+                covsort.push_back(cov);
             }
         }
     }
     
+    double cov_thresh = 0.0; 
+    if (cov_filt){
+        map<double, double> sitehist;
+        sort(covsort.begin(), covsort.end()); 
+        int cprev = -1;
+        for (int i = 0; i < covsort.size(); ++i){
+            if (covsort[i] != cprev){
+                // All cov values greater than this one would survive
+                // a filter set at this value.
+                sitehist.insert(make_pair((double)covsort[i], (double)covsort.size()-i));
+            }
+            cprev = covsort[i];
+        }
+        cov_thresh = find_knee(sitehist, 0.25);
+        fprintf(stderr, "Coverage threshold: %f\n", cov_thresh);
+    }
     if (n < 0){
         fprintf(stderr, "bam_mplp_auto failed for %s\n", infile.fname);
         exit(1);
@@ -1182,7 +1375,9 @@ n_targets %d\n", tid, infile.fp_hdr->n_targets);
     vector<pair<double, int> > vs_sort;
     for (map<int, varsite>::iterator v = vars_unfiltered.begin(); v != 
         vars_unfiltered.end(); ++v){
-        vs_sort.push_back(make_pair(-(double)v->second.freq2, v->first));
+        if ((double)v->second.cov >= cov_thresh){
+            vs_sort.push_back(make_pair(-(double)v->second.freq2, v->first));
+        }
     }
     sort(vs_sort.begin(), vs_sort.end());
     set<int> pass_sites;
@@ -1525,6 +1720,55 @@ pair<int, float> infer_clusters(hapstr& mask_global,
                 hap h;
                 h.mask = mask;
                 h.vars = hapsites[sizepairs[i].second];
+                
+                // Remove sites missing in the majority of cells?
+                vector<int> site_maj;
+                vector<int> site_min;
+                vector<int> site_miss;
+                for (int x = 0; x < nvars; ++x){
+                    if (mask_global[x] && mask[x]){
+                        site_maj.push_back(0);
+                        site_min.push_back(0);
+                        site_miss.push_back(0);
+                    }
+                }
+                for (set<unsigned long>::iterator cell = 
+                    hapgroups[sizepairs[i].second].begin();
+                    cell != hapgroups[sizepairs[i].second].end(); ++cell){
+                    int site_idx = 0;
+                    for (int x = 0; x < nvars; ++x){
+                        if (mask_global[x] && mask[x]){
+                            if (haplotypes[*cell].mask[x]){
+                                if (haplotypes[*cell].vars[x]){
+                                    site_min[site_idx]++;
+                                }
+                                else{
+                                    site_maj[site_idx]++;
+                                }
+                            }
+                            else{
+                                site_miss[site_idx]++;
+                            }
+                            ++site_idx;
+                        }
+                    }
+                }
+                int site_idx = 0;
+                for (int x = 0; x < nvars; ++x){
+                    if (mask_global[x] && mask[x]){
+                        int maj = site_maj[site_idx];
+                        int min = site_min[site_idx];
+                        int miss = site_miss[site_idx];
+                        double llmaj = dbinom(maj+min, maj, one);
+                        double llmin = dbinom(maj+min, min, one);
+                        double llmiss = dbinom(maj+min+miss, miss, one);
+                        if (llmiss > llmaj && llmiss > llmin){
+                            h.mask.reset(x);
+                        }
+                        ++site_idx;
+                    }
+                }
+
                 haps_final.push_back(h);
                 //haps_final.push_back(hapsites[sizepairs[i].second]);
                 /*
@@ -1605,7 +1849,10 @@ pair<int, float> infer_clusters(hapstr& mask_global,
     robin_hood::unordered_map<unsigned long, int> assn;
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     double llrsum = 0.0;
-    assign_bcs(hap_counter, assn, assn_llr, haps_final, mask, nvars, 0.0, true, cellset, one);
+    robin_hood::unordered_map<unsigned long, double> mixprop_dummy;
+    assign_bcs(hap_counter, assn, assn_llr, haps_final, mask, nvars, 0.0, true, 
+        cellset, one, false, mixprop_dummy);
+
     //map<int, int> grpsizes;
     for (robin_hood::unordered_map<unsigned long, double>::iterator al = assn_llr.begin();
         al != assn_llr.end(); ++al){
@@ -1641,7 +1888,8 @@ pair<int, float> infer_clusters(hapstr& mask_global,
                 assn_llr.clear();
                 double llrsum_new = 0;
                 assign_bcs(hap_counter, assn, assn_llr, haps_final_order[site_idx],
-                    mask_order[site_idx], nvars, 0.0, true, cellset, one);
+                    mask_order[site_idx], nvars, 0.0, true, cellset, one, false,
+                    mixprop_dummy);
                 //grpsizes.clear();
                 //sizevec.clear();
                 for (robin_hood::unordered_map<unsigned long, double>::iterator al = 
@@ -1770,7 +2018,7 @@ void write_clusthaps(string& clusthapsfile,
     for (int i = 0; i < clusthaps.size(); ++i){
         for (int x = 0; x < nvars; ++x){
             if (mask_global[x]){
-                if (clusthaps[i].mask.test(i)){
+                if (clusthaps[i].mask.test(x)){
                     if (clusthaps[i].vars.test(x)){
                         fprintf(clusthaps_f, "1");
                     }
@@ -1826,13 +2074,13 @@ void write_assignments(string& assn_out,
     string& barcode_group,
     vector<string>& clust_ids,
     int nhaps,
-    map<string, int>& id_counter,
+    map<int, int>& id_counter,
     int& tot_cells,
     int& doub_cells){
     
     tot_cells = 0;
     doub_cells = 0;
-
+    
     FILE* assn_outf = fopen(assn_out.c_str(), "w");
     char namebuf[100];
     for (robin_hood::unordered_map<unsigned long, int>::iterator assn = 
@@ -1864,10 +2112,10 @@ void write_assignments(string& assn_out,
             }
             name = namebuf;
         }
-        if (id_counter.count(name) == 0){
-            id_counter.insert(make_pair(name, 0));
+        if (id_counter.count(assn->second) == 0){
+            id_counter.insert(make_pair(assn->second, 0));
         }
-        id_counter[name]++;
+        id_counter[assn->second]++;
         bc as_bitset(assn->first);
         string bc_str = bc2str(as_bitset, 16);
         if (barcode_group != ""){
@@ -1885,10 +2133,11 @@ void write_statsfile(string& statsfilename,
     double llrsum_model,
     int tot_cells,
     int doub_cells,
-    map<string, int>& id_counter,
+    map<int, int>& id_counter,
     double doublet_rate,
     string& hapsfilename,
-    string& varsfilename){
+    string& varsfilename,
+    vector<string>& samples){
 
     FILE* statsfilef = fopen(statsfilename.c_str(), "w");
     
@@ -1918,17 +2167,23 @@ void write_statsfile(string& statsfilename,
             doub_cells);
         fprintf(statsfilef, "%s\tfrac_doublets\t%.3f\n", output_prefix.c_str(), 
             (float)doub_cells/(float)tot_cells);
+        
+        // Compute chi-squared p value for expected vs actual counts of each doublet type
+        double chisq_p = doublet_chisq(id_counter, samples.size());
+        fprintf(statsfilef, "%s\tdoublet_chisq.p\t%f\n", output_prefix.c_str(),
+            chisq_p);
     }
-    vector<pair<int, string> > idcounts_sorted;
-    for (map<string, int>::iterator idc = id_counter.begin(); idc != 
+     
+    vector<pair<int, int> > idcounts_sorted;
+    for (map<int, int>::iterator idc = id_counter.begin(); idc != 
         id_counter.end(); ++idc){
         idcounts_sorted.push_back(make_pair(-idc->second, idc->first));
     }
     sort(idcounts_sorted.begin(), idcounts_sorted.end());
-    for (vector<pair<int, string> >::iterator idcs = idcounts_sorted.begin(); 
+    for (vector<pair<int, int> >::iterator idcs = idcounts_sorted.begin(); 
         idcs != idcounts_sorted.end(); ++idcs){
         fprintf(statsfilef, "%s\t%s\t%d\n", output_prefix.c_str(), 
-            idcs->second.c_str(), -idcs->first);   
+            idx2name(idcs->second, samples).c_str(), -idcs->first);   
     }
     fclose(statsfilef);
 }
@@ -1950,6 +2205,8 @@ int main(int argc, char *argv[]) {
        {"doublet_rate", required_argument, 0, 'D'},
        {"haps", required_argument, 0, 'H'},
        {"ids", required_argument, 0, 'i'},
+       {"cov_filt", no_argument, 0, 'c'},
+       {"proportion", no_argument, 0, 'p'},
        {0, 0, 0, 0} 
     };
     
@@ -1971,6 +2228,8 @@ int main(int argc, char *argv[]) {
     bool ids_given = false;
     string idsfile;
     string barcode_group = "";
+    bool mixing_proportions = false;
+    bool cov_filt = false;
 
     int option_index = 0;
     int ch;
@@ -1978,7 +2237,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:o:B:f:g:q:Q:n:m:v:H:i:D:dh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:o:B:f:g:q:Q:n:m:v:H:i:D:cpdh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -2018,6 +2277,9 @@ int main(int argc, char *argv[]) {
             case 'Q':
                 minbaseq = atoi(optarg);
                 break;
+            case 'c':
+                cov_filt = true;
+                break;
             case 'm':
                 mito_chrom = optarg;
                 break;
@@ -2027,6 +2289,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'd':
                 dump = true;
+                break;
+            case 'p':
+                mixing_proportions = true;
                 break;
             default:
                 help(0);
@@ -2050,6 +2315,15 @@ int main(int argc, char *argv[]) {
     if (doublet_rate < 0 || doublet_rate > 1){
         fprintf(stderr, "ERROR: doublet rate must be between 0 and 1, inclusive\n");
         exit(1);
+    }
+    
+    // If haplotypes are already constructed, we can treat a barcode list as a filter.
+    // This is because we don't need to cluster/toss out variants anyway, so no need
+    // loading the full set of barcodes.
+    if (hapsfile_given && varsfile_given && barcodesfilename.length() > 0 && 
+        barcodes_filter_filename.length() == 0){
+        barcodes_filter_filename = barcodesfilename;
+        barcodesfilename = "";
     }
 
     set<unsigned long> bc_whitelist;
@@ -2083,7 +2357,7 @@ int main(int argc, char *argv[]) {
     else{
         fprintf(stderr, "Finding variable sites on the mitochondrial genome...\n");
         find_vars_in_bam(bamfile, mito_chrom, minmapq, minbaseq, vars, 
-            has_bc_whitelist, bc_whitelist); 
+            has_bc_whitelist, bc_whitelist, cov_filt); 
     }
     
     // If loading previously-inferred clusters, did the user provide
@@ -2135,7 +2409,8 @@ int main(int argc, char *argv[]) {
     // inferring cluster haplotypes (if not provided),
     // and assigning barcodes to individual IDs
     
-    fprintf(stderr, "Counting alleles at variable sites in BAM...\n");
+    fprintf(stderr, "Counting alleles at variable sites in BAM file %s...\n", bamfile.c_str());
+
     count_vars_barcodes(bamfile, mito_chrom, minmapq, vars, 
         has_bc_whitelist, bc_whitelist, hap_counter);     
     
@@ -2219,7 +2494,8 @@ int main(int argc, char *argv[]) {
     
     robin_hood::unordered_map<unsigned long, int> assignments;
     robin_hood::unordered_map<unsigned long, double> assignments_llr;
-    
+    robin_hood::unordered_map<unsigned long, double> doublet_mixprop;
+
     // oversight -- need to convert type of set here
     robin_hood::unordered_set<unsigned long> cell_filter;
     if (has_bc_filter_assn){
@@ -2229,14 +2505,23 @@ int main(int argc, char *argv[]) {
         }
     }
     assign_bcs(hap_counter, assignments, assignments_llr, clusthaps,
-        mask_global, nvars, doublet_rate, has_bc_filter_assn, cell_filter, one);
+        mask_global, nvars, doublet_rate, has_bc_filter_assn, cell_filter, 
+        one, mixing_proportions, doublet_mixprop);
     
-    map<string, int> id_counter;
+    map<int, int> id_counter;
     int tot_cells = 0;
     int doub_cells = 0;
     
     string assn_out = output_prefix + ".assignments";
-
+    
+    // Fill in numeric ID strings, if IDs file not provided
+    if (clust_ids.size() == 0){
+        char idbuf[50];
+        for (int i = 0; i < clusthaps.size(); ++i){
+            sprintf(&idbuf[0], "%d", i);
+            clust_ids.push_back(idbuf);
+        }
+    }
     write_assignments(assn_out, assignments, assignments_llr,
         barcode_group, clust_ids, clusthaps.size(), id_counter, 
         tot_cells, doub_cells);
@@ -2245,7 +2530,7 @@ int main(int argc, char *argv[]) {
     
     write_statsfile(statsfilename, output_prefix, nclust_model, 
         llrsum_model, tot_cells, doub_cells, id_counter, 
-        doublet_rate, hapsfilename, varsfile);
+        doublet_rate, hapsfilename, varsfile, clust_ids);
 
     return 0;
 }

@@ -40,4 +40,6 @@ void print_distmat_square(vector<vector<float> >& distmat);
 
 int collapse_llrs(std::map<int, std::map<int, double> >& llrs, double& llr_final);
 
+double doublet_chisq(std::map<int, int>& idcounts, int n_samples);
+
 #endif

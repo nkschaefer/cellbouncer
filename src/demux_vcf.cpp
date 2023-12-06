@@ -1703,31 +1703,35 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
             }
         }
         
-        // Attempt to infer error rates for ref and alt alleles using
-        // non-negative least squares
-        vector<double> results;
-        bool success = weighted_nn_lstsq(A, b, weights_cell, results);
-        
-        if (success && results[0] > 0.0 && results[1] > 0.0 && 
-            results[0] < 1.0 && results[1] < 1.0){
-            
-            // Allow this cell to contribute to the total.
-            
-            err_rates_ref.push_back(results[0]);
-            err_rates_alt.push_back(results[1]);
-            
-            err_rate_ref_sum += results[0] * llr;
-            err_rate_alt_sum += results[1] * llr;
-            
-            mismatch_ref_expected.push_back(match_ref_expected_this * results[0]);
-            match_ref_expected.push_back(match_ref_expected_this * (1.0-results[0]));
-            mismatch_alt_expected.push_back(match_alt_expected_this * results[1]);
-            match_alt_expected.push_back(match_alt_expected_this * (1.0-results[1]));
+        // Don't infer error rates if not enough observations (count 3 types
+        // of sites per cell as minimum)
 
-            weights.push_back(llr);
-            weightsum += llr;
-        }  
+        if (A.size() >= 3 && b.size() >= 3){ 
+            // Attempt to infer error rates for ref and alt alleles using
+            // non-negative least squares
+            vector<double> results;
+            bool success = weighted_nn_lstsq(A, b, weights_cell, results);
+            
+            if (success && results[0] > 0.0 && results[1] > 0.0 && 
+                results[0] < 1.0 && results[1] < 1.0){
+                
+                // Allow this cell to contribute to the total.
+                
+                err_rates_ref.push_back(results[0]);
+                err_rates_alt.push_back(results[1]);
+                
+                err_rate_ref_sum += results[0] * llr;
+                err_rate_alt_sum += results[1] * llr;
+                
+                mismatch_ref_expected.push_back(match_ref_expected_this * results[0]);
+                match_ref_expected.push_back(match_ref_expected_this * (1.0-results[0]));
+                mismatch_alt_expected.push_back(match_alt_expected_this * results[1]);
+                match_alt_expected.push_back(match_alt_expected_this * (1.0-results[1]));
 
+                weights.push_back(llr);
+                weightsum += llr;
+            }  
+        }
     }
     
     err_rate_ref_sum /= weightsum;
@@ -1954,16 +1958,28 @@ void write_summary(FILE* outf,
     double ref_mm_sampsize_posterior,
     double alt_mm_rate_posterior,
     double alt_mm_sampsize_posterior,
-    double inferred_error_rates){
+    double inferred_error_rates,
+    string& vcf_file,
+    int vq_filter,
+    double doublet_rate){
     
-    fprintf(outf, "%s\tref_mismatch_prior\t%f\n", outpre.c_str(),
+    if (vcf_file != ""){
+        fprintf(outf, "%s\tparam.vcf_file\t%s\n", outpre.c_str(),
+            vcf_file.c_str());
+        fprintf(outf, "%s\tparam.variant_qual\t%d\n", outpre.c_str(),
+            vq_filter);
+    }
+    fprintf(outf, "%s\tparam.doublet_rate\t%f\n", outpre.c_str(),
+        doublet_rate);
+    fprintf(outf, "%s\tparam.ref_mismatch_prior\t%f\n", outpre.c_str(),
         ref_mm_rate_prior);
-    fprintf(outf, "%s\tref_mismatch_prior_sampsize\t%f\n", outpre.c_str(),
+    fprintf(outf, "%s\tparam.ref_mismatch_prior_sampsize\t%f\n", outpre.c_str(),
         ref_mm_sampsize_prior);
-    fprintf(outf, "%s\talt_mismatch_prior\t%f\n", outpre.c_str(),
+    fprintf(outf, "%s\tparam.alt_mismatch_prior\t%f\n", outpre.c_str(),
         alt_mm_rate_prior);
-    fprintf(outf, "%s\talt_mismatch_prior_sampsize\t%f\n", outpre.c_str(),
+    fprintf(outf, "%s\tparam.alt_mismatch_prior_sampsize\t%f\n", outpre.c_str(),
         alt_mm_sampsize_prior);
+    
     if (inferred_error_rates){
         fprintf(outf, "%s\tref_mismatch_posterior\t%f\n", outpre.c_str(),
             ref_mm_rate_posterior);
@@ -1975,6 +1991,7 @@ void write_summary(FILE* outf,
             alt_mm_sampsize_posterior);
     }
     int count_doublets = 0;
+    int tot_singlets = 0;
     map<int, int> idcounts;
     map<int, int> idcounts_in_doublet;
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin();
@@ -1991,24 +2008,34 @@ void write_summary(FILE* outf,
             idcounts_in_doublet[combo.first]++;
             idcounts_in_doublet[combo.second]++;
         }
+        else{
+            tot_singlets++;
+        }
         if (idcounts.count(a->second) == 0){
             idcounts.insert(make_pair(a->second, 0));
         }
         idcounts[a->second]++;
     }
-    fprintf(outf, "%s\tfrac_doublets\t%f\n", outpre.c_str(), 
-        (double)count_doublets / (double)assn.size());
-    
-    vector<pair<double, int> > fdisort;
-    for (map<int, int>::iterator icd = idcounts_in_doublet.begin();
-        icd != idcounts_in_doublet.end(); ++icd){
-        fdisort.push_back(make_pair(-(double)icd->second/(double)count_doublets, icd->first));
-    } 
-    sort(fdisort.begin(), fdisort.end());
-    for (int i = 0; i < fdisort.size(); ++i){
-        fprintf(outf, "%s\tdoublets_with_%s\t%f\n", outpre.c_str(),
-            idx2name(fdisort[i].second, samples).c_str(),
-            -fdisort[i].first);
+    fprintf(outf, "%s\ttot_cells\t%d\n", tot_singlets+count_doublets);
+    if (count_doublets > 0){
+        fprintf(outf, "%s\tfrac_doublets\t%f\n", outpre.c_str(), 
+            (double)count_doublets / (double)assn.size());
+        
+        double doub_chisq = doublet_chisq(idcounts, samples.size());
+        fprintf(outf, "%s\tdoublet_chisq.p\t%f\n", outpre.c_str(),
+            doub_chisq);
+
+        vector<pair<double, int> > fdisort;
+        for (map<int, int>::iterator icd = idcounts_in_doublet.begin();
+            icd != idcounts_in_doublet.end(); ++icd){
+            fdisort.push_back(make_pair(-(double)icd->second/(double)count_doublets, icd->first));
+        } 
+        sort(fdisort.begin(), fdisort.end());
+        for (int i = 0; i < fdisort.size(); ++i){
+            fprintf(outf, "%s\tdoublets_with_%s\t%f\n", outpre.c_str(),
+                idx2name(fdisort[i].second, samples).c_str(),
+                -fdisort[i].first);
+        }
     }
 
     vector<pair<int, int> > idcsort;
@@ -2143,8 +2170,8 @@ int main(int argc, char *argv[]) {
     };
     
     // Set default values
-    string bamfile;
-    string vcf_file;
+    string bamfile = "";
+    string vcf_file = "";
     bool cell_barcode = false;
     string cell_barcode_file = "";
     bool stream = true; // Opposite of index-jumping
@@ -2476,7 +2503,7 @@ all possible individuals\n", idfile_doublet.c_str());
                 }
             }
         }
-        fprintf(stderr, "\n");
+        fprintf(stderr, "Processed %d of %d SNPs\n", nsnp_processed, nsnps);
         
         if (dump_counts){
             // Write the data just compiled to disk.
@@ -2586,7 +2613,8 @@ all possible individuals\n", idfile_doublet.c_str());
         write_summary(outf, output_prefix, assn_final, samples, ref_mm_rate, 
             ref_sampsize, alt_mm_rate, alt_sampsize, ref_mm_rate_posterior, 
             ref_sampsize_posterior, alt_mm_rate_posterior, 
-            alt_sampsize_posterior, est_error_rate);
+            alt_sampsize_posterior, est_error_rate,
+            vcf_file, vq, doublet_rate);
         fclose(outf);
     }
 
