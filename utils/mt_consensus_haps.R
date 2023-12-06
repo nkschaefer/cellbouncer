@@ -2,12 +2,13 @@
 
 args <- commandArgs(trailingOnly=TRUE)
 if (length(args) < 3){
-    write("USAGE: mt_consensus_haps.R inbase bcmap outbase\n", stderr())
-    write("inbase should be base name of a demux_mt run (will load \n", stderr())
-    write("    .cellhaps and .vars)\n", stderr())
-    write("bcmap should be a tab separated file of barcode<tab>cluster \n", stderr())
-    write("    name\n", stderr())
-    write("outbase is output prefix (will create .haps, .vars, and .ids)\n", stderr())
+    write("USAGE: mt_consensus_haps.R inbase bcmap outbase keepall", stderr())
+    write("inbase should be base name of a demux_mt run (will load ", stderr())
+    write("    .cellhaps and .vars)", stderr())
+    write("bcmap should be a tab separated file of barcode<tab>cluster", stderr())
+    write("    name", stderr())
+    write("outbase is output prefix (will create .haps, .vars, and .ids)", stderr())
+    write("specify keepall at the end to prevent dropping un-variable sites", stderr())
     q()
 }
 
@@ -16,6 +17,10 @@ library(reshape2)
 inbase <- args[1]
 bcmap <- args[2]
 outbase <- args[3]
+keepall <- FALSE
+if (length(args) > 3 & args[4] == "keepall"){
+    keepall <- TRUE
+}
 
 tab <- read.table(paste(inbase, '.cellhaps', sep=''), header=T)
 bcs <- read.table(bcmap, sep='\t')
@@ -65,7 +70,7 @@ cols <- data.frame(col=colnames(casted))
 cols$clean <- as.numeric(gsub("X", "", cols$col))
 # If more than one cluster, only keep sites that are variable across clusters.
 # If only one cluster, keep all sites.
-if (length(unique(bcs$clust)) > 1){
+if (!keepall & length(unique(bcs$clust)) > 1){
     keeps <- cols[which(cols$col %in% colnames(casted)[which(colSums(casted, na.rm=TRUE) > 0)]),]
     casted <- casted[,which(colSums(casted, na.rm=TRUE) > 0)]
 } else{
