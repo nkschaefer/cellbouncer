@@ -21,6 +21,8 @@ individuals from species 1 and species 2.", required=False)
 demultiplexing. If you provide individual demultiplexing data from the same library, then only \
 barcodes present in the individual files (which are assumed to have passed filtering) will be \
 considered.", required=False, default=None)
+    parser.add_argument("--name", "-n", help="The name of the library", required=False, \
+        default=None)
     parsed = parser.parse_args()
     if (parsed.indiv_assignments is None or len(parsed.indiv_assignments) == 0) and \
         parsed.species_assignments is None:
@@ -281,14 +283,17 @@ def main(args):
     for idx in range(0, len(doub_rates)):
         doub_rate += (llrsums[idx] / llrtot) * doub_rates[idx]
 
-    print("all\tdoublet_rate\t{}".format(doub_rate))
+    name = 'all'
+    if options.name is not None:
+        name = options.name
+    print("{}\tdoublet_rate\t{:.3f}".format(name, doub_rate))
     
     for fn in sorted(doub_rates_keyed.keys()):
-        print("{}\tdoublet_rate\t{}".format(fn, doub_rates_keyed[fn]))
+        print("{}\tdoublet_rate\t{:.3f}".format(fn, doub_rates_keyed[fn]))
         
         # Sort other rates
         for tup in sorted(indv_props[fn].items(), key=lambda x: -x[1]):
-            print("{}\t{}\t{}".format(fn, tup[0], tup[1]))
+            print("{}\t{}\t{:.3f}".format(fn, tup[0], tup[1]))
 
    
 if __name__ == '__main__':

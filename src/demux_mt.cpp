@@ -137,7 +137,7 @@ void help(int code){
     fprintf(stderr, "most likely mitochondrial haplotype (optionally including doublet\n");
     fprintf(stderr, "combinations).\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "   ===== Options for both run modes =====\n");
+    fprintf(stderr, "   ===== Options for all run modes =====\n");
     fprintf(stderr, "   ---------- I/O Options ----------\n");
     fprintf(stderr, "   --output_prefix -o The base file name, including path, for output\n");
     fprintf(stderr, "       files. If inferring haplotypes, will create files with the \n");
@@ -152,23 +152,15 @@ void help(int code){
     fprintf(stderr, "       barcodes.tsv.gz. NOTE: all barcodes in the BAM will still be used\n");
     fprintf(stderr, "       in clustering. To limit which barcodes are used to find variants\n");
     fprintf(stderr, "       and cluster, use the -f option.\n");
-    fprintf(stderr, "   --proportion -p When inferring whether a cell is a doublet combination\n");
-    fprintf(stderr, "       of mitochondrial haplotypes, the default is to assume a 50% mixture\n");
-    fprintf(stderr, "       of the two haplotypes under consideration. If you do not expect this\n");
-    fprintf(stderr, "       to be true and are interested in seeing whether certain mitochondrial\n");
-    fprintf(stderr, "       haplotypes occur at higher copy number than others in mixtures (such\n");
-    fprintf(stderr, "       as allotetraploid/composite cell lines), set this option. When\n");
-    fprintf(stderr, "       computing the likelihood ratios between each pair of possible identities\n");
-    fprintf(stderr, "       for each cell, it will first find the maximum-likelihood mixing proportion\n");
-    fprintf(stderr, "       of each pair of haplotypes for doublet models, instead of mixing them at\n");
-    fprintf(stderr, "       50%. Inferred mixing proportions for cells identified as doublets will be\n");
-    fprintf(stderr, "       written to [output_prefix].proportions.\n");
     fprintf(stderr, "   --barcode_group -g A string to append to each barcode in the \n");
     fprintf(stderr, "       output files. This is equivalent to the batch ID appended to \n");
     fprintf(stderr, "       cell barcodes by scanpy when concatenating multiple data sets.\n");
     fprintf(stderr, "       Cell Ranger software automatically appends \"1\" here, so specify\n");
     fprintf(stderr, "       1 as an argument if you desire default, single-data set Cell\n");
     fprintf(stderr, "       -like output.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "   ===== Options for run modes 1 and 2 (clustering & identifying haploytpes) =====\n");
+    fprintf(stderr, "   ---------- I/O Options ----------\n");
     fprintf(stderr, "   --dump -d Prints information about allelic state of cell barcodes \n");
     fprintf(stderr, "       at each site (.bchaps file) and quits. If in clustering mode, \n");
     fprintf(stderr, "       this happens after finding variant sites and before clustering\n");
@@ -183,7 +175,9 @@ void help(int code){
     fprintf(stderr, "       identification altogether. Default = 0.5\n");
     fprintf(stderr, "   --help -h Display this message and exit.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "   ===== Inferring clusters from a BAM file =====\n");
+    fprintf(stderr, "   ===== Run mode 1: Inferring clusters from a BAM file =====\n");
+    fprintf(stderr, "   This mode is used to infer mitochondrial haplotypes from a BAM file, and \n");
+    fprintf(stderr, "       then assign cells to the most likely inferred haplotype.\n");
     fprintf(stderr, "   ---------- I/O options ----------\n");
     fprintf(stderr, "   --bam -b The BAM file containing the data to use. (REQUIRED)\n");
     fprintf(stderr, "   --barcodes_filter -f Distinct from the -B option (above), which limits\n");
@@ -196,12 +190,12 @@ void help(int code){
     fprintf(stderr, "   --mito -m The name of the mitochondrial sequence in the reference\n");
     fprintf(stderr, "       genome (OPTIONAL; default: chrM)\n");
     fprintf(stderr, "   ---------- Filtering options ----------\n");
-    fprintf(stderr, "   --cov_filt -c Remove variable sites with low coverage across all cells.\n");
-    fprintf(stderr, "       The threshold will be determined by finding the knee in the curve of\n");
-    fprintf(stderr, "       coverage threshold (x-axis) vs number of passing sites (y-axis). The\n");
-    fprintf(stderr, "       knee is defined as the point of maximum curvature. This filtering\n");
-    fprintf(stderr, "       strategy may not be appropriate for RNA-seq, where coverage is expected\n");
-    fprintf(stderr, "       to vary even among true variant sites, due to expression differences.\n");
+    fprintf(stderr, "   --no_cov_filt -c Do not remove variable sites with low coverage across all\n");
+    fprintf(stderr, "       cells. Default behavior is to compute a histogram of sites passing filter\n");
+    fprintf(stderr, "       with increasing coverage cutoffs, then find the knee point (defined as \n");
+    fprintf(stderr, "       the point of maximum curvature), ensuring at least 25\% of all sites are\n");
+    fprintf(stderr, "       included. Disabling this might be appropriate for low-coverage data sets,\n");
+    fprintf(stderr, "       especially scRNA-seq, where coverage is expected to vary from site to site.\n");
     fprintf(stderr, "   --mapq -q The minimum map quality filter (OPTIONAL; default 20)\n");
     fprintf(stderr, "   --baseq -Q The minimum base quality filter (OPTIONAL; default 20)\n");
     fprintf(stderr, "   ---------- General options ----------\n"); 
@@ -210,12 +204,31 @@ void help(int code){
     fprintf(stderr, "       up to that many haplotypes will be inferred. It's possible that\n");
     fprintf(stderr, "       fewer than that number of haplotypes will be found, however.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "   ===== Assigning cells to previously-inferred haplotypes =====\n");
+    fprintf(stderr, "   ===== Run mode 2: Assigning cells to previously-inferred haplotypes =====\n");
+    fprintf(stderr, "   This mode is used when you have already inferred mitochondrial haplotypes (using\n");
+    fprintf(stderr, "       run mode 1), and want to assign cells (i.e. from a different BAM file) to\n");
+    fprintf(stderr, "       the most likely haplotype, out of the set of haplotypes you already inferred.\n");
     fprintf(stderr, "   ---------- I/O Options ----------\n");
     fprintf(stderr, "   --haps -H Cluster haplotypes from a previous run. Should be that\n");
     fprintf(stderr, "       run's [output_prefix].haps. (REQUIRED)\n");
     fprintf(stderr, "   --vars -v Variants used to build cluster haplotypes in previous \n");
     fprintf(stderr, "       run. Should be that run's [output_prefix].vars. (REQUIRED)\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "   ===== Run mode 3: Inferring mixing proportions in cells with multiple haplotypes =====\n");
+    fprintf(stderr, "   This is a special use case: mitochondrial haplotypes are already known, some\n");
+    fprintf(stderr, "       cells are known to contain more than one mitochondrial haplotype (i.e. \n");
+    fprintf(stderr, "       tetraploid composite cell lines), and you want to infer the mixing proportion\n");
+    fprintf(stderr, "       of each mitochondrial haplotype within each cell. Inferred mixing proportions\n");
+    fprintf(stderr, "       will be written to [output_prefix].props.\n");
+    fprintf(stderr, "   ---------- I/O Options ----------\n");
+    fprintf(stderr, "   --haps -H Cluster haplotypes from a previous run. Should be that\n");
+    fprintf(stderr, "       run's [output_prefix].haps. (REQUIRED)\n");
+    fprintf(stderr, "   --vars -v Variants used to build cluster haplotypes in previous \n");
+    fprintf(stderr, "       run. Should be that run's [output_prefix].vars. (REQUIRED)\n");
+    fprintf(stderr, "   --assignments -a A file mapping cell barcode to identity (could be an assignment \n");
+    fprintf(stderr, "       file from demux_mt or demux_vcf, but only the first two columns are required.\n");
+    fprintf(stderr, "       Only cells with multiple mitochondrial haplotypes (can be designated in either\n");
+    fprintf(stderr, "       order and separated by + or x) will be considered. (REQUIRED)\n");
     exit(code);
 }
 
@@ -845,53 +858,6 @@ void process_var_counts(robin_hood::unordered_map<unsigned long, var_counts>& ha
     fprintf(stderr, "%ld cell barcodes in data set\n", bc2hap.size());
 }
 
-double infer_mixprop(var_counts& v,
-    int nvars,
-    hapstr& mask_global,
-    hap& hap1,
-    hap& hap2){
-    
-    vector<vector<double> > A;
-    vector<double> b;
-    // Solve the no-intercept linear regression problem (for each site type)
-    
-    // if site type is minor allele in individual 1:
-    // w*(total reads) = minor allele
-    // or if site type is major allele in individual 1:
-    // w*(total reads) = major allele
-    // w is the fraction of mitochondrial reads originating from individual 1
-    
-    double sum_xy = 0.0;
-    double sum_x2 = 0.0;
-
-    // prevent overflow
-    double divisor = 1e6;
-
-    for (int x = 0; x < nvars; ++x){
-        if (mask_global[x] && hap1.mask[x] && hap2.mask[x]){
-            if (hap1.vars.test(x) && !hap2.vars.test(x)){
-                double totreads = (double)(v.counts1[x] + v.counts2[x]);
-                double reads_minor = (double)v.counts2[x];
-                sum_xy += pow(2, log2(totreads) + log2(reads_minor) - log2(divisor));
-                sum_x2 += pow(2, 2*log2(totreads) - log2(divisor));
-            }
-            else if (!hap1.vars.test(x) && hap2.vars.test(x)){
-                double totreads = (double)(v.counts1[x] + v.counts2[x]);
-                double reads_major = (double)v.counts1[x];
-                sum_xy += pow(2, log2(totreads) + log2(reads_major) - log2(divisor));
-                sum_x2 += pow(2, 2*log2(totreads) - log2(divisor));    
-            }
-        }
-    } 
-    if (sum_x2 == 0.0){
-        // fall back on default of 0.5
-        return 0.5;
-    }
-    else{
-        return sum_xy/sum_x2;
-    }
-}
-
 /**
  * Assign barcodes of cells to a mitochondrial haplotype.
  */
@@ -904,10 +870,8 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
     double doublet_rate,
     bool use_filter,
     robin_hood::unordered_set<unsigned long>& cell_filter,
-    double one,
-    bool infer_mixprops,
-    robin_hood::unordered_map<unsigned long, double>& doublet_mixprop){
-   
+    double one){
+
     double zero = 1.0-one;
     
     vector<int> all_model_idx;
@@ -964,26 +928,12 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
             }
         }
         
+        // Use 0.5 for every mixture proportion
         map<int, double> mixprops;
-        if (infer_mixprops){
-            for (int i = 0; i < all_model_idx.size(); ++i){
-                int idx = all_model_idx[i];
-                if (idx >= haps_final.size()){
-                    pair<int, int> combo = idx_to_hap_comb(idx, haps_final.size());
-                    double mp = infer_mixprop(hc->second, nvars, mask_global,
-                        haps_final[combo.first], haps_final[combo.second]);
-                    mixprops.insert(make_pair(idx, mp));
-
-                }
-            }
-        }
-        else{
-            // Use 0.5 for every mixture proportion
-            for (int i = 0; i < all_model_idx.size(); ++i){
-                int idx = all_model_idx[i];
-                if (idx >= haps_final.size()){
-                    mixprops.insert(make_pair(idx, 0.5));
-                }
+        for (int i = 0; i < all_model_idx.size(); ++i){
+            int idx = all_model_idx[i];
+            if (idx >= haps_final.size()){
+                mixprops.insert(make_pair(idx, 0.5));
             }
         }
 
@@ -1849,9 +1799,8 @@ pair<int, float> infer_clusters(hapstr& mask_global,
     robin_hood::unordered_map<unsigned long, int> assn;
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     double llrsum = 0.0;
-    robin_hood::unordered_map<unsigned long, double> mixprop_dummy;
     assign_bcs(hap_counter, assn, assn_llr, haps_final, mask, nvars, 0.0, true, 
-        cellset, one, false, mixprop_dummy);
+        cellset, one);
 
     //map<int, int> grpsizes;
     for (robin_hood::unordered_map<unsigned long, double>::iterator al = assn_llr.begin();
@@ -1888,8 +1837,7 @@ pair<int, float> infer_clusters(hapstr& mask_global,
                 assn_llr.clear();
                 double llrsum_new = 0;
                 assign_bcs(hap_counter, assn, assn_llr, haps_final_order[site_idx],
-                    mask_order[site_idx], nvars, 0.0, true, cellset, one, false,
-                    mixprop_dummy);
+                    mask_order[site_idx], nvars, 0.0, true, cellset, one);
                 //grpsizes.clear();
                 //sizevec.clear();
                 for (robin_hood::unordered_map<unsigned long, double>::iterator al = 
@@ -1917,7 +1865,7 @@ pair<int, float> infer_clusters(hapstr& mask_global,
                 else{
                     if (haps_final_order[site_idx].size() != 
                         haps_final_order[site_idx+1].size()){
-                        fprintf(stderr, "%ld haplotypes after removing %d sites\n", 
+                        fprintf(stderr, "%ld haplotypes after removing %d site groups\n", 
                             haps_final_order[site_idx].size(), n_rm);
                         fprintf(stderr, "\timprovement: %f\n", llrsum_new-llrsum_orig);
                     }
@@ -2063,6 +2011,29 @@ void load_clusthaps(string& hapsfilename,
         }
         clusthaps.push_back(h);
     }
+
+    // Check for any positions where there are no differences among haplotypes
+    // and blacklist them.
+    for (int i = 0; i < nvars; ++i){
+        if (mask_global[i]){
+            int nmaj = 0;
+            int nmin = 0;
+            for (int x = 0; x < clusthaps.size(); ++x){
+                if (clusthaps[x].mask[i]){
+                    if (clusthaps[x].vars[i]){
+                        nmin++;
+                    }
+                    else{
+                        nmaj++;
+                    }
+                }
+            }
+            if (nmaj == 0 || nmin == 0){
+                // Uninformative site.
+                mask_global.reset(i);
+            }
+        }
+    }
 }
 
 /**
@@ -2188,6 +2159,177 @@ void write_statsfile(string& statsfilename,
     fclose(statsfilef);
 }
 
+/**
+ * If inferring mixing proportions, need to load assignments of cells to mitochondrial
+ * IDs.
+ *
+ */
+void parse_assignments(string& assnfile,
+    vector<string>& hapnames,
+    robin_hood::unordered_map<unsigned long, int>& assignments,
+    bool doublets_only){
+    
+    map<string, int> id2idx;
+    for (int i = 0; i < hapnames.size(); ++i){
+        id2idx.insert(make_pair(hapnames[i], i));
+    }
+
+    ifstream infile(assnfile.c_str());
+    string bc_str;
+    string id_str;
+    char s_d;
+    double llr;
+    
+    int doubcount = 0;
+
+    while (infile >> bc_str >> id_str >> s_d >> llr){
+        // Process barcode string
+        size_t sep_pos = bc_str.find("-");
+        if (sep_pos != string::npos){
+            bc_str = bc_str.substr(0, sep_pos);
+        }
+        bc as_bitset;
+        str2bc(bc_str.c_str(), as_bitset, 16);
+        unsigned long as_ul = as_bitset.to_ulong();
+        if (s_d == 'D'){
+            size_t sep_pos = id_str.find("+");
+            if (sep_pos == string::npos){
+                sep_pos = id_str.find("x");
+                if (sep_pos == string::npos){
+                    sep_pos = id_str.find("X");
+                }
+            }
+            if (sep_pos == string::npos){
+                fprintf(stderr, "ERROR: could not process ID string %s as a doublet\n", 
+                    id_str.c_str());
+                exit(1);
+            }
+            else{
+                string id1 = id_str.substr(0, sep_pos);
+                string id2 = id_str.substr(sep_pos+1, id_str.length()-sep_pos-1);
+                if (id2idx.count(id1) == 0){
+                    fprintf(stderr, "ERROR: id %s not found in haplotypes. Did you forget \
+to pass the .ids file (-i)?\n", id1.c_str());
+                    exit(1);
+                }
+                if (id2idx.count(id2) == 0){
+                    fprintf(stderr, "ERROR: id %s not found in haplotypes. Did you forget \
+to pass the .ids file (-i)?\n", id2.c_str());
+                    exit(1);
+                }
+                int idx1 = id2idx[id1];
+                int idx2 = id2idx[id2];
+                
+                int idx3;
+                bool is_doub = true;
+                if (idx1 < idx2){
+                    idx3 = hap_comb_to_idx(idx1, idx2, hapnames.size());
+                }
+                else if (idx2 < idx1){
+                    idx3 = hap_comb_to_idx(idx2, idx1, hapnames.size());
+                }
+                else{
+                    // They're the same.
+                    idx3 = idx1;
+                    is_doub = false;
+                }
+                if (!doublets_only || is_doub){
+                    assignments.emplace(as_ul, idx3);
+                }
+            }
+        }
+        else if (s_d == 'S' && !doublets_only){
+            if (id2idx.count(id_str) == 0){
+                fprintf(stderr, "ERROR: id %s not found in haplotypes. Did you forget to \
+pass the .ids file (-i)?\n", id_str.c_str());
+                exit(1);
+            }
+            int idx = id2idx[id_str];
+            assignments.emplace(as_ul, idx);
+        }
+    }
+}
+
+void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_counter,
+    robin_hood::unordered_map<unsigned long, int>& assignments,
+    vector<hap>& clusthaps,
+    hapstr& mask_global,
+    int nvars,
+    robin_hood::unordered_map<unsigned long, double>& mixprops_alpha,
+    robin_hood::unordered_map<unsigned long, double>& mixprops_beta){
+
+    int n_samples = (int)clusthaps.size();
+
+    for (robin_hood::unordered_map<unsigned long, int>::iterator a = assignments.begin();
+        a != assignments.end(); ++a){
+        
+        if (a->second >= n_samples){
+            
+            // Doublet.
+            pair<int, int> combo = idx_to_hap_comb(a->second, n_samples);
+            
+            // Fit a beta distribution to proportion matching individual 1 
+            double alpha = 0.0;
+            double beta = 0.0;
+
+            for (int x = 0; x < nvars; ++x){
+                if (mask_global[x] && clusthaps[combo.first].mask[x] &&
+                    clusthaps[combo.second].mask[x] && 
+                    clusthaps[combo.first].vars[x] != clusthaps[combo.second].vars[x]){
+                    
+                    // We can use this site.
+                    int nmaj = hap_counter[a->first].counts1[x];
+                    int nmin = hap_counter[a->first].counts2[x];
+                    if (nmaj + nmin > 0){
+                        if (clusthaps[combo.first].vars[x] && !clusthaps[combo.second].vars[x]){
+                            // minor allele is indv 1
+                            alpha += (double)nmin;
+                            beta += (double)nmaj;
+                        }
+                        else if (clusthaps[combo.second].vars[x] && !clusthaps[combo.first].vars[x]){
+                            // minor allele is indv 2
+                            alpha += (double)nmaj;
+                            beta += (double)nmin;
+                        }
+                    }
+                }
+            }
+            
+            if (alpha + beta > 0){
+                mixprops_alpha.emplace(a->first, alpha);
+                mixprops_beta.emplace(a->first, beta);
+            }
+        }
+    }    
+}
+
+void write_mixprops(FILE* outf,
+    robin_hood::unordered_map<unsigned long, double>& mixprops_alpha,
+    robin_hood::unordered_map<unsigned long, double>& mixprops_beta,
+    robin_hood::unordered_map<unsigned long, int>& assignments,
+    vector<string>& clust_ids){
+    
+    for (robin_hood::unordered_map<unsigned long, double>::iterator mp = mixprops_alpha.begin();
+        mp != mixprops_alpha.end(); ++mp){
+        
+        bc as_bitset(mp->first);
+        string bc_str = bc2str(as_bitset, 16);
+
+        int assn = assignments[mp->first];
+        pair<int, int> combo = idx_to_hap_comb(assn, clust_ids.size());
+        
+        string name1 = idx2name(combo.first, clust_ids);
+        string name2 = idx2name(combo.second, clust_ids);
+        
+        fprintf(outf, "%s\t%s\t%s\t%f\t%f\n", bc_str.c_str(), name1.c_str(), name2.c_str(),
+            mp->second, mixprops_beta[mp->first]);
+        fprintf(outf, "%s\t%s\t%s\t%f\t%f\n", bc_str.c_str(), name2.c_str(), name1.c_str(),
+            mixprops_beta[mp->first], mp->second);
+
+    }
+
+}
+
 int main(int argc, char *argv[]) {    
     
     static struct option long_options[] = {
@@ -2205,8 +2347,8 @@ int main(int argc, char *argv[]) {
        {"doublet_rate", required_argument, 0, 'D'},
        {"haps", required_argument, 0, 'H'},
        {"ids", required_argument, 0, 'i'},
-       {"cov_filt", no_argument, 0, 'c'},
-       {"proportion", no_argument, 0, 'p'},
+       {"no_cov_filt", no_argument, 0, 'c'},
+       {"assignments", required_argument, 0, 'a'},
        {0, 0, 0, 0} 
     };
     
@@ -2229,7 +2371,8 @@ int main(int argc, char *argv[]) {
     string idsfile;
     string barcode_group = "";
     bool mixing_proportions = false;
-    bool cov_filt = false;
+    string assnfile = "";
+    bool cov_filt = true;
 
     int option_index = 0;
     int ch;
@@ -2237,7 +2380,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:o:B:f:g:q:Q:n:m:v:H:i:D:cpdh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:o:B:f:g:q:Q:n:m:v:H:i:D:a:cdh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -2278,7 +2421,7 @@ int main(int argc, char *argv[]) {
                 minbaseq = atoi(optarg);
                 break;
             case 'c':
-                cov_filt = true;
+                cov_filt = false;
                 break;
             case 'm':
                 mito_chrom = optarg;
@@ -2290,8 +2433,9 @@ int main(int argc, char *argv[]) {
             case 'd':
                 dump = true;
                 break;
-            case 'p':
+            case 'a':
                 mixing_proportions = true;
+                assnfile = optarg;
                 break;
             default:
                 help(0);
@@ -2316,7 +2460,15 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: doublet rate must be between 0 and 1, inclusive\n");
         exit(1);
     }
-    
+    if (mixing_proportions && (!hapsfile_given || !varsfile_given)){
+        fprintf(stderr, "ERROR: if inferring mixing proportions, -H, -v, and -a are all required\n");
+        exit(1);
+    }
+    if (mixing_proportions && dump){
+        fprintf(stderr, "ERROR: cannot infer mixing proportions and also dump counts\n");
+        exit(1);
+    }
+
     // If haplotypes are already constructed, we can treat a barcode list as a filter.
     // This is because we don't need to cluster/toss out variants anyway, so no need
     // loading the full set of barcodes.
@@ -2424,25 +2576,28 @@ int main(int argc, char *argv[]) {
         write_vars(mito_chrom, output_prefix, vars2, mask_global, false);
     }
     
-    fprintf(stderr, "Building cell haplotypes from allele counts...\n");
-
     map<int, int> orig_to_collapsed;
     map<int, set<int> > collapsed_to_orig;
     map<int, robin_hood::unordered_set<unsigned long> > site_minor;
     map<int, robin_hood::unordered_set<unsigned long> > site_major;
     map<int, robin_hood::unordered_set<unsigned long> > site_mask;
     vector<pair<long int, int> > clsort;
-    process_var_counts(hap_counter, haplotypes, varsfile_given,
-        hapsfile_given || dump, mask_global, nvars, has_bc_whitelist, site_minor,
-        site_major, site_mask, orig_to_collapsed, collapsed_to_orig,
-        clsort, one);  
    
-    
     // Define output file for cell haplotypes 
     string haps_out = output_prefix + ".cellhaps";
-    if (dump){
-        write_bchaps(haps_out, nvars, mask_global, haplotypes, barcode_group); 
-        return 0; // finished
+    
+    if (!mixing_proportions){
+        
+        fprintf(stderr, "Building cell haplotypes from allele counts...\n");
+        process_var_counts(hap_counter, haplotypes, varsfile_given,
+            hapsfile_given || dump, mask_global, nvars, has_bc_whitelist, site_minor,
+            site_major, site_mask, orig_to_collapsed, collapsed_to_orig,
+            clsort, one);  
+        
+        if (dump){
+            write_bchaps(haps_out, nvars, mask_global, haplotypes, barcode_group); 
+            return 0; // finished
+        }
     }
 
     // Store haplotypes of clusters (whether inferred or loaded)
@@ -2484,6 +2639,38 @@ int main(int argc, char *argv[]) {
         write_vars(mito_chrom, output_prefix, vars2, mask_global, true); 
     }
     
+    // Fill in numeric ID strings, if IDs file not provided
+    if (clust_ids.size() == 0){
+        char idbuf[50];
+        for (int i = 0; i < clusthaps.size(); ++i){
+            sprintf(&idbuf[0], "%d", i);
+            clust_ids.push_back(idbuf);
+        }
+    }
+    
+    if (mixing_proportions){
+        
+        // We have everything we need to do this now.
+        robin_hood::unordered_map<unsigned long, int> assignments;
+        parse_assignments(assnfile, clust_ids, assignments, true);
+        if (assignments.size() == 0){
+            fprintf(stderr, "ERROR: inferring mixture proportions, but no doublets \
+were found in input file %s\n", assnfile.c_str());
+            exit(1); 
+        }
+        robin_hood::unordered_map<unsigned long, double> mixprops_alpha;
+        robin_hood::unordered_map<unsigned long, double> mixprops_beta;
+        infer_mixprops(hap_counter, assignments, clusthaps, mask_global, nvars, mixprops_alpha,
+            mixprops_beta);
+        
+        // Spill to disk.
+        string mixprops_out_name = output_prefix + ".props";
+        FILE* mixprops_out = fopen(mixprops_out_name.c_str(), "w");
+        write_mixprops(mixprops_out, mixprops_alpha, mixprops_beta, assignments, clust_ids);
+        fclose(mixprops_out);
+        return 0;
+    }
+
     // Write barcode haps file
     write_bchaps(haps_out, nvars, mask_global, haplotypes, barcode_group);
     
@@ -2494,7 +2681,6 @@ int main(int argc, char *argv[]) {
     
     robin_hood::unordered_map<unsigned long, int> assignments;
     robin_hood::unordered_map<unsigned long, double> assignments_llr;
-    robin_hood::unordered_map<unsigned long, double> doublet_mixprop;
 
     // oversight -- need to convert type of set here
     robin_hood::unordered_set<unsigned long> cell_filter;
@@ -2506,7 +2692,7 @@ int main(int argc, char *argv[]) {
     }
     assign_bcs(hap_counter, assignments, assignments_llr, clusthaps,
         mask_global, nvars, doublet_rate, has_bc_filter_assn, cell_filter, 
-        one, mixing_proportions, doublet_mixprop);
+        one);
     
     map<int, int> id_counter;
     int tot_cells = 0;
@@ -2514,14 +2700,7 @@ int main(int argc, char *argv[]) {
     
     string assn_out = output_prefix + ".assignments";
     
-    // Fill in numeric ID strings, if IDs file not provided
-    if (clust_ids.size() == 0){
-        char idbuf[50];
-        for (int i = 0; i < clusthaps.size(); ++i){
-            sprintf(&idbuf[0], "%d", i);
-            clust_ids.push_back(idbuf);
-        }
-    }
+    
     write_assignments(assn_out, assignments, assignments_llr,
         barcode_group, clust_ids, clusthaps.size(), id_counter, 
         tot_cells, doub_cells);

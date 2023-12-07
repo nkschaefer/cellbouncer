@@ -15,6 +15,8 @@
 #include <math.h>
 #include <mixtureDist/functions.h>
 #include <htswrapper/bc_hash.h>
+#include "nnls.h"
+
 /**
  * Contains functions used by more than one program in this
  * repository.
@@ -283,7 +285,6 @@ int collapse_llrs(map<int, map<int, double> >& llrs, double& llr_final){
  * inaccurate.
  */
 double doublet_chisq(map<int, int>& idcounts, int n_samples){
-    
     int tot_single = 0;
     int tot_double = 0;
     map<int, int> singles;
@@ -323,7 +324,7 @@ double doublet_chisq(map<int, int>& idcounts, int n_samples){
     for (map<int, double>::iterator df = doubfreq.begin(); df != doubfreq.end(); ++df){
         df->second /= doubfreq_tot;
     }
-
+    
     // Now do Chi-squared test
     double chisq = 0.0;
     int df = 0;
@@ -337,4 +338,148 @@ double doublet_chisq(map<int, int>& idcounts, int n_samples){
     // Degrees of freedom = number of categories minus 1
     df -= 1;
     return pchisq(chisq, (double)df);
+}
+
+/**
+ * Gets the non-negative least squares solution
+ * to the problem Ax = b given A and b.
+ */
+bool nn_lstsq(vector<vector<double> >& a,
+    vector<double>& b,
+    vector<double>& result_coefficients){
+    
+    int M = a.size(); // rows of A
+    int N = a[0].size(); // cols of A
+    int NRHS = 1; // cols of X
+    int MDA = M; // min(1, M)
+    int LDB = max(N,M); // rows of Y
+    
+    // Store results
+    double* x = new double[N];
+    
+    // Allocate workspace variables    
+    double* work = new double[N];
+    double* zz = new double[M];
+    int* index = new int[2*N];
+    if (M != b.size()){
+        fprintf(stderr, "dimensions do not match\n");
+        exit(1);
+    }
+    
+    // Populate A matrix
+    // NOTE: entries are in order of columns, then rows
+    double* a_lapack = new double[M*N];
+    int k = 0;
+    for (int j = 0; j < N; ++j){
+        for (int i = 0; i < M; ++i){
+            a_lapack[i+j*M] = a[i][j];
+        }
+    }
+    // Populate B (y) matrix
+    double* b_lapack = new double[LDB*NRHS];
+    for (int i = 0; i < b.size(); ++i){
+        b_lapack[i] = b[i];
+    }
+    int mode;
+    double residual;
+    int ret = nnls_c(a_lapack, &MDA, &M, &N, b_lapack, x, &residual,
+        work, zz, index, &mode);
+    if (mode == 3){
+        fprintf(stderr, "Did not converge\n");
+        return false;
+    }
+    else if (mode == 2){
+        fprintf(stderr, "bad dimensions\n");
+        exit(1);
+    }
+    if (result_coefficients.size() < a[0].size()){
+        result_coefficients.clear();
+        for (int i = 0; i < a[0].size(); ++i){
+            result_coefficients.push_back(0.0);
+        }
+    }
+    for (int i = 0; i < a[0].size(); ++i){
+        result_coefficients[i] = x[i];
+    }
+    delete[] a_lapack;
+    delete[] b_lapack; 
+    delete[] x;
+    delete[] work;
+    delete[] zz;
+    delete[] index;
+    return true;
+}
+
+/**
+ * Same as nn_lstsq, but includes a vector of 
+ * weights corresponding to rows of A and b.
+ */
+bool weighted_nn_lstsq(vector<vector<double> >& a,
+    vector<double>& b,
+    vector<double>& weights,
+    vector<double>& result_coefficients){
+    
+    int M = a.size(); // rows of A
+    int N = a[0].size(); // cols of A
+    int NRHS = 1; // cols of X
+    int MDA = M; // min(1, M)
+    int LDB = max(N,M); // rows of Y
+    
+    // Store results
+    double* x = new double[N];
+    
+    // Allocate workspace variables    
+    double* work = new double[N];
+    double* zz = new double[M];
+    int* index = new int[2*N];
+    if (M != b.size()){
+        fprintf(stderr, "dimensions do not match\n");
+        exit(1);
+    }
+    
+    // Populate A matrix
+    // NOTE: entries are in order of columns, then rows
+    double* a_lapack = new double[M*N];
+    int k = 0;
+    for (int j = 0; j < N; ++j){
+        for (int i = 0; i < M; ++i){
+            // Here's where the weights come in: multiply A entry
+            // by sqrt of corresponding row of weight vector
+            a_lapack[i+j*M] = a[i][j] * sqrt(weights[i]);
+        }
+    }
+    // Populate B (y) matrix
+    double* b_lapack = new double[LDB*NRHS];
+    for (int i = 0; i < b.size(); ++i){
+        // Incorporate weight into B vector
+        b_lapack[i] = b[i] * sqrt(weights[i]);
+    }
+    int mode;
+    double residual;
+    int ret = nnls_c(a_lapack, &MDA, &M, &N, b_lapack, x, &residual,
+        work, zz, index, &mode);
+    if (mode == 3){
+        fprintf(stderr, "Did not converge\n");
+        return false;
+    }
+    else if (mode == 2){
+        fprintf(stderr, "bad dimensions\n");
+        exit(1);
+    }
+    if (result_coefficients.size() < a[0].size()){
+        result_coefficients.clear();
+        for (int i = 0; i < a[0].size(); ++i){
+            result_coefficients.push_back(0.0);
+        }
+    }
+    for (int i = 0; i < a[0].size(); ++i){
+        result_coefficients[i] = x[i];
+    }
+    delete[] a_lapack;
+    delete[] b_lapack; 
+    delete[] x;
+    delete[] work;
+    delete[] zz;
+    delete[] index;
+    return true;
 }
