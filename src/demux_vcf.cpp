@@ -1881,8 +1881,10 @@ void write_summary(FILE* outf,
             (double)count_doublets / (double)assn.size());
         
         double doub_chisq = doublet_chisq(idcounts, samples.size());
-        fprintf(outf, "%s\tdoublet_chisq.p\t%f\n", outpre.c_str(),
-            doub_chisq);
+        if (doub_chisq >= 0.0){
+            fprintf(outf, "%s\tdoublet_chisq.p\t%f\n", outpre.c_str(),
+                doub_chisq);
+        }
 
         vector<pair<double, int> > fdisort;
         for (map<int, int>::iterator icd = idcounts_in_doublet.begin();
@@ -1944,7 +1946,7 @@ void help(int code){
     fprintf(stderr, "       will be considered, and phasing will be ignored.\n");
     fprintf(stderr, "    --output_prefix -o Base name for output files\n");
     fprintf(stderr, "===== RECOMMENDED =====\n");
-    fprintf(stderr, "    --cell_barcodes -c To consider only barcodes that have passed \n");
+    fprintf(stderr, "    --barcodes -B To consider only barcodes that have passed \n");
     fprintf(stderr, "       filtering and represent true cells, provide a filtered list \n");
     fprintf(stderr, "       of cell barcodes here. If you mapped the data using \n");
     fprintf(stderr, "       cellranger, this file will be located in \n");
@@ -2014,7 +2016,7 @@ int main(int argc, char *argv[]) {
        {"bam", required_argument, 0, 'b'},
        {"vcf", required_argument, 0, 'v'},
        {"output_prefix", required_argument, 0, 'o'},
-       {"cell_barcode", required_argument, 0, 'c'},
+       {"barcodes", required_argument, 0, 'B'},
        {"index_jump", no_argument, 0, 'j'},
        {"dump_counts", no_argument, 0, 'd'},
        {"load_counts", no_argument, 0, 'l'},
@@ -2057,7 +2059,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:o:c:i:I:q:D:g:p:ejdlh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:g:p:ejdlh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -2077,7 +2079,7 @@ int main(int argc, char *argv[]) {
             case 'g':
                 barcode_group = optarg;
                 break;
-            case 'c':
+            case 'B':
                 cell_barcode = true;
                 cell_barcode_file = optarg;
                 break;

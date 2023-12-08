@@ -285,6 +285,12 @@ int collapse_llrs(map<int, map<int, double> >& llrs, double& llr_final){
  * inaccurate.
  */
 double doublet_chisq(map<int, int>& idcounts, int n_samples){
+    
+    if (n_samples <= 2){
+        // Can't do test with up to only one doublet type
+        return -1.0;
+    }
+
     int tot_single = 0;
     int tot_double = 0;
     map<int, int> singles;

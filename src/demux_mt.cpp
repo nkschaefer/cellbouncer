@@ -2141,8 +2141,10 @@ void write_statsfile(string& statsfilename,
         
         // Compute chi-squared p value for expected vs actual counts of each doublet type
         double chisq_p = doublet_chisq(id_counter, samples.size());
-        fprintf(statsfilef, "%s\tdoublet_chisq.p\t%f\n", output_prefix.c_str(),
-            chisq_p);
+        if (chisq_p >= 0){
+            fprintf(statsfilef, "%s\tdoublet_chisq.p\t%f\n", output_prefix.c_str(),
+                chisq_p);
+        }
     }
      
     vector<pair<int, int> > idcounts_sorted;
