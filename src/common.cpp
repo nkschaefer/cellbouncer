@@ -306,7 +306,7 @@ double doublet_chisq(map<int, int>& idcounts, int n_samples){
             doubles.insert(make_pair(ic->first, ic->second));
         }
     }
-    
+     
     // If no doublets, can't do anything
     if (tot_double == 0){
         return 1.0;
@@ -316,6 +316,16 @@ double doublet_chisq(map<int, int>& idcounts, int n_samples){
     map<int, double> singfreq;
     for (map<int, int>::iterator s = singles.begin(); s != singles.end(); ++s){
         singfreq.insert(make_pair(s->first, (double)s->second/(double)tot_single));
+    }
+    
+    // Check for missing doublet combinations, and store a count of 0 for each 
+    for (int i = 0; i < n_samples-1; ++i){
+        for (int j = i + 1; j < n_samples; ++j){
+            int k = hap_comb_to_idx(i, j, n_samples);
+            if (doubles.count(k) == 0){
+                doubles.insert(make_pair(k, 0));
+            }
+        }
     }
 
     // Get expectation of each doublet combination

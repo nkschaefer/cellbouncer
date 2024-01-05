@@ -948,105 +948,106 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                 int count1 = hc->second.counts1[site];
                 int count2 = hc->second.counts2[site];
                 
-                // var set in hapstr == count2 is expected
-                for (int i = 0; i < all_model_idx.size()-1; ++i){
-                    int idx1 = all_model_idx[i];
-                    bool covered_idx1 = true;
-                    // expected minor allele fraction this individual
-                    double exp_frac1;
-                    if (idx1 >= haps_final.size()){
-                        pair<int, int> comb = idx_to_hap_comb(idx1, haps_final.size());
-                        if (!haps_final[comb.first].mask[site] || 
-                            !haps_final[comb.second].mask[site]){
-                            covered_idx1 = false;
-                        }
-                        else{
-                            int nmin1a = 0;
-                            int nmin1b = 0;
-                            if (haps_final[comb.first].vars[site]){
-                                nmin1a++;
-                            }
-                            if (haps_final[comb.second].vars[site]){
-                                nmin1b++;
-                            }
-                            double exp_frac1a = (double)nmin1a;
-                            double exp_frac1b = (double)nmin1b;
-                            exp_frac1 = mixprops[idx1]* exp_frac1a + (1.0-mixprops[idx1])*exp_frac1b;
-                        }
-                    }
-                    else{
-                        int nmin1 = 0;
-                        if (!haps_final[idx1].mask[site]){
-                            covered_idx1 = false;
-                        }
-                        else if (haps_final[idx1].vars[site]){
-                            nmin1++;
-                        }
-                        exp_frac1 = (double)nmin1;
-                    }
-                    if (!covered_idx1){
-                        continue;
-                    }
-
-                    for (int j = i + 1; j < all_model_idx.size(); ++j){
-                        int idx2 = all_model_idx[j];
-                        bool covered_idx2 = true;
-                        double exp_frac2;
-                        if (idx2 >= haps_final.size()){
-                            pair<int, int> comb = idx_to_hap_comb(idx2, haps_final.size());
-                            if (!haps_final[comb.first].mask[site] ||
+                if (count1+count2 > 0){                
+                    // var set in hapstr == count2 is expected
+                    for (int i = 0; i < all_model_idx.size()-1; ++i){
+                        int idx1 = all_model_idx[i];
+                        bool covered_idx1 = true;
+                        // expected minor allele fraction this individual
+                        double exp_frac1;
+                        if (idx1 >= haps_final.size()){
+                            pair<int, int> comb = idx_to_hap_comb(idx1, haps_final.size());
+                            if (!haps_final[comb.first].mask[site] || 
                                 !haps_final[comb.second].mask[site]){
-                                covered_idx2 = false;
+                                covered_idx1 = false;
                             }
                             else{
-                                int nmin2a = 0;
-                                int nmin2b = 0;
+                                int nmin1a = 0;
+                                int nmin1b = 0;
                                 if (haps_final[comb.first].vars[site]){
-                                    nmin2a++;
+                                    nmin1a++;
                                 }
                                 if (haps_final[comb.second].vars[site]){
-                                    nmin2b++;
+                                    nmin1b++;
                                 }
-                                double exp_frac2a = (double)nmin2a;
-                                double exp_frac2b = (double)nmin2b;
-                                exp_frac2 = mixprops[idx2]*exp_frac2a + (1.0-mixprops[idx2])*exp_frac2b;
+                                double exp_frac1a = (double)nmin1a;
+                                double exp_frac1b = (double)nmin1b;
+                                exp_frac1 = mixprops[idx1]* exp_frac1a + (1.0-mixprops[idx1])*exp_frac1b;
                             }
                         }
                         else{
-                            int nmin2 = 0;
-                            if (!haps_final[idx2].mask[site]){
-                                covered_idx2 = false;
+                            int nmin1 = 0;
+                            if (!haps_final[idx1].mask[site]){
+                                covered_idx1 = false;
                             }
-                            else if (haps_final[idx2].vars[site]){
-                                nmin2++;
+                            else if (haps_final[idx1].vars[site]){
+                                nmin1++;
                             }
-                            exp_frac2 = (double)nmin2;
+                            exp_frac1 = (double)nmin1;
                         }
-                        
-                        if (!covered_idx2){
+                        if (!covered_idx1){
                             continue;
                         }
 
-                        if (exp_frac1 != exp_frac2){
+                        for (int j = i + 1; j < all_model_idx.size(); ++j){
+                            int idx2 = all_model_idx[j];
+                            bool covered_idx2 = true;
+                            double exp_frac2;
+                            if (idx2 >= haps_final.size()){
+                                pair<int, int> comb = idx_to_hap_comb(idx2, haps_final.size());
+                                if (!haps_final[comb.first].mask[site] ||
+                                    !haps_final[comb.second].mask[site]){
+                                    covered_idx2 = false;
+                                }
+                                else{
+                                    int nmin2a = 0;
+                                    int nmin2b = 0;
+                                    if (haps_final[comb.first].vars[site]){
+                                        nmin2a++;
+                                    }
+                                    if (haps_final[comb.second].vars[site]){
+                                        nmin2b++;
+                                    }
+                                    double exp_frac2a = (double)nmin2a;
+                                    double exp_frac2b = (double)nmin2b;
+                                    exp_frac2 = mixprops[idx2]*exp_frac2a + (1.0-mixprops[idx2])*exp_frac2b;
+                                }
+                            }
+                            else{
+                                int nmin2 = 0;
+                                if (!haps_final[idx2].mask[site]){
+                                    covered_idx2 = false;
+                                }
+                                else if (haps_final[idx2].vars[site]){
+                                    nmin2++;
+                                }
+                                exp_frac2 = (double)nmin2;
+                            }
                             
-                            if (exp_frac1 == 0){
-                                exp_frac1 = zero;
-                            }
-                            else if (exp_frac1 == 1){
-                                exp_frac1 = one;
-                            }
-                            if (exp_frac2 == 0){
-                                exp_frac2 = zero;
-                            }
-                            else if (exp_frac2 == 1){
-                                exp_frac2 = one;
+                            if (!covered_idx2){
+                                continue;
                             }
 
-                            double ll1 = dbinom(count1+count2, count2, exp_frac1);
-                            double ll2 = dbinom(count1+count2, count2, exp_frac2);
-
-                            llrs[idx1][idx2] += (ll1-ll2);
-
+                            if (exp_frac1 != exp_frac2){
+                                
+                                if (exp_frac1 == 0){
+                                    exp_frac1 = zero;
+                                }
+                                else if (exp_frac1 == 1){
+                                    exp_frac1 = one;
+                                }
+                                if (exp_frac2 == 0){
+                                    exp_frac2 = zero;
+                                }
+                                else if (exp_frac2 == 1){
+                                    exp_frac2 = one;
+                                }
+                                
+                                double ll1 = dbinom(count1+count2, count2, exp_frac1);
+                                double ll2 = dbinom(count1+count2, count2, exp_frac2);
+                                
+                                llrs[idx1][idx2] += (ll1-ll2);
+                            }
                         }
                     }
                 }
@@ -1055,7 +1056,7 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
         
         double llr;
         int best_assignment = collapse_llrs(llrs, llr);
-        if (llr > 0){
+        if (best_assignment != -1 && llr > 0){
             assignments.emplace(hc->first, best_assignment);
             assignments_llr.emplace(hc->first, llr);
         }       
@@ -1073,13 +1074,18 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
  * If a prior run created a set of variants, load them from that file here.
  * No filtering will be done on this set.
  */
-void load_vars_from_file(string& filename, deque<varsite>& vars){
+string load_vars_from_file(string& filename, deque<varsite>& vars){
     ifstream f(filename);
+    if (!f.good()){
+        fprintf(stderr, "ERROR opening file %s\n", filename.c_str());
+    }
     string line;
+    string chrname = "";
     while (getline(f, line)){
         stringstream splitter(line);
         string field;
         string chrom;
+        
         int pos;
         char allele1;
         char allele2;
@@ -1087,6 +1093,12 @@ void load_vars_from_file(string& filename, deque<varsite>& vars){
         while (getline(splitter, field, '\t')){
             if (fld_idx == 0){
                 chrom = field;    
+                if (chrname != "" && chrname != chrom){
+                    fprintf(stderr, "ERROR: chrname %s does not match %s\n", 
+                    chrname.c_str(), chrom.c_str());
+                    exit(1);
+                }
+                chrname = chrom;
             }
             else if (fld_idx == 1){
                 // Convert from 1-based to 0-based
@@ -1137,6 +1149,7 @@ compiled to allow up to %d variable sites.\n", vars.size(), filename.c_str(), MA
         fprintf(stderr, "Please re-compile using MAX_SITES=%ld or higher.\n", vars.size());
         exit(1);
     }
+    return chrname;
 }
 
 /**
@@ -1358,13 +1371,16 @@ void count_vars_barcodes(string& bamfile,
     bool has_bc_whitelist, 
     set<unsigned long> & bc_whitelist, 
     robin_hood::unordered_map<unsigned long, var_counts>& hap_counter){
-
+    
     int vars_idx = 0;
     
     bam_reader reader(bamfile);
     reader.set_cb();
-    reader.set_query_region(mito_chrom.c_str(), -1, -1);
-    
+    bool success = reader.set_query_region(mito_chrom.c_str(), -1, -1);
+    if (!success){
+        fprintf(stderr, "ERROR: sequence %s not found in BAM file.\n", mito_chrom.c_str());
+        exit(1);
+    }
     while (reader.next()){
         if (!reader.unmapped() && !reader.secondary() && reader.has_cb_z 
             && reader.mapq >= minmapq){
@@ -1888,6 +1904,10 @@ pair<int, float> infer_clusters(hapstr& mask_global,
 
 void parse_idsfile(string& idsfilename, vector<string>& ids){
     ifstream infile(idsfilename.c_str());
+    if (!infile.good()){
+        fprintf(stderr, "ERROR opening file %s\n", idsfilename.c_str());
+        exit(1);
+    }
     string id;
     while (infile >> id ){
         ids.push_back(id);
@@ -1989,6 +2009,10 @@ void load_clusthaps(string& hapsfilename,
     vector<hap>& clusthaps){
 
     ifstream infile(hapsfilename.c_str());
+    if (!infile.good()){
+        fprintf(stderr, "ERROR opening file %s\n", hapsfilename.c_str());
+        exit(1);
+    }
     string hapstring;
     bool first = true;
     while (infile >> hapstring ){
@@ -2011,7 +2035,7 @@ void load_clusthaps(string& hapsfilename,
         }
         clusthaps.push_back(h);
     }
-
+    /*
     // Check for any positions where there are no differences among haplotypes
     // and blacklist them.
     for (int i = 0; i < nvars; ++i){
@@ -2029,11 +2053,13 @@ void load_clusthaps(string& hapsfilename,
                 }
             }
             if (nmaj == 0 || nmin == 0){
+                //fprintf(stderr, "remove site %d\n", i);
                 // Uninformative site.
                 mask_global.reset(i);
             }
         }
     }
+    */
 }
 
 /**
@@ -2177,6 +2203,10 @@ void parse_assignments(string& assnfile,
     }
 
     ifstream infile(assnfile.c_str());
+    if (!infile.good()){
+        fprintf(stderr, "ERROR opening file %s\n", assnfile.c_str());
+        exit(1);
+    }
     string bc_str;
     string id_str;
     char s_d;
@@ -2265,7 +2295,7 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assignments.begin();
         a != assignments.end(); ++a){
         
-        if (a->second >= n_samples){
+        if (hap_counter.count(a->first) > 0 && a->second >= n_samples){
             
             // Doublet.
             pair<int, int> combo = idx_to_hap_comb(a->second, n_samples);
@@ -2273,7 +2303,36 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
             // Fit a beta distribution to proportion matching individual 1 
             double alpha = 0.0;
             double beta = 0.0;
-
+            
+            for (int x = 0; x < nvars; ++x){
+                if (mask_global.test(x)){
+                    bc as_bitset(a->first);
+                    string bc_str = bc2str(as_bitset, 16);
+                    int hap1int = -1;
+                    if (clusthaps[combo.first].mask.test(x)){
+                        if (clusthaps[combo.first].vars.test(x)){
+                            hap1int = 1;
+                        }
+                        else{
+                            hap1int = 0;
+                        }
+                    }
+                    int hap2int = -1;
+                    if (clusthaps[combo.second].mask.test(x)){
+                        if (clusthaps[combo.second].vars.test(x)){
+                            hap2int = 1;
+                        }
+                        else{
+                            hap2int = 0;
+                        }
+                    }
+                    /*
+                    fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\n", bc_str.c_str(),
+                        x, hap1int, hap2int, hap_counter[a->first].counts1[x],
+                       hap_counter[a->first].counts2[x]); 
+                    */
+                }
+            }
             for (int x = 0; x < nvars; ++x){
                 if (mask_global[x] && clusthaps[combo.first].mask[x] &&
                     clusthaps[combo.second].mask[x] && 
@@ -2306,6 +2365,7 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
 }
 
 void write_mixprops(FILE* outf,
+    string& barcode_group,
     robin_hood::unordered_map<unsigned long, double>& mixprops_alpha,
     robin_hood::unordered_map<unsigned long, double>& mixprops_beta,
     robin_hood::unordered_map<unsigned long, int>& assignments,
@@ -2316,6 +2376,10 @@ void write_mixprops(FILE* outf,
         
         bc as_bitset(mp->first);
         string bc_str = bc2str(as_bitset, 16);
+        
+        if (barcode_group != ""){
+            bc_str += "-" + barcode_group;
+        }
 
         int assn = assignments[mp->first];
         pair<int, int> combo = idx_to_hap_comb(assn, clust_ids.size());
@@ -2506,7 +2570,7 @@ int main(int argc, char *argv[]) {
     
     if (varsfile_given){
         fprintf(stderr, "Loading variants from %s...\n", varsfile.c_str());
-        load_vars_from_file(varsfile, vars); 
+        mito_chrom = load_vars_from_file(varsfile, vars); 
     }
     else{
         fprintf(stderr, "Finding variable sites on the mitochondrial genome...\n");
@@ -2567,7 +2631,7 @@ int main(int argc, char *argv[]) {
 
     count_vars_barcodes(bamfile, mito_chrom, minmapq, vars, 
         has_bc_whitelist, bc_whitelist, hap_counter);     
-    
+   
     // Still need to filter variant sites based on coverage across cells
     hapstr mask_global;
     // Also translate variant counts into haplotype strings
@@ -2599,6 +2663,12 @@ int main(int argc, char *argv[]) {
         if (dump){
             write_bchaps(haps_out, nvars, mask_global, haplotypes, barcode_group); 
             return 0; // finished
+        }
+    }
+    else{
+        mask_global.reset();
+        for (int x = 0; x < nvars; ++x){
+            mask_global.set(x);
         }
     }
 
@@ -2636,7 +2706,7 @@ int main(int argc, char *argv[]) {
     }
     
     // Avoid writing out vars file only if it would overwrite a preexisting vars file.
-    if (!varsfile_given || (output_prefix + ".vars" != varsfile)){ 
+    if (!varsfile_given && (output_prefix + ".vars" != varsfile)){ 
         // Write variants file
         write_vars(mito_chrom, output_prefix, vars2, mask_global, true); 
     }
@@ -2668,7 +2738,7 @@ were found in input file %s\n", assnfile.c_str());
         // Spill to disk.
         string mixprops_out_name = output_prefix + ".props";
         FILE* mixprops_out = fopen(mixprops_out_name.c_str(), "w");
-        write_mixprops(mixprops_out, mixprops_alpha, mixprops_beta, assignments, clust_ids);
+        write_mixprops(mixprops_out, barcode_group, mixprops_alpha, mixprops_beta, assignments, clust_ids);
         fclose(mixprops_out);
         return 0;
     }
