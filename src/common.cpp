@@ -406,7 +406,7 @@ bool nn_lstsq(vector<vector<double> >& a,
     }
     else if (mode == 2){
         fprintf(stderr, "bad dimensions\n");
-        exit(1);
+        return false;
     }
     if (result_coefficients.size() < a[0].size()){
         result_coefficients.clear();

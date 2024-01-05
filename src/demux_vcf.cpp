@@ -1693,7 +1693,7 @@ void get_expected_allelecounts_from_ids(map<int,
  * 
  * Stores the mapping of individual ID -> proportion in the indvprops data structure
  */
-void model_empty_drops(robin_hood::unordered_map<unsigned long, 
+bool model_empty_drops(robin_hood::unordered_map<unsigned long, 
     map<pair<int, int>, map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
     unsigned long negdrop_cell,
     robin_hood::unordered_map<unsigned long, int>& assn_final,
@@ -1797,8 +1797,8 @@ void model_empty_drops(robin_hood::unordered_map<unsigned long,
                 indvprops[id] += props[i];
             }
         }
-
     }
+    return success;
 }
 
 /**
@@ -2483,16 +2483,20 @@ all possible individuals\n", idfile_doublet.c_str());
     // at cells assigned to each individual, we can attempt to model the 
     // sum of all empty droplets as a mixture of genotypes of different individuals
     // and write that to a file.
-    //if (neg_drops){
-    if (false){
+    if (neg_drops){
         fprintf(stderr, "Modeling empty droplets as a mixture of individuals \
 present in the pool...\n");
         map<int, double> indvprops;
-        model_empty_drops(indv_allelecounts, negdrop_cell, assn_final, samples, indvprops);
-        string fname = output_prefix + ".emptydrops";
-        FILE* outf = fopen(fname.c_str(), "w");
-        dump_empty_drops(outf, indvprops, samples);
-        fclose(outf);
+        bool success = model_empty_drops(indv_allelecounts, negdrop_cell, assn_final, samples, indvprops);
+        if (success){
+            string fname = output_prefix + ".emptydrops";
+            FILE* outf = fopen(fname.c_str(), "w");
+            dump_empty_drops(outf, indvprops, samples);
+            fclose(outf);
+        }
+        else{
+            fprintf(stderr, "linear algebra error - could not model empty droplets\n");
+        }
     }
     
     return 0;
