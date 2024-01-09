@@ -10,6 +10,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <sys/stat.h>
 #include <map>
 #include <unordered_map>
 #include <set>
@@ -24,6 +25,7 @@
 #include <mixtureDist/mixtureDist.h>
 #include <mixtureDist/mixtureModel.h>
 #include <mixtureDist/functions.h>
+#include <lapack.h>
 #include "robin_hood.h"
 #include "common.h"
 
@@ -257,6 +259,98 @@ int read_vcf(string& filename,
     bcf_close(bcf_reader);
     
     return nvar;
+}
+
+/**
+ * Given variants from a VCF file, gets the expected number of ref, het, and alt
+ * alleles per each other individual given each possible true identity.
+ */
+void get_conditional_match_fracs(map<int, map<int, var> >& snpdat,
+    map<pair<int, int>, map<int, float> >& conditional_match_fracs, 
+    int n_samples){
+    
+    // (sample, sitetype) -> other_sample -> number
+    map<pair<int, int>, map<int, float> > conditional_match_tots;
+
+    float err_tol = 0.0;
+
+    for (int i = 0; i < n_samples; ++i){
+        for (int n = 0; n <= 2; ++n){
+            map<int, float> m;
+            pair<int, int> key = make_pair(i, n);
+            conditional_match_fracs.insert(make_pair(key, m));
+            conditional_match_tots.insert(make_pair(key, m));
+        }
+    }
+    for (map<pair<int, int>, map<int, float> >::iterator cmf = conditional_match_fracs.begin();
+        cmf != conditional_match_fracs.end(); ++cmf){
+        for (int j = 0; j < n_samples; ++j){
+            if (j != cmf->first.first){
+                cmf->second.insert(make_pair(j, 0.0));
+            }
+        }
+    }
+    
+    for (map<int, map<int, var> >::iterator s1 = snpdat.begin(); s1 != snpdat.end(); ++s1){
+        for (map<int, var>::iterator s2 = s1->second.begin(); s2 != s1->second.end(); ++s2){
+            for (int i = 0; i < n_samples-1; ++i){
+                int n_i = 0;
+                if (s2->second.haps_covered[i]){
+                    if (s2->second.haps1[i]){
+                        n_i++;
+                    }
+                    if (s2->second.haps2[i]){
+                        n_i++;
+                    }
+                    for (int j = i + 1; j < n_samples; ++j){
+                        int n_j = 0;
+                        if (s2->second.haps_covered[j]){
+                            if (s2->second.haps1[j]){
+                                n_j++;
+                            }
+                            if (s2->second.haps2[j]){
+                                n_j++;
+                            }
+                            pair<int, int> k1 = make_pair(i, n_i);
+                            pair<int, int> k2 = make_pair(j, n_j);
+                            conditional_match_tots[k1][j]++;
+                            conditional_match_tots[k2][i]++;
+
+                            conditional_match_fracs[k1][j] += (float)n_j/2.0;
+                            conditional_match_fracs[k2][i] += (float)n_i/2.0;                                                 
+                        }                            
+                    }
+                }
+            }
+        }
+    }
+    
+    // normalize
+    for (map<pair<int, int>, map<int, float> >::iterator cmf = conditional_match_fracs.begin();
+        cmf != conditional_match_fracs.end(); ++cmf){
+        
+        for (map<int, float>::iterator cmf2 = cmf->second.begin(); cmf2 != cmf->second.end(); ++cmf2){
+            if (conditional_match_tots[cmf->first][cmf2->first] == 0.0){
+                cmf2->second = err_tol;
+            }
+            else{
+                cmf2->second /= conditional_match_tots[cmf->first][cmf2->first];
+                if (cmf2->second == 0){
+                    cmf2->second = err_tol;
+                }
+                else if (cmf2->second == 1.0){
+                    cmf2->second = 1.0-err_tol;
+                }
+            }
+        }
+    }
+    
+    // add in self-self
+    for (int i = 0; i < n_samples; ++i){
+        conditional_match_fracs[make_pair(i, 0)].insert(make_pair(i, err_tol));
+        conditional_match_fracs[make_pair(i, 1)].insert(make_pair(i, 0.5));
+        conditional_match_fracs[make_pair(i, 2)].insert(make_pair(i, 1.0-err_tol));
+    }
 }
 
 // ===== BAM-related functions =====
@@ -665,7 +759,61 @@ void dump_cellcounts(FILE* out_cell,
     } 
 }
 
+/**
+ * Read in previously computed expected matching fractions conditional
+ * on cell identities.
+ */
+void load_exp_fracs(string& filename,   
+    map<pair<int, int>, map<int, float> >& conditional_match_frac,
+    vector<string>& samples){
+    
+    map<string, int> sample2idx;
+    for (int i = 0; i < samples.size(); ++i){
+        sample2idx.insert(make_pair(samples[i], i));
+    }
 
+    ifstream infile(filename.c_str());
+    string sample1;
+    int type;
+    string sample2;
+    float frac; 
+    while (infile >> sample1 >> type >> sample2 >> frac){
+        if (sample2idx.count(sample1) == 0){
+            fprintf(stderr, "ERROR: indv %s from expected fraction file not found in VCF\n", sample1.c_str());
+            exit(1);
+        }
+        if (sample2idx.count(sample2) == 0){
+            fprintf(stderr, "ERROR: indv %s from expected fraction file not found in VCF\n", sample2.c_str());
+            exit(1);
+        }       
+        else{
+            int idx1 = sample2idx[sample1];
+            int idx2 = sample2idx[sample2];
+
+            pair<int, int> key1 = make_pair(idx1, type);
+            if (conditional_match_frac.count(key1) == 0){
+                map<int, float> m;
+                conditional_match_frac.insert(make_pair(key1, m));
+            }
+            conditional_match_frac[key1].insert(make_pair(idx2, frac));
+        }
+    }
+}
+
+/**
+ * Write conditional match fracs to output file.
+ */
+void dump_exp_fracs(FILE* exp_frac_out,
+    map<pair<int, int>, map<int, float> >& conditional_match_frac,
+    vector<string>& samples){ 
+    for (map<pair<int, int>, map<int, float> >::iterator cmf = conditional_match_frac.begin();
+        cmf != conditional_match_frac.end(); ++cmf){
+        for (map<int, float>::iterator cmf2 = cmf->second.begin(); cmf2 != cmf->second.end(); ++cmf2){
+            fprintf(exp_frac_out, "%s\t%d\t%s\t%f\n", idx2name(cmf->first.first, samples).c_str(),
+                cmf->first.second, idx2name(cmf2->first, samples).c_str(), cmf2->second);
+        }
+    }
+}
 
 // ===== Functions related to deciding identities of cells =====
 
@@ -1641,6 +1789,82 @@ void dump_assignments(FILE* outf,
 }
 
 /**
+ * Load cell -> individual assignments from text file
+ */
+void load_assignments_from_file(string& filename,
+    robin_hood::unordered_map<unsigned long, int>& assn,
+    robin_hood::unordered_map<unsigned long, double>& assn_llr,
+    vector<string>& samples){
+    
+    map<string, int> sample2idx;
+    for (int i = 0; i < samples.size(); ++i){
+        sample2idx.insert(make_pair(samples[i], i));
+    }
+
+    ifstream inf(filename.c_str());
+    string bc_str;
+    string idstr;
+    char s_d;
+    double llr;
+
+    while (inf >> bc_str >> idstr >> s_d >> llr){
+        int n_elim = 0;
+        for (int i = bc_str.length()-1; i >= 0; i--){
+            if (bc_str[i] == 'A' || bc_str[i] == 'C' || bc_str[i] == 'G' || bc_str[i] == 'T'){
+                break;
+            }
+            else{
+                n_elim++;
+            }
+        }
+        if (n_elim > 0){
+            bc_str = bc_str.substr(0, bc_str.length()-n_elim);
+        }
+        bc as_bitset;
+        str2bc(bc_str.c_str(), as_bitset, 16);
+        unsigned long as_ul = as_bitset.to_ulong();
+
+        int indv_idx = -1;
+        size_t splitpos = idstr.find("+");
+        if (splitpos == string::npos){
+            splitpos = idstr.find("x");
+        }
+        if (splitpos != string::npos){
+            string id1 = idstr.substr(0, splitpos);
+            string id2 = idstr.substr(splitpos+1, idstr.length()-splitpos-1);
+            if (sample2idx.count(id1) == 0){
+                fprintf(stderr, "ERROR: individual %s not found in VCF\n", id1.c_str());
+                exit(1);
+            }
+            if (sample2idx.count(id2) == 0){
+                fprintf(stderr, "ERROR: individual %s not found in VCF\n", id2.c_str());
+            }
+            int idx1 = sample2idx[id1];
+            int idx2 = sample2idx[id2];
+            if (idx1 > idx2){
+                indv_idx = hap_comb_to_idx(idx2, idx1, samples.size());
+            }
+            else{
+                indv_idx = hap_comb_to_idx(idx1, idx2, samples.size());
+            }
+        }
+        else{
+            if (s_d == 'D'){
+                fprintf(stderr, "ERROR: ID %s has no delimiter but labeled as double\n", idstr.c_str());
+                exit(1);
+            }
+            if (sample2idx.count(idstr) == 0){
+                fprintf(stderr, "ERROR: individual %s not found in VCF\n", idstr.c_str());
+                exit(1);
+            }
+            indv_idx = sample2idx[idstr];
+        }
+        assn.emplace(as_ul, indv_idx);
+        assn_llr.emplace(as_ul, llr);
+    }
+}
+
+/**
  * Given the set of read counts at each type of SNP per cell
  * and assignments of cells to individuals, sums all ref & alt
  * allele counts at each type of SNP per individual in order to
@@ -1648,37 +1872,859 @@ void dump_assignments(FILE* outf,
  * identities.
  */
 void get_expected_allelecounts_from_ids(map<int,
-    map<pair<int, int>, map<pair<int, int>, pair<float, float> > > >& expected_allelecounts,
+    map<pair<int, int>, pair<float, float> > >& expected_allelecounts,
     robin_hood::unordered_map<unsigned long, map<pair<int, int>, 
         map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
     robin_hood::unordered_map<unsigned long, int>& assn_final,
-    unsigned long negdrop_cell){
+    unsigned long negdrop_cell,
+    int n_samples){
     
+    pair<int, int> nullkey = make_pair(-1, -1);
+
     for (robin_hood::unordered_map<unsigned long, 
         map<pair<int, int>, map<pair<int, int>, pair<float, float> > > >::iterator x = 
         indv_allelecounts.begin(); x != indv_allelecounts.end(); ++x){
         
         if (x->first != negdrop_cell){
+            if (assn_final.count(x->first) == 0){
+                continue;
+            }
+
             int assn = assn_final[x->first];
-            if (expected_allelecounts.count(assn) == 0){
-                map<pair<int, int>, map<pair<int, int>, pair<float, float> > > m;
-                expected_allelecounts.insert(make_pair(assn, m));
+            bool is_combo = false;
+            pair<short, short> combo;
+            if (assn >= n_samples){
+                combo = idx_to_hap_comb(assn, n_samples);
+                is_combo = true;
+                if (expected_allelecounts.count(combo.first) == 0){
+                    map<pair<int, int>, pair<float, float> > m;
+                    expected_allelecounts.insert(make_pair(combo.first, m));
+                }
+                if (expected_allelecounts.count(combo.second) == 0){
+                    map<pair<int, int>, pair<float, float> > m;
+                    expected_allelecounts.insert(make_pair(combo.second, m));
+                }
+            }
+            else{
+                if (expected_allelecounts.count(assn) == 0){
+                    map<pair<int, int>, pair<float, float> > m;
+                    expected_allelecounts.insert(make_pair(assn, m));
+                }
             }
             for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = 
                 x->second.begin(); y != x->second.end(); ++y){
-                if (expected_allelecounts[assn].count(y->first) == 0){
-                    map<pair<int, int>, pair<float, float> > m;
-                    expected_allelecounts[assn].insert(make_pair(y->first, m));
-                }
-                for (map<pair<int, int>, pair<float, float> >::iterator z = y->second.begin();
-                    z != y->second.end(); ++z){
-                    if (expected_allelecounts[assn][y->first].count(z->first) == 0){
-                        expected_allelecounts[assn][y->first].insert(make_pair(z->first, make_pair(0,0)));
+
+                if (y->second.count(nullkey) > 0){
+                    double ref = y->second[nullkey].first;
+                    double alt = y->second[nullkey].second;
+                    
+                    if (is_combo){
+                        if (expected_allelecounts[combo.first].count(y->first) == 0){
+                            expected_allelecounts[combo.first].insert(make_pair(y->first, make_pair(0.0, 0.0)));
+                        }
+                        if (expected_allelecounts[combo.second].count(y->first) == 0){
+                            expected_allelecounts[combo.second].insert(make_pair(y->first, make_pair(0.0, 0.0)));
+                        }
+                        expected_allelecounts[combo.first][y->first].first += ref;
+                        expected_allelecounts[combo.second][y->first].first += ref;
+                        expected_allelecounts[combo.first][y->first].second += alt;
+                        expected_allelecounts[combo.second][y->first].second += alt;
                     }
-                    expected_allelecounts[assn][y->first][z->first].first += z->second.first;
-                    expected_allelecounts[assn][y->first][z->first].second += z->second.second;
+                    else{
+                        if (expected_allelecounts[assn].count(y->first) == 0){
+                            expected_allelecounts[assn].insert(make_pair(y->first, make_pair(0.0, 0.0)));
+                        }
+                        expected_allelecounts[assn][y->first].first += ref;
+                        expected_allelecounts[assn][y->first].second += alt;
+                    } 
                 }
             }
+        }
+    }
+}
+
+/**
+ * Given counts of ref/alt alleles at different types of SNPs in each cell,
+ * along with the assignment of each cell to each identity, computes a model
+ * of expected counts of ref/alt alleles of each type under each identity.
+ * 
+ * Then models the sum of ref+alt alleles in all empty droplets as originating
+ * from a mixture of each individual in the pool. 
+ * 
+ * Stores the mapping of individual ID -> proportion in the indvprops data structure
+ */
+bool model_empty_drops2(robin_hood::unordered_map<unsigned long, 
+    map<pair<int, int>, map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
+    map<pair<int, int>, map<int, float> >& expfracs,
+    unsigned long negdrop_cell,
+    vector<string>& samples,
+    map<int, double>& indvprops){
+           
+    // Use non-negative least squares to model alt allele fractions at 
+    // SNPs of each type in the negative drops as originating from a
+    // mixture of true identities.
+        
+    // In this set-up, the fraction of alt alleles at each type of SNP
+    // will be a row/equation.
+    
+    // The right hand side (b) is the fraction of alt alleles at a type
+    // of SNP observed in the combination of all negative droplets.
+    
+    // The left side (A) is a (number of possible identities x number of SNP
+    // types) matrix, where each entry is the expected fraction of alt 
+    // alleles in SNPs of that category (columns) conditional on being 
+    // a specific individual (rows)
+
+    // The result vector (x) gives the inferred fraction of each individual
+    // making up the empty droplets.
+
+    vector<vector<double> > A;
+    vector<double> b;
+    
+    pair<int, int> nullkey = make_pair(-1,-1);
+
+    for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = 
+        indv_allelecounts[negdrop_cell].begin(); y != indv_allelecounts[negdrop_cell].end();
+        ++y){
+        
+        double totref = y->second[nullkey].first;
+        double totalt = y->second[nullkey].second;
+        double totfrac = totalt/(totalt + totref);
+        
+        b.push_back(totfrac);
+        vector<double> A_row;
+        
+        // (sample, sitetype) -> other_sample -> fraction
+        for (map<int, float>::iterator ef = expfracs[y->first].begin(); 
+            ef != expfracs[y->first].end(); ++ef){
+            A_row.push_back(ef->second);
+        }
+        A.push_back(A_row);
+    }
+
+    // Make sure the individual fractions sum to 1
+    vector<double> A_row_final;
+    for (int i = 0; i < A[0].size(); ++i){
+        A_row_final.push_back(1.0);
+    }
+    A.push_back(A_row_final);
+    b.push_back(1.0);
+    
+    vector<double> props;
+    bool success = nn_lstsq(A, b, props);
+    
+    if (success){
+        // Ensure proportions sum to 1
+        // Convert proportions to more human-interpretable format
+        double tot = 0.0;
+        for (int i = 0; i < props.size(); ++i){
+            tot += props[i];
+        }
+        for (int i = 0; i < props.size(); ++i){
+            props[i] /= tot;
+            indvprops.insert(make_pair(i, props[i]));
+        }
+    }
+    return success;
+}
+/**
+ * Ignore negative droplets and model every cell as a mix of true identity + every other possible ID
+ */
+void model_amb_fracs2(robin_hood::unordered_map<unsigned long, 
+    map<pair<int, int>, map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
+    map<pair<int, int>, map<int, float> >& expfracs,
+    unsigned long negdrop_cell,
+    robin_hood::unordered_map<unsigned long, int>& assn,
+    vector<string>& samples,
+    map<int, double>& indvprops,
+    robin_hood::unordered_map<unsigned long, double>& contam_rate){
+    
+    fprintf(stdout, "bc");
+    for (int i = 0; i < samples.size(); ++i){
+        fprintf(stdout, "\t%s", samples[i].c_str());
+    }
+    fprintf(stdout, "\n");
+
+    // Similar to model_empty_drops, but models each cell as a mixture
+    // of its true/inferred identity and the ambient RNA profile.
+    
+    pair<int, int> nullkey = make_pair(-1,-1);
+    
+    for (robin_hood::unordered_map<unsigned long, map<pair<int, int>, 
+        map<pair<int, int>, pair<float, float> > > >::iterator x = indv_allelecounts.begin();
+        x != indv_allelecounts.end(); ++x){
+        
+        if (x->first == negdrop_cell){
+            continue;
+        }
+        if (assn.count(x->first) == 0){
+            continue;
+        }
+        
+        vector<vector<double> > A;
+        vector<double> b;
+        map<int, int> key;
+
+        for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = 
+            x->second.begin(); y != x->second.end(); ++y){
+            
+            double ref = y->second[nullkey].first;
+            double alt = y->second[nullkey].second;
+            double frac = alt/(alt+ref);
+            b.push_back(frac);
+
+            vector<double> A_row;
+            
+            pair<int, int> combo;
+            bool is_combo = false;
+
+            double true_exp = 0.0;
+            if (assn[x->first] >= samples.size()){
+                pair<int, int> combo = idx_to_hap_comb(assn[x->first], samples.size());
+                true_exp = 0.5*expfracs[y->first][combo.first] + 0.5*expfracs[y->first][combo.second];
+                is_combo = true;
+            }
+            else{
+                true_exp = expfracs[y->first][assn[x->first]];
+            }
+            
+            A_row.push_back(true_exp);
+            for (int i = 0; i < samples.size(); ++i){
+                if (is_combo){
+                    if (i != combo.first && i != combo.second){
+                        key.insert(make_pair(i, A_row.size()));
+                        A_row.push_back(expfracs[y->first][i]);
+                    }
+                }
+                else if (i != assn[x->first]){
+                    key.insert(make_pair(i, A_row.size()));
+                    A_row.push_back(expfracs[y->first][i]);
+                }
+            }
+            A.push_back(A_row);
+        
+        }
+        
+        if (A.size() < 3 || b.size() < 3){
+            continue;
+        }
+
+        // Make sure the individual fractions sum to 1
+        vector<double> A_row_final;
+        for (int i = 0; i < A[0].size(); ++i){
+            A_row_final.push_back(1.0);
+        }
+        A.push_back(A_row_final);
+        b.push_back(1.0);
+        
+        vector<double> props;
+        bool success = nn_lstsq(A, b, props);
+        
+        if (success){
+            // Ensure proportions sum to 1
+            // Convert proportions to more human-interpretable format
+            double tot = 0.0;
+            for (int i = 0; i < props.size(); ++i){
+                tot += props[i];
+            }
+            double contam_tot = 0.0;
+            for (int i = 0; i < props.size(); ++i){
+                props[i] /= tot;
+                if (i != 0){
+                    contam_tot += props[i];
+                }
+            }
+            
+            bc as_bitset(x->first);
+            string bc_str = bc2str(as_bitset, 16);
+            fprintf(stdout, "%s", bc_str.c_str());
+            for (int i = 0; i < samples.size(); ++i){
+                if (key.count(i) == 0){
+                    fprintf(stdout, "\tNA");
+                }
+                else{
+                    fprintf(stdout, "\t%f", props[key[i]]);
+                }
+            }
+            fprintf(stdout, "\n");
+            contam_rate.emplace(x->first, contam_tot);
+        }
+    }
+}
+
+/** 
+ * Model ambient RNA directly, without first calling it a mixture of sample IDs.
+ */
+void model_amb_fracs3(robin_hood::unordered_map<unsigned long, 
+    map<pair<int, int>, map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
+    map<pair<int, int>, map<int, float> >& expfracs,
+    unsigned long negdrop_cell,
+    robin_hood::unordered_map<unsigned long, int>& assn,
+    vector<string>& samples,
+    map<int, double>& indvprops,
+    robin_hood::unordered_map<unsigned long, double>& contam_rate){
+           
+    // Similar to model_empty_drops, but models each cell as a mixture
+    // of its true/inferred identity and the ambient RNA profile.
+    
+    pair<int, int> nullkey = make_pair(-1,-1);
+    
+    map<pair<int, int>, double> exp_amb;
+
+    for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = indv_allelecounts[negdrop_cell].begin();
+        y != indv_allelecounts[negdrop_cell].end(); ++y){
+        double ref = y->second[nullkey].first;
+        double alt = y->second[nullkey].second;
+        double frac = alt/(ref+alt);
+        exp_amb.insert(make_pair(y->first, frac));
+    }
+
+    for (robin_hood::unordered_map<unsigned long, map<pair<int, int>, 
+        map<pair<int, int>, pair<float, float> > > >::iterator x = indv_allelecounts.begin();
+        x != indv_allelecounts.end(); ++x){
+        
+        if (x->first == negdrop_cell){
+            continue;
+        }
+        if (assn.count(x->first) == 0){
+            continue;
+        }
+        
+        vector<vector<double> > A;
+        vector<double> b;
+        
+        for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = 
+            x->second.begin(); y != x->second.end(); ++y){
+            
+            double ref = y->second[nullkey].first;
+            double alt = y->second[nullkey].second;
+            double frac = alt/(alt+ref);
+            b.push_back(frac);
+
+            vector<double> A_row;
+            
+            double true_exp = 0.0;
+            if (assn[x->first] >= samples.size()){
+                pair<int, int> combo = idx_to_hap_comb(assn[x->first], samples.size());
+                true_exp = 0.5*expfracs[y->first][combo.first] + 0.5*expfracs[y->first][combo.second];
+            }
+            else{
+                true_exp = expfracs[y->first][assn[x->first]];
+            }
+            double amb_exp = exp_amb[y->first];
+            
+            A_row.push_back(true_exp);
+            A_row.push_back(amb_exp);
+            A.push_back(A_row);
+        
+        }
+        
+        if (A.size() < 3 || b.size() < 3){
+            continue;
+        }
+
+        // Make sure the individual fractions sum to 1
+        vector<double> A_row_final;
+        for (int i = 0; i < A[0].size(); ++i){
+            A_row_final.push_back(1.0);
+        }
+        A.push_back(A_row_final);
+        b.push_back(1.0);
+        
+        vector<double> props;
+        bool success = nn_lstsq(A, b, props);
+        
+        if (success){
+            // Ensure proportions sum to 1
+            // Convert proportions to more human-interpretable format
+            double tot = 0.0;
+            for (int i = 0; i < props.size(); ++i){
+                tot += props[i];
+            }
+            for (int i = 0; i < props.size(); ++i){
+                props[i] /= tot;
+            }
+            contam_rate.emplace(x->first, props[1]);
+        }
+    }
+}
+/**
+ * Model ambient RNA as a mixture of sample IDs.
+ */
+void model_amb_fracs(robin_hood::unordered_map<unsigned long, 
+    map<pair<int, int>, map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
+    map<pair<int, int>, map<int, float> >& expfracs,
+    unsigned long negdrop_cell,
+    robin_hood::unordered_map<unsigned long, int>& assn,
+    vector<string>& samples,
+    map<int, double>& indvprops,
+    robin_hood::unordered_map<unsigned long, double>& contam_rate){
+           
+    // Similar to model_empty_drops, but models each cell as a mixture
+    // of its true/inferred identity and the ambient RNA profile.
+    
+    pair<int, int> nullkey = make_pair(-1,-1);
+    
+    for (robin_hood::unordered_map<unsigned long, map<pair<int, int>, 
+        map<pair<int, int>, pair<float, float> > > >::iterator x = indv_allelecounts.begin();
+        x != indv_allelecounts.end(); ++x){
+        
+        if (x->first == negdrop_cell){
+            continue;
+        }
+        if (assn.count(x->first) == 0){
+            continue;
+        }
+        
+        vector<vector<double> > A;
+        vector<double> b;
+        
+        for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = 
+            x->second.begin(); y != x->second.end(); ++y){
+            
+            double ref = y->second[nullkey].first;
+            double alt = y->second[nullkey].second;
+            double frac = alt/(alt+ref);
+            b.push_back(frac);
+
+            vector<double> A_row;
+            
+            double indvprop_sum_rm = 0.0;
+
+            double true_exp = 0.0;
+            if (assn[x->first] >= samples.size()){
+                pair<int, int> combo = idx_to_hap_comb(assn[x->first], samples.size());
+                true_exp = 0.5*expfracs[y->first][combo.first] + 0.5*expfracs[y->first][combo.second];
+                indvprop_sum_rm += indvprops[combo.first] + indvprops[combo.second];
+            }
+            else{
+                true_exp = expfracs[y->first][assn[x->first]];
+                indvprop_sum_rm += indvprops[assn[x->first]];
+            }
+            double indvprop_sum_rescale = 1.0 - indvprop_sum_rm;
+            double amb_exp = 0.0;
+            for (map<int, double>::iterator ip = indvprops.begin(); ip != indvprops.end(); ++ip){
+                amb_exp += (ip->second / indvprop_sum_rescale) * expfracs[y->first][ip->first];
+            }
+
+            A_row.push_back(true_exp);
+            A_row.push_back(amb_exp);
+            A.push_back(A_row);
+        
+        }
+        
+        if (A.size() < 3 || b.size() < 3){
+            continue;
+        }
+
+        // Make sure the individual fractions sum to 1
+        vector<double> A_row_final;
+        for (int i = 0; i < A[0].size(); ++i){
+            A_row_final.push_back(1.0);
+        }
+        A.push_back(A_row_final);
+        b.push_back(1.0);
+        
+        vector<double> props;
+        bool success = nn_lstsq(A, b, props);
+        
+        if (success){
+            // Ensure proportions sum to 1
+            // Convert proportions to more human-interpretable format
+            double tot = 0.0;
+            for (int i = 0; i < props.size(); ++i){
+                tot += props[i];
+            }
+            for (int i = 0; i < props.size(); ++i){
+                props[i] /= tot;
+            }
+            contam_rate.emplace(x->first, props[1]);
+        }
+    }
+}
+
+/**
+ * These were useful references
+ *
+ * https://netlib.org/lapack/explore-html/d0/db8/group__real_g_esolve_gabc655f9cb0f6cfff81b3cafc03c41dcb.html
+ *
+ * https://github.com/numpy/numpy/blob/v1.11.0/numpy/linalg/linalg.py#L1785-L1943
+ *
+ * https://stackoverflow.com/questions/27128688/how-to-use-least-squares-with-weight-matrix
+ */
+bool lapack_weighted_lstsq(vector<vector<double> >& a,
+    vector<double>& y,
+    vector<double>& weights,
+    vector<double>& result_coefficients){
+
+    int M = a.size(); // rows of A
+    int N = a[0].size(); // cols of A
+    int NRHS = 1; // cols of X
+    int LDA = M; // min(1, M)
+    int LDB = max(N,M); // rows of Y
+
+    if (M != y.size()){
+        fprintf(stderr, "dimensions do not match\n");
+        exit(1);
+    }
+    int info;
+    int lwork = -1; // automatically allocate workspace size
+    int rank = 0;
+
+    // Negative uses machine precision, otherwise singular values S(i) <= rcond * S(1) are
+    // treated as zero
+    double rcond = -1.0;
+    double wkopt;
+    double* work;
+
+    /*
+        IWORK is INTEGER array, dimension (MAX(1,LIWORK))
+        LIWORK >= max(1, 3*MINMN*NLVL + 11*MINMN),
+        where MINMN = MIN( M,N ).
+
+        Seems from other documentation like "smlsiz" can be 25.
+    */
+    int smlsiz = 25;
+    int nlvl = max(0,(int)round(log2((float)min(M,N)/(float)(smlsiz+1)))+1);
+    int iworkdims = 3*min(M,N)*nlvl + 11*min(M,N);
+    int iwork[iworkdims];
+
+    int sdim = min(M,N);
+    double s[sdim];
+    // Populate A matrix
+    // NOTE: entries are in order of columns, then rows
+
+    double* a_lapack = new double[M*N];
+    //double a_lapack[M*N];
+    int k = 0;
+    for (int j = 0; j < N; ++j){
+        for (int i = 0; i < M; ++i){
+            // Here's where the weights come in: multiply A entry
+            // by sqrt of corresponding row of weight vector
+            a_lapack[i+j*M] = a[i][j] * sqrt(weights[i]);
+            //a_lapack[i+j*M] = a[i][j];
+        }
+    }
+    // Populate B (y) matrix
+    //double b_lapack[LDB*NRHS];
+    double* b_lapack = new double[LDB*NRHS];
+    for (int i = 0; i < y.size(); ++i){
+        // Incorporate weight into B vector
+        b_lapack[i] = y[i] * sqrt(weights[i]);
+        //b_lapack[i] = y[i];
+    }
+    // First command queries and allocates workspace
+    LAPACK_dgelsd(&M,
+        &N,
+        &NRHS,
+        a_lapack,
+        &LDA,
+        b_lapack,
+        &LDB,
+        s,
+        &rcond,
+        &rank,
+        &wkopt,
+        &lwork,
+        iwork,
+        &info);
+    lwork = (int)wkopt;
+    work = (double*)malloc(lwork*sizeof(double));
+    // Second command finds solution
+    LAPACK_dgelsd(&M,
+        &N,
+        &NRHS,
+        a_lapack,
+        &LDA,
+        b_lapack,
+        &LDB,
+        s,
+        &rcond,
+        &rank,
+        work,
+        &lwork,
+        iwork,
+        &info);
+    if (info > 0){
+        fprintf(stderr, "Did not converge\n");
+        return false;
+    }
+
+    if (result_coefficients.size() < a[0].size()){
+        for (int i = 0; i < a[0].size(); ++i){
+            result_coefficients.push_back(0.0);
+        }
+    }
+
+    for (int i = 0; i < a[0].size(); ++i){
+        //fprintf(stdout, "%d\t%f\n", i, b_lapack[i]);
+        result_coefficients[i] = b_lapack[i];
+    }
+    free(work);
+    delete[] a_lapack;
+    delete[] b_lapack;
+
+    return true;
+}
+
+
+/**
+ * These were useful references
+ *
+ * https://netlib.org/lapack/explore-html/d0/db8/group__real_g_esolve_gabc655f9cb0f6cfff81b3cafc03c41dcb.html
+ *
+ * https://github.com/numpy/numpy/blob/v1.11.0/numpy/linalg/linalg.py#L1785-L1943
+ *
+ * https://stackoverflow.com/questions/27128688/how-to-use-least-squares-with-weight-matrix
+ */
+bool lapack_lstsq(vector<vector<double> >& a,
+    vector<double>& y,
+    vector<double>& result_coefficients){
+
+    int M = a.size(); // rows of A
+    int N = a[0].size(); // cols of A
+    int NRHS = 1; // cols of X
+    int LDA = M; // min(1, M)
+    int LDB = max(N,M); // rows of Y
+
+    if (M != y.size()){
+        fprintf(stderr, "dimensions do not match\n");
+        exit(1);
+    }
+    int info;
+    int lwork = -1; // automatically allocate workspace size
+    int rank = 0;
+
+    // Negative uses machine precision, otherwise singular values S(i) <= rcond * S(1) are
+    // treated as zero
+    double rcond = -1.0;
+    double wkopt;
+    double* work;
+
+    /*
+        IWORK is INTEGER array, dimension (MAX(1,LIWORK))
+        LIWORK >= max(1, 3*MINMN*NLVL + 11*MINMN),
+        where MINMN = MIN( M,N ).
+
+        Seems from other documentation like "smlsiz" can be 25.
+    */
+    int smlsiz = 25;
+    int nlvl = max(0,(int)round(log2((float)min(M,N)/(float)(smlsiz+1)))+1);
+    int iworkdims = 3*min(M,N)*nlvl + 11*min(M,N);
+    int iwork[iworkdims];
+
+    int sdim = min(M,N);
+    double s[sdim];
+    // Populate A matrix
+    // NOTE: entries are in order of columns, then rows
+
+    double* a_lapack = new double[M*N];
+    //double a_lapack[M*N];
+    int k = 0;
+    for (int j = 0; j < N; ++j){
+        for (int i = 0; i < M; ++i){
+            a_lapack[i+j*M] = a[i][j];
+        }
+    }
+    // Populate B (y) matrix
+    //double b_lapack[LDB*NRHS];
+    double* b_lapack = new double[LDB*NRHS];
+    for (int i = 0; i < y.size(); ++i){
+        b_lapack[i] = y[i];
+    }
+    // First command queries and allocates workspace
+    LAPACK_dgelsd(&M,
+        &N,
+        &NRHS,
+        a_lapack,
+        &LDA,
+        b_lapack,
+        &LDB,
+        s,
+        &rcond,
+        &rank,
+        &wkopt,
+        &lwork,
+        iwork,
+        &info);
+    lwork = (int)wkopt;
+    work = (double*)malloc(lwork*sizeof(double));
+    // Second command finds solution
+    LAPACK_dgelsd(&M,
+        &N,
+        &NRHS,
+        a_lapack,
+        &LDA,
+        b_lapack,
+        &LDB,
+        s,
+        &rcond,
+        &rank,
+        work,
+        &lwork,
+        iwork,
+        &info);
+    if (info > 0){
+        fprintf(stderr, "Did not converge\n");
+        return false;
+    }
+
+    if (result_coefficients.size() < a[0].size()){
+        for (int i = 0; i < a[0].size(); ++i){
+            result_coefficients.push_back(0.0);
+        }
+    }
+
+    for (int i = 0; i < a[0].size(); ++i){
+        //fprintf(stdout, "%d\t%f\n", i, b_lapack[i]);
+        result_coefficients[i] = b_lapack[i];
+    }
+    free(work);
+    delete[] a_lapack;
+    delete[] b_lapack;
+
+    return true;
+}
+
+/**
+ * What fraction of reads per cell disagree with the best assignment?
+ */
+void est_contam_rate(robin_hood::unordered_map<unsigned long, 
+    map<pair<int, int>, map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
+    unsigned long negdrop_cell,
+    map<pair<int, int>, map<int, float> >& expfracs,
+    robin_hood::unordered_map<unsigned long, int>& assn,
+    robin_hood::unordered_map<unsigned long, double>& contam_rate,
+    map<int, double>& contam_profile,
+    int n_samples){
+    
+    pair<int, int> nullkey = make_pair(-1, -1);
+    
+    vector<double> vars_cur;
+    
+    // Initial guess for % ambient profile composed of each individual: pool equally
+    for (int i = 0; i < n_samples; ++i){
+        vars_cur.push_back(1.0/(double)n_samples);
+    }
+    
+    vector<vector<double> > A;
+    vector<double> b;    
+    vector<double> weights;
+
+    for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin(); a != 
+        assn.end(); ++a){
+        
+        double tot_reads = 0.0;
+        double disagree_reads = 0.0;
+        
+        bool is_combo = false;
+        pair<int, int> combo;
+        if (a->second >= n_samples){
+            is_combo = true;
+            combo = idx_to_hap_comb(a->second, n_samples);
+        }
+        
+        double cr = 0.0;
+        bool has_cr = false;
+
+        for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = 
+            indv_allelecounts[a->first].begin(); y != indv_allelecounts[a->first].end(); ++y){
+            if (is_combo){
+                if (y->first.first == combo.first){
+                    for (map<pair<int, int>, pair<float, float> >::iterator z = y->second.begin(); z != 
+                        y->second.end(); ++z){
+                        if (z->first.first == combo.second){
+                            double exp_frac = (double)(y->first.second + z->first.second) / 4.0;
+                            double ref = z->second.first;
+                            double alt = z->second.second;
+                            double frac = alt/(ref+alt);
+                            tot_reads += ref + alt;
+                            disagree_reads += abs(frac - exp_frac)*(ref+alt);
+                        }
+                    }
+                }
+            }
+            else{
+                if (y->first.first == a->second){
+                    double exp_frac = (double)y->first.second / (double)2.0;
+                    double ref = y->second[nullkey].first;
+                    double alt = y->second[nullkey].second;
+                    double frac = alt/(ref+alt);
+                    tot_reads += ref + alt;
+                    disagree_reads += abs(frac - exp_frac)*(ref+alt);
+                }
+            }
+        }
+        if (tot_reads > 0){
+            cr = disagree_reads / tot_reads;
+            has_cr = true;
+            contam_rate.emplace(a->first, cr);
+        }
+        
+        if (has_cr){
+            
+            for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = 
+                indv_allelecounts[a->first].begin(); y != indv_allelecounts[a->first].end(); ++y){
+                    
+                double ref = y->second[nullkey].first;
+                double alt = y->second[nullkey].second;
+                double frac = alt/(ref+alt);
+                 
+                vector<double> A_row;
+                
+                for (int i = 0; i < n_samples; ++i){
+                    A_row.push_back(0.0);
+                }
+                
+                for (int i = 0; i < n_samples; ++i){
+                    if ((is_combo && i != combo.first && i != combo.second) ||
+                        (!is_combo && i != a->second)){
+                        A_row[i] = cr*expfracs[y->first][i];
+                    }
+                }
+                
+                double rhs = frac;
+                if (is_combo){
+                    rhs -= (1.0-cr)*0.5 * expfracs[y->first][combo.first] - 
+                        (1.0-cr)*0.5 * expfracs[y->first][combo.second];
+                }
+                else{
+                    rhs -= (1.0-cr) * expfracs[y->first][a->second];
+                }
+                
+                for (int i = 0; i < A_row.size(); ++i){
+                    fprintf(stderr, "%f ", A_row[i]);
+                }
+                fprintf(stderr, " = %f\n", rhs);
+                A.push_back(A_row);
+                b.push_back(rhs);
+                weights.push_back(1.0);
+
+            }
+        } 
+    }
+    
+    vector<double> A_row_final;
+    // Make all coeffs sum to 1
+    for (int i = 0; i < n_samples; ++i){
+        A_row_final.push_back(1.0);
+    }
+    A.push_back(A_row_final);
+    b.push_back(1.0);
+    //weights.push_back((double)weights.size());
+    weights.push_back(1.0);
+
+    vector<double> results;
+    bool success = weighted_nn_lstsq(A, b, weights, results);
+    if (success){
+        double coeffsum = 0.0;
+        for (int i = 0; i < results.size(); ++i){
+            coeffsum += results[i];
+            fprintf(stderr, "%d) %f\n", i, results[i]);
+        }
+        for (int i = 0; i < results.size(); ++i){
+            results[i] /= coeffsum;
+            contam_profile.insert(make_pair(i, results[i]));
         }
     }
 }
@@ -1703,8 +2749,8 @@ bool model_empty_drops(robin_hood::unordered_map<unsigned long,
     // Get expected fractions of each type of SNP counts under each identity
     map<int, map<pair<int, int>, map<pair<int, int>, pair<float, float> > > > expected_allelecounts;
     
-    get_expected_allelecounts_from_ids(expected_allelecounts,
-        indv_allelecounts, assn_final, negdrop_cell);
+    //get_expected_allelecounts_from_ids(expected_allelecounts,
+    //    indv_allelecounts, assn_final, negdrop_cell);
     
     // Get a vector of all possible assignments 
     vector<int> expected_allelecounts_assn;
@@ -1931,6 +2977,33 @@ void dump_empty_drops(FILE* outf, map<int, double>& indvprops, vector<string>& s
 }
 
 /**
+ * Write estimated contamination/ambient RNA fractions to disk.
+ */
+void dump_amb_fracs(FILE* outf, 
+    robin_hood::unordered_map<unsigned long, double>& ambfracs,
+    vector<string>& samples,
+    string& barcode_group){
+    
+    for (robin_hood::unordered_map<unsigned long, double>::iterator af = ambfracs.begin();
+        af != ambfracs.end(); ++af){
+        bc as_bitset(af->first);
+        string bc_str = bc2str(as_bitset, 16);
+        if (barcode_group != ""){
+            bc_str += "-" + barcode_group;
+        }
+        fprintf(outf, "%s\t%f\n", bc_str.c_str(), af->second);
+    }
+}
+
+bool file_exists(string& filename){
+    struct stat buf;
+    if (stat(filename.c_str(), &buf) != 0){
+        return false;
+    }
+    return true;
+}
+
+/**
  * Print a help message to the terminal and exit.
  */
 void help(int code){
@@ -1963,6 +3036,12 @@ void help(int code){
     fprintf(stderr, "       enabled, does one round of barcode->identity assignment, learns best fit\n");
     fprintf(stderr, "       error parameters from confident assignments, and does a second round\n");
     fprintf(stderr, "       of assignment with these new error parameters.\n");
+    fprintf(stderr, "    --est_contam -c Estimate contamination rate after identifying cells. If\n");
+    fprintf(stderr, "       ambient RNA is a problem in your data set, cells will be more difficult\n");
+    fprintf(stderr, "       to identify and the posterior error rates (if inferred with the -e option)\n");
+    fprintf(stderr, "       will be high. With this option enabled, the contamination rate per cell\n");
+    fprintf(stderr, "       will be estimated by modeling each cell as a mixture of its likeliest inferred\n");
+    fprintf(stderr, "       genotype and ambient RNA.\n");
     fprintf(stderr, "    --prior_counts -p Error rates are modeled as beta distributions, with prior\n");
     fprintf(stderr, "       mean = 0.001 and prior sample size = 1000. Specify an alternative prior\n");
     fprintf(stderr, "       sample size here, if desired. This will slightly affect original\n");
@@ -2001,8 +3080,8 @@ void help(int code){
     fprintf(stderr, "    --dump_counts -d After loading variants and counting reads at \n");
     fprintf(stderr, "       variant sites, write these counts to [output_prefix].counts\n");
     fprintf(stderr, "       before making assignments. These counts can then be loaded with \n");
-    fprintf(stderr, "       -L on a subsequent run to significantly speed up identification.\n");
-    fprintf(stderr, "    --load_counts -L If a previous run was done with -d, load counts \n");
+    fprintf(stderr, "       -l on a subsequent run to significantly speed up identification.\n");
+    fprintf(stderr, "    --load_counts -l If a previous run was done with -d, load counts \n");
     fprintf(stderr, "       from that file and skip reading through the BAM file (output \n");
     fprintf(stderr, "       prefix must match).\n");
     fprintf(stderr, "\n");
@@ -2026,6 +3105,7 @@ int main(int argc, char *argv[]) {
        {"qual", required_argument, 0, 'q'},
        {"barcode_group", required_argument, 0, 'g'},
        {"est_error_rate", no_argument, 0, 'e'},
+       {"est_contam", no_argument, 0, 'c'},
        {"prior_counts", required_argument, 0, 'p'},
        {0, 0, 0, 0} 
     };
@@ -2051,6 +3131,7 @@ int main(int argc, char *argv[]) {
     double doublet_rate = 0.5;
     string barcode_group = "";
     bool est_error_rate = false;
+    bool est_contam = false;
     double prior_counts = 1000;
 
     int option_index = 0;
@@ -2059,7 +3140,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:g:p:ejdlh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:g:p:ecjdlh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -2112,6 +3193,9 @@ int main(int argc, char *argv[]) {
             case 'e':
                 est_error_rate = true;
                 break;
+            case 'c':
+                est_contam = true;
+                break;
             default:
                 help(0);
                 break;
@@ -2151,6 +3235,10 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: --prior_counts must be positive.\n");
         exit(1);
     }
+    if (est_contam && !cell_barcode && !load_counts){
+        fprintf(stderr, "ERROR: to estimate contamination (-c), you must provide a cell barcode list (-B)\n");
+        exit(1);
+    }
 
     // Initialize barcode for negative drops - all A should be safe
     string negdrop_bc_str = "";
@@ -2175,7 +3263,18 @@ int main(int argc, char *argv[]) {
     map<int, map<int, var> > snpdat;
     
     // Load variant data from VCF file
-    if (load_counts){
+    bool hdr_only = load_counts;
+    bool comp_exp_fracs = false;
+    if (!hdr_only && est_contam){
+        // Check if expected fracs file exists. If not, need to re-load VCF.
+        string exp_frac_name = output_prefix + ".expfracs";
+        if (!file_exists(exp_frac_name)){
+            // Need to load VCF and compute expfracs
+            hdr_only = false;
+            comp_exp_fracs = true;
+        } 
+    }
+    if (hdr_only){
         fprintf(stderr, "Reading VCF/BCF header...\n");
     }
     else{
@@ -2202,6 +3301,10 @@ all possible individuals\n", idfile_doublet.c_str());
     set<unsigned long> cell_barcodes;
     if (cell_barcode){
         parse_barcode_file(cell_barcode_file, cell_barcodes); 
+        if (cell_barcodes.size() == 0){
+            // Did not read barcodes correctly
+            exit(1);
+        }
     }
 
     // At this point, give up on neg drops if we do not have a cell barcode list.
@@ -2260,7 +3363,12 @@ all possible individuals\n", idfile_doublet.c_str());
         if (indv_allelecounts.count(negdrop_cell) > 0){
             neg_drops = true;
         } 
-
+        else if (est_contam){
+            fprintf(stderr, "ERROR: --est_contam with pre-computed counts loaded \
+from file, but no counts found for empty droplets.\n");
+            fprintf(stderr, "Please re-run counting from VCF with a cell barcode list.\n");
+            exit(1);
+        }
     }
     else{
         // initialize the BAM reader
@@ -2386,113 +3494,163 @@ all possible individuals\n", idfile_doublet.c_str());
     robin_hood::unordered_map<unsigned long, int> assn_final;
     robin_hood::unordered_map<unsigned long, double> assn_final_llr;
     
-    fprintf(stderr, "Finding likeliest identities of cells...\n");
-    
-    // Compute beta dist parameters for errors
-    double ref_mm_rate = 0.001;
-    double alt_mm_rate = 0.001;
-    
-    double ref_sampsize = prior_counts;
-    double alt_sampsize = prior_counts;
+    // Check to see if we can load pre-computed assignments (if we are doing something else)
+    bool compute_assn = true;
+    if (est_contam){
+        string assn_name = output_prefix + ".assignments";
+        if (file_exists(assn_name)){
+            fprintf(stderr, "Loading assignments...\n");
+            load_assignments_from_file(assn_name, assn_final, assn_final_llr, samples);
+            compute_assn = false;
+        }
+    }
+    if (compute_assn){
+        fprintf(stderr, "Finding likeliest identities of cells...\n");
+        
+        // Compute beta dist parameters for errors
+        double ref_mm_rate = 0.001;
+        double alt_mm_rate = 0.001;
+        
+        double ref_sampsize = prior_counts;
+        double alt_sampsize = prior_counts;
 
-    double ref_mm_rate_posterior = ref_mm_rate;
-    double alt_mm_rate_posterior = alt_mm_rate;
+        double ref_mm_rate_posterior = ref_mm_rate;
+        double alt_mm_rate_posterior = alt_mm_rate;
 
-    double ref_sampsize_posterior = prior_counts;
-    double alt_sampsize_posterior = prior_counts;
+        double ref_sampsize_posterior = prior_counts;
+        double alt_sampsize_posterior = prior_counts;
 
-    // Get assignments of cell barcodes
-    
-    // On this first pass, assume that the error rate (the rate of sampling an alt
-    //  allele at a homozygous reference site or a ref allele at a homozygous alt site)
-    //  is 0.001
-    if (est_error_rate){
+        // Get assignments of cell barcodes
         
-        assign_ids(indv_allelecounts, samples, assn, assn_llr, 
-            allowed_ids, neg_drops, negdrop_cell, doublet_rate, 
-            ref_mm_rate, alt_mm_rate);
-        
-        // Now, from these assignments, compute the likeliest error rate, weighting by
-        //  log likelihood ratio of assignment.
-        
-        double ref_mm_alpha = ref_mm_rate*prior_counts;
-        double ref_mm_beta = (1.0-ref_mm_rate)*prior_counts;
-        double alt_mm_alpha = alt_mm_rate*prior_counts;
-        double alt_mm_beta = (1.0-alt_mm_rate)*prior_counts;
-    
-        fprintf(stderr, "Finding likeliest alt/ref switch error rates...\n"); 
-        double ref_mm_reads;
-        double ref_m_reads;
-        double alt_mm_reads;
-        double alt_m_reads;
-        pair<double, double> err_new = infer_error_rates(indv_allelecounts, samples.size(),
-            assn, assn_llr, ref_mm_reads, ref_m_reads, alt_mm_reads, alt_m_reads, samples);
-        
-        // Use beta-binomial update rule to get posterior error rate estimates
-        ref_mm_alpha += ref_mm_reads;
-        ref_mm_beta += ref_m_reads;
-        alt_mm_alpha += alt_mm_reads;
-        alt_mm_beta += alt_m_reads;
-
-        ref_mm_rate_posterior = ref_mm_alpha/(ref_mm_alpha+ref_mm_beta);
-        alt_mm_rate_posterior = alt_mm_alpha/(alt_mm_alpha+alt_mm_beta);
-        
-        ref_sampsize_posterior = ref_mm_alpha+ref_mm_beta;
-        alt_sampsize_posterior = alt_mm_alpha+alt_mm_beta;
+        // On this first pass, assume that the error rate (the rate of sampling an alt
+        //  allele at a homozygous reference site or a ref allele at a homozygous alt site)
+        //  is 0.001
+        if (est_error_rate){
             
-        fprintf(stderr, "Posterior error rates:\n");
-        fprintf(stderr, "\tref mismatch: %f\n", ref_mm_rate_posterior);
-        fprintf(stderr, "\talt mismatch: %f\n", alt_mm_rate_posterior);
-
-        // Re-assign individuals using posterior error rates
+            assign_ids(indv_allelecounts, samples, assn, assn_llr, 
+                allowed_ids, neg_drops, negdrop_cell, doublet_rate, 
+                ref_mm_rate, alt_mm_rate);
+            
+            // Now, from these assignments, compute the likeliest error rate, weighting by
+            //  log likelihood ratio of assignment.
+            
+            double ref_mm_alpha = ref_mm_rate*prior_counts;
+            double ref_mm_beta = (1.0-ref_mm_rate)*prior_counts;
+            double alt_mm_alpha = alt_mm_rate*prior_counts;
+            double alt_mm_beta = (1.0-alt_mm_rate)*prior_counts;
         
-        fprintf(stderr, "Re-inferring identities of cells...\n");
-        assign_ids(indv_allelecounts, samples, assn_final, assn_final_llr,
-            allowed_ids, neg_drops, negdrop_cell, doublet_rate, 
-            ref_mm_rate_posterior, alt_mm_rate_posterior);
-    
-    }
-    else{
+            fprintf(stderr, "Finding likeliest alt/ref switch error rates...\n"); 
+            double ref_mm_reads;
+            double ref_m_reads;
+            double alt_mm_reads;
+            double alt_m_reads;
+            pair<double, double> err_new = infer_error_rates(indv_allelecounts, samples.size(),
+                assn, assn_llr, ref_mm_reads, ref_m_reads, alt_mm_reads, alt_m_reads, samples);
+            
+            // Use beta-binomial update rule to get posterior error rate estimates
+            ref_mm_alpha += ref_mm_reads;
+            ref_mm_beta += ref_m_reads;
+            alt_mm_alpha += alt_mm_reads;
+            alt_mm_beta += alt_m_reads;
+
+            ref_mm_rate_posterior = ref_mm_alpha/(ref_mm_alpha+ref_mm_beta);
+            alt_mm_rate_posterior = alt_mm_alpha/(alt_mm_alpha+alt_mm_beta);
+            
+            ref_sampsize_posterior = ref_mm_alpha+ref_mm_beta;
+            alt_sampsize_posterior = alt_mm_alpha+alt_mm_beta;
+                
+            fprintf(stderr, "Posterior error rates:\n");
+            fprintf(stderr, "\tref mismatch: %f\n", ref_mm_rate_posterior);
+            fprintf(stderr, "\talt mismatch: %f\n", alt_mm_rate_posterior);
+
+            // Re-assign individuals using posterior error rates
+            
+            fprintf(stderr, "Re-inferring identities of cells...\n");
+            assign_ids(indv_allelecounts, samples, assn_final, assn_final_llr,
+                allowed_ids, neg_drops, negdrop_cell, doublet_rate, 
+                ref_mm_rate_posterior, alt_mm_rate_posterior);
         
-        assign_ids(indv_allelecounts, samples, assn_final, assn_final_llr,
-            allowed_ids, neg_drops, negdrop_cell, doublet_rate, ref_mm_rate, alt_mm_rate);
+        }
+        else{
+            
+            assign_ids(indv_allelecounts, samples, assn_final, assn_final_llr,
+                allowed_ids, neg_drops, negdrop_cell, doublet_rate, ref_mm_rate, alt_mm_rate);
 
-    }
-    // Write these best assignments to disk
-    {
-        string fname = output_prefix + ".assignments";
-        FILE* outf = fopen(fname.c_str(), "w");
-        fprintf(stderr, "Writing cell-individual assignments to disk...\n");
-        dump_assignments(outf, assn_final, assn_final_llr, samples, barcode_group);
-        fclose(outf);
+        }
+        // Write these best assignments to disk
+        {
+            string fname = output_prefix + ".assignments";
+            FILE* outf = fopen(fname.c_str(), "w");
+            fprintf(stderr, "Writing cell-individual assignments to disk...\n");
+            dump_assignments(outf, assn_final, assn_final_llr, samples, barcode_group);
+            fclose(outf);
+        }
+        
+        // Create summary file
+        {
+            string fname = output_prefix + ".summary";
+            FILE* outf = fopen(fname.c_str(), "w");
+            write_summary(outf, output_prefix, assn_final, samples, ref_mm_rate, 
+                ref_sampsize, alt_mm_rate, alt_sampsize, ref_mm_rate_posterior, 
+                ref_sampsize_posterior, alt_mm_rate_posterior, 
+                alt_sampsize_posterior, est_error_rate,
+                vcf_file, vq, doublet_rate);
+            fclose(outf);
+        }
     }
     
-    // Create summary file
-    {
-        string fname = output_prefix + ".summary";
-        FILE* outf = fopen(fname.c_str(), "w");
-        write_summary(outf, output_prefix, assn_final, samples, ref_mm_rate, 
-            ref_sampsize, alt_mm_rate, alt_sampsize, ref_mm_rate_posterior, 
-            ref_sampsize_posterior, alt_mm_rate_posterior, 
-            alt_sampsize_posterior, est_error_rate,
-            vcf_file, vq, doublet_rate);
-        fclose(outf);
-    }
+    if (est_contam && neg_drops){
+        map<pair<int, int>, map<int, float> > expfracs; 
+        
+        string expfrac_file = output_prefix + ".expfracs";
+        
+        if (comp_exp_fracs){
+            fprintf(stderr, "Loading expected matching probabilities from VCF...\n");
+            get_conditional_match_fracs(snpdat,
+                expfracs,
+                samples.size());
+            // Write to file
+            FILE* expfr_out = fopen(expfrac_file.c_str(), "w");
+            dump_exp_fracs(expfr_out, expfracs, samples);
+            fclose(expfr_out);
+        }
+        else{
+            // Load from file where already computed
+            fprintf(stderr, "Loading expected allele matching rates...\n");
+            load_exp_fracs(expfrac_file, expfracs, samples);
+        }
 
-    // Finally, if a cell barcode list was provided, and given the allele counts 
-    // at cells assigned to each individual, we can attempt to model the 
-    // sum of all empty droplets as a mixture of genotypes of different individuals
-    // and write that to a file.
-    if (neg_drops){
+        // Finally, if a cell barcode list was provided, and given the allele counts 
+        // at cells assigned to each individual, we can attempt to model the 
+        // sum of all empty droplets as a mixture of genotypes of different individuals
+        // and write that to a file.
         fprintf(stderr, "Modeling empty droplets as a mixture of individuals \
 present in the pool...\n");
         map<int, double> indvprops;
-        bool success = model_empty_drops(indv_allelecounts, negdrop_cell, assn_final, samples, indvprops);
+        bool success = model_empty_drops2(indv_allelecounts, expfracs,
+            negdrop_cell, samples, indvprops);
+        
         if (success){
             string fname = output_prefix + ".emptydrops";
             FILE* outf = fopen(fname.c_str(), "w");
             dump_empty_drops(outf, indvprops, samples);
             fclose(outf);
+            
+            fprintf(stderr, "Estimating ambient RNA contamination in cell-containing droplets...\n");
+            robin_hood::unordered_map<unsigned long, double> ambfracs;
+            //model_amb_fracs3(indv_allelecounts, expfracs,
+            //    negdrop_cell, assn_final, samples, indvprops, ambfracs);
+            map<int, double> contam_prof; 
+            est_contam_rate(indv_allelecounts, negdrop_cell, expfracs, assn_final, ambfracs, contam_prof,
+                samples.size());
+            for (map<int, double>::iterator cp = contam_prof.begin(); cp != contam_prof.end(); ++cp){
+                fprintf(stderr, "%s: %f\n", idx2name(cp->first, samples).c_str(), cp->second);
+            }
+            string fname2 = output_prefix + ".contam";
+            FILE* outf2 = fopen(fname2.c_str(), "w");
+            dump_amb_fracs(outf, ambfracs, samples, barcode_group);
+            fclose(outf);
+
         }
         else{
             fprintf(stderr, "linear algebra error - could not model empty droplets\n");
