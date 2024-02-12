@@ -193,7 +193,7 @@ void help(int code){
     fprintf(stderr, "   --no_cov_filt -c Do not remove variable sites with low coverage across all\n");
     fprintf(stderr, "       cells. Default behavior is to compute a histogram of sites passing filter\n");
     fprintf(stderr, "       with increasing coverage cutoffs, then find the knee point (defined as \n");
-    fprintf(stderr, "       the point of maximum curvature), ensuring at least 25\% of all sites are\n");
+    fprintf(stderr, "       the point of maximum curvature), ensuring at least 25%% of all sites are\n");
     fprintf(stderr, "       included. Disabling this might be appropriate for low-coverage data sets,\n");
     fprintf(stderr, "       especially scRNA-seq, where coverage is expected to vary from site to site.\n");
     fprintf(stderr, "   --mapq -q The minimum map quality filter (OPTIONAL; default 20)\n");

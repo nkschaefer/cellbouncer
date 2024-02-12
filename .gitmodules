@@ -4,3 +4,6 @@
 [submodule "htswrapper"]
 	path = dependencies/htswrapper
 	url = git@github.com:nkschaefer/htswrapper.git
+[submodule "dependencies/optimML"]
+	path = dependencies/optimML
+	url = git@github.com:nkschaefer/optimML.git
