@@ -14,6 +14,7 @@
 #include <set>
 #include <cstdlib>
 #include <utility>
+#include <math.h>
 #include <zlib.h>
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
