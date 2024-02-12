@@ -14,13 +14,13 @@ DEPS=lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
 all: demux/demux_vcf demux/demux_mt analysis/quant_contam utils/bam_indiv_rg utils/bam_split_bcs
 
 demux/demux_vcf: src/demux_vcf.cpp src/robin_hood.h build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) -std=c++11 --std=gnu++11 -fPIC src/demux_vcf.cpp -o demux/demux_vcf build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o -lz -lhts -llapack lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
+	$(COMP) $(IFLAGS) $(LFLAGS) -std=c++11 --std=gnu++11 -fPIC src/demux_vcf.cpp -o demux/demux_vcf build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o -lz -lhts lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
 
 demux/demux_mt: src/demux_mt.cpp src/robin_hood.h src/common.h build/common.o $(DEPS)
 	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o -lz -lhts lib/libmixturedist.a lib/libhtswrapper.a
 
 analysis/quant_contam: src/quant_contam.cpp src/ambient_rna.h build/common.o build/demux_vcf_io.o build/ambient_rna.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) -std=c++11 --std=gnu++11 -fPIC src/quant_contam.cpp -o analysis/quant_contam build/common.o build/demux_vcf_io.o build/ambient_rna.o lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a -lz -llapack
+	$(COMP) $(IFLAGS) $(LFLAGS) -std=c++11 --std=gnu++11 -fPIC src/quant_contam.cpp -o analysis/quant_contam build/common.o build/demux_vcf_io.o build/ambient_rna.o lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a -lz
 
 utils/bam_indiv_rg: src/bam_indiv_rg.cpp build/common.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_indiv_rg.cpp -o utils/bam_indiv_rg build/common.o -lz -lhts $(DEPS)
