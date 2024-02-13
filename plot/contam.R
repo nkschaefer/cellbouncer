@@ -50,7 +50,7 @@ if (ncol <= 20){
     pal <- colorRampPalette(pal_d3("category20")(20))(ncol)
 }
 name2col <- setNames(pal, names)
-out_png <- paste(basename, '.contam_rate.png', sep='')
+out_png <- paste(basename, '.contam.png', sep='')
 
 cr <- cr[order(cr$cr, decreasing=T),]
 cr <- cr[order(cr$id),]
