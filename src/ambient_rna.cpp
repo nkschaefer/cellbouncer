@@ -417,6 +417,10 @@ contamFinder::contamFinder(robin_hood::unordered_map<unsigned long,
             allowed_ids.insert(combo.first);
             allowed_ids.insert(combo.second);
         }
+        if (id_llrsum.count(a->second) == 0){
+            id_llrsum.insert(make_pair(a->second, 0.0));
+        }
+        id_llrsum[a->second] += assn_llr[a->first];
     }
 
     // For the ambient RNA mixture, we only want to model single (not doublet) 
@@ -452,6 +456,8 @@ contamFinder::contamFinder(robin_hood::unordered_map<unsigned long,
     this->maxits = 100;
     
     this->model_mixprop = true;
+    
+    this->weighted = false;
 
     // Compile data in the format needed by other functions
     this->compile_data(assn, indv_allelecounts);
@@ -498,6 +504,14 @@ void contamFinder::max_cells_for_expfracs(int mc){
     this->max_cells_expfrac = mc;
 }
 
+void contamFinder::use_weights(){
+    this->weighted = true;
+}
+
+void contamFinder::no_weights(){
+    this->weighted = false;
+}
+
 /**
  * Populates internal data structures with data and expected values.
  */
@@ -525,7 +539,6 @@ void contamFinder::compile_data(robin_hood::unordered_map<unsigned long, int>& a
             p_e_all.push_back(p_e[i]);
             type1_all.push_back(type1[i]);
             type2_all.push_back(type2[i]);
-            weight_all.push_back(assn_llr[a->first]);
 
             if (expfrac_to_idx.count(type1[i]) == 0){
                 map<pair<int, int>, vector<int> > m;
@@ -702,7 +715,14 @@ void contamFinder::solve_params_init(){
                     k.push_back(k_all[*i]);
                     p_e.push_back(adjust_p_err(p_e_all[*i], e_r, e_a));
                     efp_idx.push_back(ef_param_idx);
-                    weights.push_back(assn_llr[idx_to_cell[*i]]);
+                    
+                    double weight = 1.0;
+                    if (weighted){ 
+                        // Weight by fraction of LLR sum of all cells assigned to this ID
+                        // assigned to this cell
+                        weight = assn_llr[idx_to_cell[*i]] / id_llrsum[assn[idx_to_cell[*i]]];
+                    }
+                    weights.push_back(weight);
                 }
             }        
         }
@@ -789,7 +809,10 @@ void contamFinder::est_contam_cells(){
         if (c_cell.root_found){
             contam_rate.emplace(ci->first, c_cell_map);
             cell_c_maps.push_back(c_cell_map);
-            cell_c_llr.push_back(assn_llr[ci->first]);
+            if (weighted){
+                double weight = assn_llr[ci->first] / id_llrsum[assn[ci->first]];
+                cell_c_llr.push_back(weight);
+            }
             if (c_cell.se_found){
                 contam_rate_se.emplace(ci->first, c_cell.se);
             }
@@ -797,8 +820,15 @@ void contamFinder::est_contam_cells(){
     }
     
     // Re-compute data set-wide distribution
-    pair<double, double> mu_var = welford_weights(cell_c_maps, cell_c_llr, false);
-    if (mu_var.second < 1e-3){
+    pair<double, double> mu_var;
+    if (weighted){
+        mu_var = welford_weights(cell_c_maps, cell_c_llr, false);
+    }
+    else{
+        mu_var = welford(cell_c_maps);
+    }
+
+    if (weighted && mu_var.second < 1e-3){
         // If the variance is too low, try to re-compute without using weights
         mu_var = welford(cell_c_maps);
     }
@@ -863,7 +893,14 @@ double contamFinder::update_ambient_profile(){
                     p_e.push_back(adjust_p_err(p_e_all[*i], e_r, e_a));
                     efp_idx.push_back(ef_param_idx);
                     c.push_back(contam_rate[idx_to_cell[*i]]);
-                    weights.push_back(assn_llr[idx_to_cell[*i]]);
+                    
+                    double weight = 1.0;
+                    if (weighted){
+                        double llr = assn_llr[idx_to_cell[*i]];
+                        double llrtot = id_llrsum[assn[idx_to_cell[*i]]];
+                        weight = llr / llrtot;
+                    }
+                    weights.push_back(weight);
                 }
             }        
         }
@@ -929,7 +966,11 @@ pair<double, double> contamFinder::est_error_rates(bool init){
                 n.push_back(n_all[*i]);
                 k.push_back(k_all[*i]);
                 p_e.push_back(p_e_all[*i]);
-                weights.push_back(assn_llr[ci->first]);
+                double weight = 1.0;
+                if (weighted){
+                    weight = assn_llr[ci->first] / id_llrsum[assn[ci->first]];
+                }
+                weights.push_back(weight);
                 if (init){
                     p_c.push_back(0.0);
                 }
@@ -1049,7 +1090,13 @@ void contamFinder::compute_expected_fracs_all_id(){
             
             unsigned long cell = a->first;
             int cell_id = a->second;
-            double weight = assn_llr[a->first];
+            
+            double weight = 1.0;
+            if (weighted){
+                //weight = assn_llr[a->first] / id_llrsum[a->second];
+                // Don't normalize this because it's already by ID
+                weight = assn_llr[a->first];
+            }
             double contam_cell = contam_rate[a->first];
 
             bool is_combo = false;

@@ -65,6 +65,12 @@ void help(int code){
     fprintf(stderr, "    --error_alt -E The underlying, true rate of misreading alt as reference\n");
     fprintf(stderr, "        alleles (should only reflect sequencing error if variant calls are\n");
     fprintf(stderr, "        reliable; default 0.001)\n"); 
+    fprintf(stderr, "    --n_mixprop_trials -n If you are inferring mixture proportions (i.e.\n");
+    fprintf(stderr, "        you have not set option -p), then a set number of random initial\n");
+    fprintf(stderr, "        guesses will be used in optimization. Default = 10, or set a different\n");
+    fprintf(stderr, "        value with this option.\n");
+    fprintf(stderr, "    --weights -w Weight all observations using the log likelihood ratios (confidence\n");
+    fprintf(stderr, "        measures) of cell-individual assignments. Default = do not weight\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
@@ -80,6 +86,8 @@ int main(int argc, char *argv[]) {
        {"error_alt", required_argument, 0, 'E'},
        {"max_cells", required_argument, 0, 'c'},
        {"llr", required_argument, 0, 'l'},
+       {"n_mixprop_trials", required_argument, 0, 'n'},
+       {"weights", no_argument, 0, 'w'},
        {0, 0, 0, 0} 
     };
     
@@ -91,6 +99,8 @@ int main(int argc, char *argv[]) {
     double error_alt = 0.001;
     int max_cells = 50;
     double llr = 0.0;
+    int n_mixprop_trials = 10;
+    bool weight = false;
 
     int option_index = 0;
     int ch;
@@ -98,7 +108,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:s:e:E:c:l:ph", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "o:s:e:E:c:l:n:wph", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -127,6 +137,12 @@ int main(int argc, char *argv[]) {
             case 'l':
                 llr = atof(optarg);
                 break;
+            case 'n':
+                n_mixprop_trials = atoi(optarg);
+                break;
+            case 'w':
+                weight = true;
+                break;
             default:
                 help(0);
                 break;
@@ -140,6 +156,10 @@ int main(int argc, char *argv[]) {
     }
     if (error_ref <= 0 || error_ref >= 1.0 || error_alt <= 0 || error_alt >= 1.0){
         fprintf(stderr, "ERROR: error rates must be between 0 and 1, exclusive.\n");
+        exit(1);
+    }
+    if (n_mixprop_trials <= 0){
+        fprintf(stderr, "ERROR: --n_mixprop_trials must be > 0\n");
         exit(1);
     }
     
@@ -221,7 +241,12 @@ int main(int argc, char *argv[]) {
     }
     else{
         cf.max_cells_for_expfracs(max_cells);
+        cf.set_mixprop_trials(n_mixprop_trials);
     }
+    if (weight){
+        cf.use_weights();
+    }
+    
     cf.fit(); 
         
     // Write contamination profile to disk

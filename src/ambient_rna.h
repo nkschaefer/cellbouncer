@@ -36,6 +36,9 @@ class contamFinder{
                     std::map<std::pair<int, int>, 
                         std::pair<float, float> > > > indv_allelecounts;
         std::set<int> allowed_ids; 
+        
+        // Map each ID to the sum of all LLRs of all cells assigned to it
+        map<int, double> id_llrsum;
 
         // Vectors of each data value that we will use repeatedly in optimizations 
         std::vector<double> n_all;
@@ -110,6 +113,10 @@ class contamFinder{
         int maxits;
         int nits;
         
+        // Should we consider log likelihood ratio of assignments when inferring
+        // contamination?
+        bool weighted;
+
         // Wrangle data
         void compile_data(robin_hood::unordered_map<unsigned long, int>& assn,
             robin_hood::unordered_map<unsigned long, 
@@ -164,6 +171,8 @@ class contamFinder{
         void set_delta(double d);
         void set_maxiter(int i);
         void max_cells_for_expfracs(int mc);
+        void use_weights();
+        void no_weights();
 
         // Get log likelihood of data under current parameters
         double compute_ll();
