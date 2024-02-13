@@ -1028,7 +1028,6 @@ bool filter_identities(robin_hood::unordered_map<unsigned long, int>& assn,
                 if (*a2 >= n_samples){
                     pair<int, int> combo = idx_to_hap_comb(*a2, n_samples);
                     if (combo.first == *a || combo.second == *a){
-                        fprintf(stderr, "  %d %d\n", cells_per_id[*a], cells_per_id[*a2]);
                         double p1 = ppois((double)cells_per_id[*a], (double)cells_per_id[*a2]);
                         double p2 = mannwhitney_llr(*a, *a2, assn, assn_llr);
                         p_ncell.push_back(p1);
@@ -1038,7 +1037,6 @@ bool filter_identities(robin_hood::unordered_map<unsigned long, int>& assn,
             }
             bool all_p_signif = true;
             for (int i = 0; i < p_ncell.size(); ++i){
-                fprintf(stderr, "%d) %f %f\n", *a, p_ncell[i], p_llr[i]);
                 if (p_ncell[i] > 0.05 || p_llr[i] > 0.05){
                     all_p_signif = true;
                 }
@@ -1125,13 +1123,6 @@ void help(int code){
     fprintf(stderr, "       jump to each variant position. This will be faster if you \n");
     fprintf(stderr, "       have relatively few SNPs, and much slower if you have a lot \n");
     fprintf(stderr, "       of SNPs.\n");
-    fprintf(stderr, "    --dump_counts -d After loading variants and counting reads at \n");
-    fprintf(stderr, "       variant sites, write these counts to [output_prefix].counts\n");
-    fprintf(stderr, "       before making assignments. These counts can then be loaded with \n");
-    fprintf(stderr, "       -l on a subsequent run to significantly speed up identification.\n");
-    fprintf(stderr, "    --load_counts -l If a previous run was done with -d, load counts \n");
-    fprintf(stderr, "       from that file and skip reading through the BAM file (output \n");
-    fprintf(stderr, "       prefix must match).\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
@@ -1145,8 +1136,6 @@ int main(int argc, char *argv[]) {
        {"output_prefix", required_argument, 0, 'o'},
        {"barcodes", required_argument, 0, 'B'},
        {"index_jump", no_argument, 0, 'j'},
-       {"dump_counts", no_argument, 0, 'd'},
-       {"load_counts", no_argument, 0, 'l'},
        {"doublet_rate", required_argument, 0, 'D'},
        {"ids", required_argument, 0, 'i'},
        {"ids_doublet", required_argument, 0, 'I'},
@@ -1164,8 +1153,6 @@ int main(int argc, char *argv[]) {
     bool cell_barcode = false;
     string cell_barcode_file = "";
     bool stream = true; // Opposite of index-jumping
-    bool dump_counts = false;
-    bool load_counts = false;
     string output_prefix = "";
     int vq = 50;
     string idfile;
@@ -1184,7 +1171,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:g:e:E:p:jdlh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:g:e:E:p:jh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -1225,12 +1212,6 @@ int main(int argc, char *argv[]) {
             case 'j':
                 stream = false;
                 break;
-            case 'd':
-                dump_counts = true;
-                break;
-            case 'l':
-                load_counts = true;
-                break;
             case 'e':
                 error_ref = atof(optarg);
                 break;
@@ -1251,20 +1232,8 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: variant quality must be a positive integer (or 0 for no filter)\n");
         exit(1);
     }
-    if (bamfile.length() == 0 && !load_counts){
-        fprintf(stderr, "ERROR: bam file (--bam) required\n");
-        exit(1);
-    }
-    if (vcf_file.length() == 0){
-        fprintf(stderr, "ERROR: vcf/BCF file (-v) required\n");
-        exit(1);
-    }
     if (output_prefix.length() == 0){
         fprintf(stderr, "ERROR: output_prefix/-o required\n");
-        exit(1);
-    }
-    if (dump_counts && load_counts){
-        fprintf(stderr, "ERROR: only one of --dump_counts and --load_counts is allowed\n");
         exit(1);
     }
     if (doublet_rate < 0 || doublet_rate > 1){
@@ -1278,29 +1247,59 @@ int main(int argc, char *argv[]) {
 
     // Init BAM reader
     bam_reader reader = bam_reader();
-    if (!load_counts){
+
+    // Decide whether we will be loading counts or computing them
+    bool load_counts = false;
+    string countsfilename = output_prefix + ".counts";
+    if (file_exists(countsfilename)){
+        load_counts = true;
+    }
+    else{
+        if (bamfile.length() == 0){
+            fprintf(stderr, "ERROR: bam file (--bam) required\n");
+            exit(1);
+        }    
         // We will be actually using the BAM reader, so we need to initialize properly.
         reader.set_file(bamfile);
     }
-    
+
     // Store the names of all individuals in the VCF
     vector<string> samples;
     
     // Store data about SNPs
     map<int, map<int, var> > snpdat;
     
-    // Load variant data from VCF file
-    bool hdr_only = load_counts;
+    int nsnps;
     
-    if (hdr_only){
-        fprintf(stderr, "Reading VCF/BCF header...\n");
+    bool samples_from_vcf = false;
+
+    if (load_counts){
+        // Load variant data from VCF file or from samples file, if it was written
+        string samplesfile = output_prefix + ".samples";
+        if (file_exists(samplesfile)){
+           load_samples(samplesfile, samples); 
+        }
+        else{
+            // Get samples from VCF header as a fallback
+            if (vcf_file == ""){
+                fprintf(stderr, "ERROR: vcf file is required\n");
+                exit(1);
+            }
+            fprintf(stderr, "Reading VCF/BCF header...\n");
+            nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, true);
+            samples_from_vcf = true;
+        }
     }
     else{
+        if (vcf_file == ""){
+            fprintf(stderr, "ERROR: vcf file is required\n");
+            exit(1);
+        }
         fprintf(stderr, "Loading variants from VCF/BCF...\n");
+        nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, load_counts);
+        samples_from_vcf = true;
     }
-    
-    int nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, load_counts);
-    
+
     set<int> allowed_ids;
     set<int> allowed_ids2;
 
@@ -1319,9 +1318,11 @@ all possible individuals\n", idfile_doublet.c_str());
         }
     }
     
-    // Store these to disk in case we run ambient RNA contamination finding later
-    string samplesfile = output_prefix + ".samples"; 
-    write_samples(samplesfile, samples);
+    if (samples_from_vcf){
+        // Store these to disk in case we run ambient RNA contamination finding later
+        string samplesfile = output_prefix + ".samples"; 
+        write_samples(samplesfile, samples);
+    }
 
     set<unsigned long> cell_barcodes;
     if (cell_barcode){
@@ -1370,14 +1371,12 @@ all possible individuals\n", idfile_doublet.c_str());
     // What was the last number of sites for which a message was printed?
     int last_print = 0;
 
+    // Load pre-computed allele counts from file, if it already exists
     if (load_counts){
-
         // Figure out the appropriate file name from the previous run and
         // load the counts, instead of reading through the BAM file.
-        string fn = output_prefix + ".counts";
         fprintf(stderr, "Loading counts...\n");
-        load_counts_from_file(indv_allelecounts, samples, fn);
-        
+        load_counts_from_file(indv_allelecounts, samples, countsfilename);
     }
     else{
         // initialize the BAM reader
@@ -1481,15 +1480,13 @@ all possible individuals\n", idfile_doublet.c_str());
         }
         fprintf(stderr, "Processed %d of %d SNPs\n", nsnp_processed, nsnps);
         
-        if (dump_counts){
-            // Write the data just compiled to disk.
-            string fname = output_prefix + ".counts";
-            FILE* outf = fopen(fname.c_str(), "w");   
-            fprintf(stderr, "Writing allele counts to disk...\n");
-            dump_cellcounts(outf, indv_allelecounts, samples);
-            fprintf(stderr, "Done\n");
-            fclose(outf);
-        }
+        // Write the data just compiled to disk.
+        string fname = output_prefix + ".counts";
+        FILE* outf = fopen(fname.c_str(), "w");   
+        fprintf(stderr, "Writing allele counts to disk...\n");
+        dump_cellcounts(outf, indv_allelecounts, samples);
+        fprintf(stderr, "Done\n");
+        fclose(outf);
     }
         
     // Map cell barcodes to numeric IDs of best individual assignments 
