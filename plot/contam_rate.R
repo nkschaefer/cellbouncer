@@ -99,6 +99,7 @@ byllr <- ggplot(cr) +
         ymax=ifelse(cr+cr.se > 1, 1, cr+cr.se), colour=id), show.legend=FALSE) + 
     theme_bw() + 
     annotation_logticks(side="b") +
+    scale_colour_manual(values=name2col) + 
     scale_x_log10("LLR of ID") + 
     scale_y_continuous("Contam rate") + 
     theme(panel.background=element_blank(), 
@@ -115,12 +116,12 @@ eq <- '='
 mu_sigma_text <- bquote(mu~.(eq)~.(mutxt)~sigma~.(eq)~.(sdtxt))
 pval <- ggdraw() + 
     draw_label(paste("P(contamination) = ", format(p_contam, scientific=TRUE, digits=2), sep=''), 
-           size=8, lineheight=0.9, hjust=0.6)
+           size=10, lineheight=0.9, hjust=0.6)
 
 mu_sd <- ggdraw() + 
-    draw_label(mu_sigma_text, size=8, lineheight=0.9, hjust=0.6)
+    draw_label(mu_sigma_text, size=10, lineheight=0.9, hjust=0.6)
 
-png(out_png, bg='white', width=6, height=8, units='in', res=150)
+png(out_png, bg='white', width=6, height=9, units='in', res=150)
 
 cpfile <- paste(basename, '.contam_prof', sep='')
 if (file.exists(cpfile)){
