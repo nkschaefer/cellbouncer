@@ -406,7 +406,8 @@ contamFinder::contamFinder(robin_hood::unordered_map<unsigned long,
     this->assn_llr = assn_llr;
     this->indv_allelecounts = indv_allelecounts;
     this->n_samples = n_samples;
-    
+    this->n_mixprop_trials = 10;
+     
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin(); a != 
         assn.end(); ++a){
         allowed_ids.insert(a->second);
@@ -479,6 +480,10 @@ void contamFinder::model_mixture(){
 
 void contamFinder::skip_model_mixture(){
     this->model_mixprop = false;
+}
+
+void contamFinder::set_mixprop_trials(int nt){
+    this->n_mixprop_trials = nt;
 }
 
 void contamFinder::set_delta(double delta){
@@ -1149,7 +1154,7 @@ void contamFinder::compute_expected_fracs_all_id(){
  * Populates the contam_prof map, accessible outside the class.
  *
  */
-void contamFinder::model_as_mixture(){
+double contamFinder::model_as_mixture(){
 
     vector<vector<double> > mixfrac_exp; 
     vector<double> n;
@@ -1199,8 +1204,7 @@ void contamFinder::model_as_mixture(){
         }
     }
 
-    // Solve
-    // Update mixture components
+    // Set up solver
     multivar_ml_solver mix({}, ll_as_mixture, dll_as_mixture);
     mix.add_data("n", n);
     mix.add_data("k", k);
@@ -1208,29 +1212,78 @@ void contamFinder::model_as_mixture(){
     mix.add_data("p_e", p_e);
     mix.add_mixcomp(mixfrac_exp);
     
-    // Initialize to current mixture proportions, if they exist
-    vector<double> mixprop_start;
-    if (contam_prof.size() > 0){
+    // Since MLE finding in this case can be very sensitive to initial
+    // values, we will try once starting from an even mixture of cells.
+    // We will then try again starting from individual proportions matching
+    // their frequency in the group of cell->ID assignments. Finally, we
+    // will randomly shuffle the starting proportions a set number of times.
+    
+    // We will end by taking the solution with the highest likelihood of
+    // all those trials. 
+    
+    vector<double> solution_ll;
+    vector<vector<double> > solution_cp;
+    
+    // Solve once using an even pool of each individual as initial guess
+    mix.solve();
+
+    solution_ll.push_back(mix.log_likelihood);
+    solution_cp.push_back(mix.results_mixcomp);
+
+    if (!inter_species){
+        map<int, int> assncount;
+        int assntot;
+        for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin();
+            a != assn.end(); ++a){
+            if (assncount.count(a->second) == 0){
+                assncount.insert(make_pair(a->second, 0));
+            }
+            assncount[a->second]++;
+            assntot++;
+        }
+        vector<double> starting_props;
         for (int i = 0; i < idx2samp.size(); ++i){
             int samp = idx2samp[i];
-            mixprop_start.push_back(contam_prof[samp]);
+            starting_props.push_back((double)assncount[samp]/(double)assntot);
         }
-        if (inter_species){
-            mixprop_start.push_back(contam_prof[-1]);
-        }
-        mix.add_mixcomp_fracs(mixprop_start);
+
+        // Solve another time using a pool with frequencies based on frequencies
+        // of assignment
+        mix.add_mixcomp_fracs(starting_props);
+        mix.solve();
+        solution_ll.push_back(mix.log_likelihood);
+        solution_cp.push_back(mix.results_mixcomp);
     }
-    mix.solve();
+
+    // Finally, do a set number of random trials.
+    for (int i = 0; i < n_mixprop_trials; ++i){
+        mix.randomize_mixcomps();
+        mix.solve();
+        solution_ll.push_back(mix.log_likelihood);
+        solution_cp.push_back(mix.results_mixcomp);
+    }
+    
+    // Find maximum likelihood solution
+    int max_sol_idx = -1;
+    double max_ll;
+    for (int i = 0; i < solution_ll.size(); ++i){
+        if (max_sol_idx == -1 || solution_ll[i] > max_sol_idx){
+            max_sol_idx = i;
+            max_ll = solution_ll[i];
+        }
+    }
 
     // Update contamination profile
     contam_prof.clear();
     for (int i = 0; i < idx2samp.size(); ++i){
         int samp = idx2samp[i];
-        contam_prof.insert(make_pair(samp, mix.results_mixcomp[i]));
+        contam_prof.insert(make_pair(samp, solution_cp[max_sol_idx][i]));
     }
     if (inter_species){
-        contam_prof.insert(make_pair(-1, mix.results_mixcomp[mix.results_mixcomp.size()-1]));
+        contam_prof.insert(make_pair(-1, solution_cp[max_sol_idx][solution_cp[max_sol_idx].size()-1]));
     }
+
+    return max_ll;
 }
 
 /**
@@ -1307,7 +1360,7 @@ double contamFinder::fit(){
 
     if (model_mixprop){
         this->compute_expected_fracs_all_id();
-        this->model_as_mixture();
+        double mixll = this->model_as_mixture();
     }
 
     return llprev;

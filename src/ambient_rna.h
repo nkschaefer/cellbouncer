@@ -100,6 +100,10 @@ class contamFinder{
         // Should we take the last step of modeling ambient RNA as a mixture of 
         // known individuals?
         bool model_mixprop;
+        
+        // How many random trials should we do to re-adjust starting proportions
+        // when modeling ambient RNA as a mixture of individuals?
+        int n_mixprop_trials;
 
         // Stopping criteria for iteration
         double delta_thresh;
@@ -130,7 +134,7 @@ class contamFinder{
         double update_ambient_profile();
         std::pair<double, double> est_error_rates(bool init);
         void compute_expected_fracs_all_id();
-        void model_as_mixture();
+        double model_as_mixture();
 
     public:
         
@@ -154,6 +158,7 @@ class contamFinder{
         void set_error_rates(double e_r, double e_a);
         void model_other_species();
         void model_single_species();
+        void set_mixprop_trials(int nt);
         void model_mixture();
         void skip_model_mixture();
         void set_delta(double d);
