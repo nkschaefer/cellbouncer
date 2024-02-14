@@ -221,6 +221,7 @@ int main(int argc, char *argv[]) {
         map<pair<int, int>, pair<float, float> > > > indv_allelecounts;
     string counts_name = output_prefix + ".counts";
     if (file_exists(counts_name)){
+        fprintf(stderr, "Loading counts...\n");
         load_counts_from_file(indv_allelecounts, samples, counts_name); 
     }
     else{

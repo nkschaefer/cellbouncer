@@ -25,7 +25,7 @@
 #include <mixtureDist/mixtureDist.h>
 #include <mixtureDist/mixtureModel.h>
 #include <mixtureDist/functions.h>
-#include <optimML/lstsq.h>
+#include <optimML/multivar_ml.h>
 #include "robin_hood.h"
 #include "common.h"
 #include "ambient_rna.h"
@@ -699,12 +699,12 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
  * Log likelihood function for computing error rates, for use by
  * multivar_ml_solver.
  */
-double ll_err(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i){
+double ll_err(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i){
     
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double p0 = data_d["exp"];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p0 = data_d.at("exp");
     double e_r = params[0];
     double e_a = params[1];
     double p = p0 - p0*e_a + (1.0 - p0)*e_r;
@@ -717,12 +717,12 @@ double ll_err(vector<double>& params, map<string, double>& data_d,
  * multivar_ml_solver, for re-estimating reference and alt allele
  * misreading error rates.
  */
-void dll_err(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i, vector<double>& results){
+void dll_err(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i, vector<double>& results){
     
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double p0 = data_d["exp"];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p0 = data_d.at("exp");
     double e_r = params[0];
     double e_a = params[1];
     double p = p0 - p0*e_a + (1.0 - p0)*e_r;
@@ -796,7 +796,7 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
         }
     }
 
-    multivar_ml_solver solver({error_ref, error_alt}, ll_err, dll_err);
+    optimML::multivar_ml_solver solver({error_ref, error_alt}, ll_err, dll_err);
     solver.add_data("n", n);
     solver.add_data("k", k);
     solver.add_data("exp", expected);

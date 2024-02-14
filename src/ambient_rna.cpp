@@ -14,10 +14,8 @@
 #include <utility>
 #include <math.h>
 #include <mixtureDist/functions.h>
-#include <optimML/lstsq.h>
 #include <optimML/brent.h>
-#include <optimML/multivar.h>
-#include <optimML/mixcomp.h>
+#include <optimML/multivar_ml.h>
 #include "common.h"
 #include "robin_hood.h"
 #include "ambient_rna.h"
@@ -138,13 +136,13 @@ double d_integral_ll_c_dpc(double n, double k, double c, double p_e, double p_c)
 /**
  * Log likelihood when estimating c
  */
-double ll_c(double c, map<string, double >& data_d, 
-    map<string, int >& data_i){
+double ll_c(double c, const map<string, double >& data_d, 
+    const map<string, int >& data_i){
     
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double p_e = data_d["p_e"];
-    double p_c = data_d["p_c"];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p_e = data_d.at("p_e");
+    double p_c = data_d.at("p_c");
     double binom_p = (1.0 - c)*p_e + c*p_c;
     return logbinom(n, k, binom_p);
 }
@@ -152,13 +150,13 @@ double ll_c(double c, map<string, double >& data_d,
 /**
  * Derivative of log likelihood wrt c
  */
-double dll_dc(double c, map<string, double >& data_d, 
-    map<string, int >& data_i){
+double dll_dc(double c, const map<string, double >& data_d, 
+    const map<string, int >& data_i){
 
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double p_e = data_d["p_e"];
-    double p_c = data_d["p_c"];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p_e = data_d.at("p_e");
+    double p_c = data_d.at("p_c");
     double binom_p = (1.0 - c)*p_e + c*p_c;
     double dy_dp = (k-n*binom_p)/(binom_p - binom_p * binom_p);
     double dp_dc = p_c - p_e;
@@ -168,13 +166,13 @@ double dll_dc(double c, map<string, double >& data_d,
 /**
  * Second derivative of log likelihood wrt c
  */
-double d2ll_dc2(double c, map<string, double >& data_d, 
-    map<string, int>& data_i){
+double d2ll_dc2(double c, const map<string, double >& data_d, 
+    const map<string, int>& data_i){
 
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double p_e = data_d["p_e"];
-    double p_c = data_d["p_c"];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p_e = data_d.at("p_e");
+    double p_c = data_d.at("p_c");
     double binom_p = (1.0 - c)*p_e + c*p_c;
     double dp_dc = p_c - p_e;
     double d2y_dp2 = (k*(2*binom_p - 1) - n*binom_p*binom_p)/(pow(binom_p-1,2)*binom_p*binom_p);
@@ -188,26 +186,26 @@ double d2ll_dc2(double c, map<string, double >& data_d,
  * Log likelihood for estimating best set of p_c parameters
  * in ambient RNA
  */
-double ll_ambmu(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i){
+double ll_ambmu(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i){
     
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double p_e = data_d["p_e"];
-    int amb_idx = data_i["ef_idx"];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p_e = data_d.at("p_e");
+    int amb_idx = data_i.at("ef_idx");
     double p_c = params[amb_idx];
-    double c = data_d["c"];
+    double c = data_d.at("c");
     double binom_p = (1.0-c) * p_e + c*p_c;
     return logbinom(n, k, binom_p); 
 }
 
-double ll_ambmu2(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i){
+double ll_ambmu2(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i){
     
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double p_e = data_d["p_e"];
-    int amb_idx = data_i["ef_idx"];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p_e = data_d.at("p_e");
+    int amb_idx = data_i.at("ef_idx");
     double p_c = params[amb_idx];
     double c = params[params.size()-1];
     double binom_p = (1.0-c) * p_e + c*p_c;
@@ -218,28 +216,28 @@ double ll_ambmu2(vector<double>& params, map<string, double>& data_d,
  * First derivative of log likelihood for estimating best set
  * of p_c parameters in ambient RNA
  */
-void dll_ambmu(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i, vector<double>& results){
+void dll_ambmu(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i, vector<double>& results){
     
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double p_e = data_d["p_e"];
-    int amb_idx = data_i["ef_idx"];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p_e = data_d.at("p_e");
+    int amb_idx = data_i.at("ef_idx");
     double p_c = params[amb_idx];
-    double c = data_d["c"];
+    double c = data_d.at("c");
     double binom_p = (1.0-c) * p_e + c*p_c;
 
     double dy_dp = (k-n*binom_p)/(binom_p - binom_p*binom_p);
     results[amb_idx] = dy_dp * c;
 }
 
-void dll_ambmu2(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i, vector<double>& results){
+void dll_ambmu2(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i, vector<double>& results){
     
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double p_e = data_d["p_e"];
-    int amb_idx = data_i["ef_idx"];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p_e = data_d.at("p_e");
+    int amb_idx = data_i.at("ef_idx");
     double p_c = params[amb_idx];
     double c = params[params.size()-1];
     double binom_p = (1.0-c) * p_e + c*p_c;
@@ -252,16 +250,16 @@ void dll_ambmu2(vector<double>& params, map<string, double>& data_d,
 /**
  * Log likelihood function for finding best e_r & e_a
  */
-double ll_err_rates(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i){
+double ll_err_rates(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i){
     
     double e_r = params[0];
     double e_a = params[1];
-    double p_c = data_d["p_c"];
-    double p_e = data_d["p_e"];
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double c = data_d["c"];
+    double p_c = data_d.at("p_c");
+    double p_e = data_d.at("p_e");
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double c = data_d.at("c");
 
     double p_e_a = adjust_p_err(p_e, e_r, e_a);
     double binom_p = (1-c)*p_e_a + c*p_c;
@@ -271,16 +269,16 @@ double ll_err_rates(vector<double>& params, map<string, double>& data_d,
 /**
  * First derivative log likelihood function for finding best e_r & e_a
  */
-void dll_err_rates(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i, vector<double>& results){
+void dll_err_rates(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i, vector<double>& results){
     
     double e_r = params[0];
     double e_a = params[1];
-    double p_c = data_d["p_c"];
-    double p_e = data_d["p_e"];
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double c = data_d["c"];
+    double p_c = data_d.at("p_c");
+    double p_e = data_d.at("p_e");
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double c = data_d.at("c");
 
     double p_e_a = adjust_p_err(p_e, e_r, e_a);
     double binom_p = (1-c)*p_e_a + c*p_c;
@@ -295,15 +293,15 @@ void dll_err_rates(vector<double>& params, map<string, double>& data_d,
  * Log likelihood for computing expected p_c values in real cells given each
  * possible identity
  */
-double ll_expfrac(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i){
+double ll_expfrac(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i){
     
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double p_c = data_d["p_c"];
-    double c = data_d["c"];
-    int idx1 = data_i["idx1"];
-    int idx2 = data_i["idx2"];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p_c = data_d.at("p_c");
+    double c = data_d.at("c");
+    int idx1 = data_i.at("idx1");
+    int idx2 = data_i.at("idx2");
 
     if (idx2 == -1){
         double binom_p = (1.0-c)*params[idx1] + p_c*c;
@@ -319,15 +317,15 @@ double ll_expfrac(vector<double>& params, map<string, double>& data_d,
  * Derivative of log likelihood for computing expected p_c values in real cells
  * given each possible identity
  */
-void dll_expfrac(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i, vector<double>& results){
+void dll_expfrac(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i, vector<double>& results){
     
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double p_c = data_d["p_c"];
-    double c = data_d["c"];
-    int idx1 = data_i["idx1"];
-    int idx2 = data_i["idx2"];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p_c = data_d.at("p_c");
+    double c = data_d.at("c");
+    int idx1 = data_i.at("idx1");
+    int idx2 = data_i.at("idx2");
     
     double dp_dparam;
     double binom_p;
@@ -351,14 +349,14 @@ void dll_expfrac(vector<double>& params, map<string, double>& data_d,
  * Log likelihood function for modeling ambient RNA as a mixture of 
  * individuals
  */
-double ll_as_mixture(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i){
+double ll_as_mixture(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i){
     
     double p_c = params[0];
-    double p_e = data_d["p_e"];
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double c = data_d["c"];
+    double p_e = data_d.at("p_e");
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double c = data_d.at("c");
 
     double binom_p = (1-c)*p_e + c*p_c;
     return logbinom(n, k, binom_p);
@@ -368,14 +366,14 @@ double ll_as_mixture(vector<double>& params, map<string, double>& data_d,
  * First derivative log likelihood function for modeling ambient RNA
  * as a mixture of individuals
  */
-void dll_as_mixture(vector<double>& params, map<string, double>& data_d, 
-    map<string, int>& data_i, vector<double>& results){
+void dll_as_mixture(vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i, vector<double>& results){
     
     double p_c = params[0];
-    double p_e = data_d["p_e"];
-    double n = data_d["n"];
-    double k = data_d["k"];
-    double c = data_d["c"];
+    double p_e = data_d.at("p_e");
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double c = data_d.at("c");
 
     double binom_p = (1-c)*p_e + c*p_c;
     
@@ -728,7 +726,7 @@ void contamFinder::solve_params_init(){
         }
     }
     efparams.push_back(0.01);
-    multivar_ml_solver solver(efparams, ll_ambmu2, dll_ambmu2);
+    optimML::multivar_ml_solver solver(efparams, ll_ambmu2, dll_ambmu2);
     for (int i = 0; i < efparams.size(); ++i){
         solver.constrain_01(i);
     }
@@ -791,7 +789,7 @@ void contamFinder::est_contam_cells(){
             p_c.push_back(amb_mu[type1_all[*i]][type2_all[*i]]);
         }
 
-        brentSolver c_cell(ll_c, dll_dc, d2ll_dc2);
+        optimML::brent_solver c_cell(ll_c, dll_dc, d2ll_dc2);
         c_cell.add_data("n", n);
         c_cell.add_data("k", k);
         c_cell.add_data("p_e", p_e);
@@ -906,7 +904,7 @@ double contamFinder::update_ambient_profile(){
         }
     }
         
-    multivar_ml_solver solver(efparams, ll_ambmu, dll_ambmu);
+    optimML::multivar_ml_solver solver(efparams, ll_ambmu, dll_ambmu);
     for (int i = 0; i < efparams.size(); ++i){
         solver.constrain_01(i);
     }
@@ -981,7 +979,7 @@ pair<double, double> contamFinder::est_error_rates(bool init){
         }
     }
     
-    multivar_ml_solver solver({e_r, e_a}, ll_err_rates, dll_err_rates);
+    optimML::multivar_ml_solver solver({e_r, e_a}, ll_err_rates, dll_err_rates);
     solver.add_data("n", n);
     solver.add_data("k", k);
     solver.add_data("c", c);
@@ -1161,7 +1159,7 @@ void contamFinder::compute_expected_fracs_all_id(){
     }
 
     // Set up equation solver
-    multivar_ml_solver solver(params, ll_expfrac, dll_expfrac);
+    optimML::multivar_ml_solver solver(params, ll_expfrac, dll_expfrac);
     solver.add_data("n", n);
     solver.add_data("k", k);
     solver.add_data("c", c);
@@ -1252,7 +1250,7 @@ double contamFinder::model_as_mixture(){
     }
 
     // Set up solver
-    multivar_ml_solver mix({}, ll_as_mixture, dll_as_mixture);
+    optimML::multivar_ml_solver mix({}, ll_as_mixture, dll_as_mixture);
     mix.add_data("n", n);
     mix.add_data("k", k);
     mix.add_data("c", c);
@@ -1356,10 +1354,12 @@ double contamFinder::compute_ll(){
  * Return overall log likelihood.
  */
 double contamFinder::fit(){
-    
+   
+    fprintf(stderr, "Get initial parameter estimates...\n"); 
     // Get initial estimates for global contamination rate and all
     // p_c parameters
     solve_params_init();
+    fprintf(stderr, "done\n");
 
     double delta = 999;
     nits = 0;
