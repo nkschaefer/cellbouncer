@@ -143,12 +143,13 @@ if (file.exists(cpfile)){
               panel.border=element_blank(),
               panel.grid.major=element_blank(), 
               panel.grid.minor=element_blank(), 
-              panel.background=element_blank())
+              panel.background=element_blank(),
+              legend.key.size=unit(0.35, 'cm'))
     
     row1col1 <- plot_grid(title, mu_sd, cp_plt, ncol=1, 
         rel_heights=c(0.2*0.5, 0.2*0.5, 0.8))
     row1col2 <- plot_grid(dens, byllr, ncol=1, rel_heights=c(0.45, 0.55))
-    row1 <- plot_grid(row1col1, row1col2, ncol=2, rel_widths=c(0.45, 0.55))
+    row1 <- plot_grid(row1col1, row1col2, ncol=2, rel_widths=c(0.4, 0.6))
     row2 <- plot_grid(bars, boxes, ncol=2, rel_widths=c(0.33,0.66)) 
     plot_grid(row1, row2, nrow=2, rel_heights=c(0.45, 0.55))
 

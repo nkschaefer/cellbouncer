@@ -63,11 +63,7 @@ class contamFinder{
         //    Value: Expected rate of matching alt alleles at sites of this type
         std::map<std::pair<int, int>, std::map<int, float> > expfracs;
         
-        // First key: allele type (individual index, number alt alleles)
-        //   Second key: allele type 2 (individual index, number alt alleles, or (-1, -1) for all
-        //     Value: Expected rate of matching alt alleles in ambient RNA
-        std::map<std::pair<int, int>, std::map<std::pair<int, int>, double> > amb_mu;
-        std::map<std::pair<int, int>, std::map<std::pair<int, int>, double> > amb_mu_max;
+        
 
         map<pair<int, int>, map<pair<int, int>, double> > amb_tot;
         
@@ -144,6 +140,12 @@ class contamFinder{
         double model_as_mixture();
 
     public:
+        
+        // Mean alt allele matching frequencies in ambient RNA
+        // First key: allele type (individual index, number alt alleles)
+        //   Second key: allele type 2 (individual index, number alt alleles, or (-1, -1) for all
+        //     Value: Expected rate of matching alt alleles in ambient RNA
+        std::map<std::pair<int, int>, std::map<std::pair<int, int>, double> > amb_mu;
         
         // Contamination rates & their standard errors per cell
         robin_hood::unordered_map<unsigned long, double> contam_rate;
