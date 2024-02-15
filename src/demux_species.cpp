@@ -424,11 +424,12 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, double> >& bc
         mixtureDist dist("multinomial", params);
         dist.name = i2s->second;
         dist.set_num_inputs(n_species);
-        dist_doublet.insert(make_pair(dists.size(), false));
-        dist2singlet.insert(make_pair(dists.size(), i2s->first));
+        //dist_doublet.insert(make_pair(dists.size(), false));
+        //dist2singlet.insert(make_pair(dists.size(), i2s->first));
         dists.push_back(dist);
         singlet_dist_count++;
         
+        /*
         // Create doublet distribution
         for (int j = i2s->first+1; j < n_species; ++j){
             vector<double> doublet_params;
@@ -457,6 +458,7 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, double> >& bc
             dists.push_back(dist);
             doublet_dist_count++;
         }
+        */
     }
     
     // Prepare input data

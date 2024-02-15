@@ -8,6 +8,9 @@
  * Ed Green, ed@soe.ucsc.edu
  *
  */
+#ifdef __cplusplus
+extern "C"{
+#endif
 #include <stdio.h>   
 #include <stdlib.h> 
 #include <ctype.h>
@@ -53,5 +56,7 @@ ktnP init_ktn( void );
 void knode_destruct(struct kmer_tree_node*, int);
 void kmsuftree_destruct(kmer_tree_p, int);
 
-
+#ifdef __cplusplus
+}
+#endif
 #endif // KMER_SUF_TREE_H

@@ -48,13 +48,13 @@ int main(int argc, char *argv[]) {
     map<string, int> kmer_map;
     
     fprintf(stderr, "===== Testing insertion and lookup: =====\n\n");
-    char* seq = "ACGTGGGGTAGAGTAGGACCGCGATTTGAGATGCGACCTACTCTACCCCACGTGGTCGCATCTCAAATCGCGG";
+    string seq = "ACGTGGGGTAGAGTAGGACCGCGATTTGAGATGCGACCTACTCTACCCCACGTGGTCGCATCTCAAATCGCGG";
     // Create null-terminated buffer to store k-mers as we read from the sequence
     char kmer[k + 1];
     kmer[k] = '\0';
     
     fprintf(stderr, "counts of forward and reverse k-mers from forward seq:\n");
-    for (int i = 0; i < strlen(seq) - k + 1; ++i){
+    for (int i = 0; i < seq.length() - k + 1; ++i){
         strncpy(kmer, &seq[i], k);
         
         // Insert into standard map
@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
     // Do the same thing for the whole sequence reverse-complemented
     fprintf(stderr, "\ncounts of forward and reverse k-mers from reverse-complemented seq:\n");
     seq = "CCGCGATTTGAGATGCGACCACGTGGGGTAGAGTAGGTCGCATCTCAAATCGCGGTCCTACTCTACCCCACGT";
-    for (int i = 0; i < strlen(seq) - k + 1; ++i){
+    for (int i = 0; i < seq.length() - k + 1; ++i){
         strncpy(kmer, &seq[i], k);
         
         // Insert into standard map

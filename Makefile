@@ -19,6 +19,9 @@ demux/demux_vcf: src/demux_vcf.cpp src/robin_hood.h build/common.o build/demux_v
 demux/demux_mt: src/demux_mt.cpp src/robin_hood.h src/common.h build/common.o $(DEPS)
 	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o -lz -lhts lib/libmixturedist.a lib/libhtswrapper.a
 
+demux/demux_species: src/demux_species.cpp src/kmsuftree.h src/common.h build/kmsuftree.o build/common.o
+	$(COMP) $(FLAGS) -pthread src/demux_species.cpp -o demux/demux_species build/kmsuftree.o build/common.o lib/libhtswrapper.a lib/libmixturedist.a -lhts -lz
+
 analysis/quant_contam: src/quant_contam.cpp src/ambient_rna.h build/common.o build/demux_vcf_io.o build/ambient_rna.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) -std=c++11 --std=gnu++11 -fPIC src/quant_contam.cpp -o analysis/quant_contam build/common.o build/demux_vcf_io.o build/ambient_rna.o lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a -lz
 
@@ -27,6 +30,9 @@ utils/bam_indiv_rg: src/bam_indiv_rg.cpp build/common.o $(DEPS)
 
 utils/bam_split_bcs: src/bam_split_bcs.cpp build/common.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_split_bcs.cpp -o utils/bam_split_bcs build/common.o -lz -lhts $(DEPS)
+
+utils/kmsuftree_test: src/kmsuftree_test.cpp src/kmsuftree.h
+	$(COMP) $(FLAGS) src/kmsuftree_test.cpp -o utils/kmsuftree_test build/kmsuftree.o
 
 build/common.o: src/common.cpp src/common.h lib/libhtswrapper.a lib/libmixturedist.a
 	$(COMP) $(IFLAGS) $(FLAGS) src/common.cpp -c -o build/common.o
@@ -39,6 +45,9 @@ build/demux_vcf_hts.o: src/demux_vcf_hts.cpp src/demux_vcf_hts.h src/common.h li
 
 build/ambient_rna.o: src/ambient_rna.cpp src/ambient_rna.h src/robin_hood.h $(DEPS)
 	$(COMP) $(IFLAGS) $(FLAGS) src/ambient_rna.cpp -c -o build/ambient_rna.o
+
+build/kmsuftree.o: src/kmsuftree.c src/kmsuftree.h
+	$(COMP) $(FLAGS) -c src/kmsuftree.c -o build/kmsuftree.o
 
 lib/libhtswrapper.a:
 	cd dependencies/htswrapper && $(MAKE) PREFIX=../..
