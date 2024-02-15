@@ -15,6 +15,7 @@
 #include <utility>
 #include <htslib/sam.h>
 #include <htswrapper/bam.h>
+#include <htswrapper/bc.h>
 #include "common.h"
 
 using std::cout;
@@ -159,7 +160,7 @@ file (-a) required\n");
         // Skip records for which there is no barcode -> individual assignment
         if (reader.has_cb_z){
             bc as_bitset;
-            str2bc(reader.cb_z, as_bitset, 16);
+            str2bc(reader.cb_z, as_bitset);
             unsigned long as_ulong = as_bitset.to_ulong();
             if (barcode_map.count(as_ulong) > 0){
                 reader.add_read_group_read(barcode_map[as_ulong]);

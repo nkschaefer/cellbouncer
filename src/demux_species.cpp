@@ -26,7 +26,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <htswrapper/bam.h>
-#include <htswrapper/bc_hash.h>
+#include <htswrapper/bc.h>
 #include <mixtureDist/mixtureDist.h>
 #include <mixtureDist/mixtureModel.h>
 #include "reads_io.h"

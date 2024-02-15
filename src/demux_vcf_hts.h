@@ -20,7 +20,7 @@
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
 #include <htswrapper/bam.h>
-#include <htswrapper/bc_hash.h>
+#include <htswrapper/bc.h>
 #include "robin_hood.h"
 #include "common.h"
 

@@ -20,7 +20,7 @@ demux/demux_mt: src/demux_mt.cpp src/robin_hood.h src/common.h build/common.o $(
 	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o -lz -lhts lib/libmixturedist.a lib/libhtswrapper.a
 
 demux/demux_species: src/demux_species.cpp src/kmsuftree.h src/common.h build/kmsuftree.o build/common.o
-	$(COMP) $(FLAGS) -pthread src/demux_species.cpp -o demux/demux_species build/kmsuftree.o build/common.o lib/libhtswrapper.a lib/libmixturedist.a -lhts -lz
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -pthread src/demux_species.cpp -o demux/demux_species build/kmsuftree.o build/common.o lib/libhtswrapper.a lib/libmixturedist.a -lhts -lz
 
 analysis/quant_contam: src/quant_contam.cpp src/ambient_rna.h build/common.o build/demux_vcf_io.o build/ambient_rna.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) -std=c++11 --std=gnu++11 -fPIC src/quant_contam.cpp -o analysis/quant_contam build/common.o build/demux_vcf_io.o build/ambient_rna.o lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a -lz
@@ -47,7 +47,7 @@ build/ambient_rna.o: src/ambient_rna.cpp src/ambient_rna.h src/robin_hood.h $(DE
 	$(COMP) $(IFLAGS) $(FLAGS) src/ambient_rna.cpp -c -o build/ambient_rna.o
 
 build/kmsuftree.o: src/kmsuftree.c src/kmsuftree.h
-	$(COMP) $(FLAGS) -c src/kmsuftree.c -o build/kmsuftree.o
+	$(CCOMP) -fPIC -c src/kmsuftree.c -o build/kmsuftree.o
 
 lib/libhtswrapper.a:
 	cd dependencies/htswrapper && $(MAKE) PREFIX=../..

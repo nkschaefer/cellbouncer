@@ -22,7 +22,7 @@
 #include <htslib/sam.h>
 #include <zlib.h>
 #include <htswrapper/bam.h>
-#include <htswrapper/bc_hash.h>
+#include <htswrapper/bc.h>
 #include <mixtureDist/functions.h>
 #include <mixtureDist/mixtureDist.h>
 #include <mixtureDist/mixtureModel.h>
@@ -323,7 +323,7 @@ static int readaln_bcs(void *data, bam1_t *b){
                 bc_str = bc_str.substr(0, dashpos);
             }
             bc as_bitset;
-            str2bc(bc_str.c_str(), as_bitset, 16);
+            str2bc(bc_str.c_str(), as_bitset);
             unsigned long as_ulong = as_bitset.to_ulong();
             if (bc_whitelist->find(as_ulong) == bc_whitelist->end()){
                 // Cell barcode not in whitelist
@@ -1393,7 +1393,7 @@ void count_vars_barcodes(string& bamfile,
             }
             bc bc_hashable;
 
-            if (str2bc(bc_str.c_str(), bc_hashable, 16) && (
+            if (str2bc(bc_str.c_str(), bc_hashable) && (
                 !has_bc_whitelist || bc_whitelist.find(bc_hashable.to_ulong()) != 
                 bc_whitelist.end())){ 
                  
@@ -1944,7 +1944,7 @@ void write_bchaps(string& haps_out,
         haplotypes.begin(); h != haplotypes.end(); ++h){
         
         bc bcbits(h->first);
-        string bcstr = bc2str(bcbits, 16);
+        string bcstr = bc2str(bcbits);
         if (bc_group != ""){
             bcstr += "-" + bc_group;
         }
@@ -2114,7 +2114,7 @@ void write_assignments(string& assn_out,
         }
         id_counter[assn->second]++;
         bc as_bitset(assn->first);
-        string bc_str = bc2str(as_bitset, 16);
+        string bc_str = bc2str(as_bitset);
         if (barcode_group != ""){
             bc_str += "-" + barcode_group;
         }
@@ -2221,7 +2221,7 @@ void parse_assignments(string& assnfile,
             bc_str = bc_str.substr(0, sep_pos);
         }
         bc as_bitset;
-        str2bc(bc_str.c_str(), as_bitset, 16);
+        str2bc(bc_str.c_str(), as_bitset);
         unsigned long as_ul = as_bitset.to_ulong();
         if (s_d == 'D'){
             size_t sep_pos = id_str.find("+");
@@ -2307,7 +2307,7 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
             for (int x = 0; x < nvars; ++x){
                 if (mask_global.test(x)){
                     bc as_bitset(a->first);
-                    string bc_str = bc2str(as_bitset, 16);
+                    string bc_str = bc2str(as_bitset);
                     int hap1int = -1;
                     if (clusthaps[combo.first].mask.test(x)){
                         if (clusthaps[combo.first].vars.test(x)){
@@ -2375,7 +2375,7 @@ void write_mixprops(FILE* outf,
         mp != mixprops_alpha.end(); ++mp){
         
         bc as_bitset(mp->first);
-        string bc_str = bc2str(as_bitset, 16);
+        string bc_str = bc2str(as_bitset);
         
         if (barcode_group != ""){
             bc_str += "-" + barcode_group;

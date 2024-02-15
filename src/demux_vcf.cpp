@@ -20,7 +20,7 @@
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
 #include <zlib.h>
-#include <htswrapper/bc_hash.h>
+#include <htswrapper/bc.h>
 #include <htswrapper/bam.h>
 #include <mixtureDist/mixtureDist.h>
 #include <mixtureDist/mixtureModel.h>
@@ -638,7 +638,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
         cerr << "Searching for " << searchbc_str;
         cerr << "\n"; 
         bc searchbc_bin;
-        str2bc(searchbc_str.c_str(), searchbc_bin, 16);
+        str2bc(searchbc_str.c_str(), searchbc_bin);
         searchbc = searchbc_bin.to_ulong();
     }
     
@@ -659,7 +659,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
         // Debugging only: print this table and quit
         if (print_llrs){
             bc as_bitset(x->first);
-            string bc_str = bc2str(as_bitset, 16);
+            string bc_str = bc2str(as_bitset);
             for (map<int, map<int, double> >::iterator llr = llrs.begin(); llr != 
                 llrs.end(); ++llr){
                 for (map<int, double>::iterator llr2 = llr->second.begin();

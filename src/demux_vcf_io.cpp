@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <utility>
 #include <zlib.h>
+#include <htswrapper/bc.h>
 #include "robin_hood.h"
 #include "common.h"
 #include "demux_vcf_io.h"
@@ -428,7 +429,7 @@ void dump_assignments(FILE* outf,
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn_final.begin();
         a != assn_final.end(); ++a){
         bc as_bitset(a->first);
-        string bc_str = bc2str(as_bitset, 16);
+        string bc_str = bc2str(as_bitset);
         if (barcode_group != ""){
             bc_str += "-" + barcode_group;
         }
@@ -477,7 +478,7 @@ void load_assignments_from_file(string& filename,
             bc_str = bc_str.substr(0, dashpos);
         }
         bc as_bitset;
-        str2bc(bc_str.c_str(), as_bitset, 16);
+        str2bc(bc_str.c_str(), as_bitset);
         unsigned long as_ul = as_bitset.to_ulong();
 
         int indv_idx = -1;
@@ -664,7 +665,7 @@ void dump_contam_rates(FILE* outf,
     for (robin_hood::unordered_map<unsigned long, double>::iterator cr = contam_rate.begin();
        cr != contam_rate.end(); ++cr){
         bc as_bitset(cr->first);
-        string bc_str = bc2str(as_bitset, 16);
+        string bc_str = bc2str(as_bitset);
         if (barcode_group != ""){
             bc_str += "-" + barcode_group;
         }

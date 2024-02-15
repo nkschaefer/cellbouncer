@@ -14,7 +14,7 @@
 #include <utility>
 #include <math.h>
 #include <mixtureDist/functions.h>
-#include <htswrapper/bc_hash.h>
+#include <htswrapper/bc.h>
 
 /**
  * Contains functions used by more than one program in this

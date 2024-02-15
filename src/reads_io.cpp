@@ -23,7 +23,7 @@
 #include <sys/stat.h>
 #include <condition_variable>
 #include <mutex>
-#include <htswrapper/bc_hash.h>
+#include <htswrapper/bc.h>
 #include <htswrapper/serialize.h>
 #include "common.h"
 #include "reads_io.h"

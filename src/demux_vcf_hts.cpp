@@ -18,7 +18,7 @@
 #include <zlib.h>
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
-#include <htswrapper/bc_hash.h>
+#include <htswrapper/bc.h>
 #include <htswrapper/bam.h>
 #include "robin_hood.h"
 #include "common.h"
@@ -334,7 +334,7 @@ void process_bam_record(bam_reader& reader,
                         
         // Get BC key
         bc bc_bits;
-        str2bc(reader.cb_z, bc_bits, 16);
+        str2bc(reader.cb_z, bc_bits);
         unsigned long bc_key = bc_bits.to_ulong();
         
         if (!has_bc_list || bcs_valid.find(bc_key) != bcs_valid.end()){

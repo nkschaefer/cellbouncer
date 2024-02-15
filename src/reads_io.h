@@ -25,7 +25,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <sys/stat.h>
-#include "bc_hash.h"
+#include "bc.h"
 #include "common.h"
 #include "kmsuftree.h"
 #include "serialize.h"
