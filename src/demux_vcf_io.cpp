@@ -673,22 +673,20 @@ void dump_contam_rates(FILE* outf,
 }
 
 /**
- * Write estimated contamination/ambient RNA fractions to disk.
+ * Write to disk the set of alt allele frequencies inferred to exist in ambient RNA
+ * in a given data set.
  */
 void dump_amb_fracs(FILE* outf, 
-    robin_hood::unordered_map<unsigned long, double>& ambfracs,
-    vector<string>& samples,
-    string& barcode_group){
-    
-    for (robin_hood::unordered_map<unsigned long, double>::iterator af = ambfracs.begin();
-        af != ambfracs.end(); ++af){
-        bc as_bitset(af->first);
-        string bc_str = bc2str(as_bitset, 16);
-        if (barcode_group != ""){
-            bc_str += "-" + barcode_group;
+    map<pair<int, int>, map<pair<int, int>, double> >& amb_mu){
+
+    for (map<pair<int, int>, map<pair<int, int>, double> >::iterator x = amb_mu.begin();
+        x != amb_mu.end(); ++x){
+        for (map<pair<int, int>, double>::iterator y = x->second.begin(); y != x->second.end();
+            ++y){
+            fprintf(outf, "%d\t%d\t%d\t%d\t%f\n", x->first.first, x->first.second,
+                y->first.first, y->first.second, y->second);
         }
-        fprintf(outf, "%s\t%f\n", bc_str.c_str(), af->second);
-    }
+    } 
 }
 
 bool file_exists(string filename){

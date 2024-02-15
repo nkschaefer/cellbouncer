@@ -97,9 +97,7 @@ void dump_contam_rates(FILE* outf,
     std::string& barcode_group);
 
 void dump_amb_fracs(FILE* outf, 
-    robin_hood::unordered_map<unsigned long, double>& ambfracs,
-    std::vector<std::string>& samples,
-    std::string& barcode_group);
+    std::map<std::pair<int, int>, std::map<std::pair<int, int>, double> >& amb_mu);
 
 bool file_exists(std::string filename);
  
