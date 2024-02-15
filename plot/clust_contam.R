@@ -4,8 +4,8 @@ suppressPackageStartupMessages(library(dendextend))
 args <- commandArgs(trailingOnly=TRUE)
 
 if (length(args) < 1){
-    sys.stderr.write("USAGE: clust_contam.R plotname file\n")
-    sys.stderr.write("file is a file listing output base names from demux_vcf, one per line\n")
+    write("USAGE: clust_contam.R plotname file", stderr())
+    write("file is a file listing output base names from demux_vcf, one per line", stderr())
     q()
 }
 
