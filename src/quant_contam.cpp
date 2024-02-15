@@ -43,8 +43,11 @@ void help(int code){
     fprintf(stderr, "===== REQUIRED =====\n");
     fprintf(stderr, "    --output_prefix -o The output prefix used in a prior run of demux_vcf\n");
     fprintf(stderr, "===== OPTIONAL =====\n");
+    fprintf(stderr, "    --dump_freqs -d After inferring the ambient RNA profile, write a file containing\n");
+    fprintf(stderr, "        alt allele frequencies at each type of site in ambient RNA. This file will\n");
+    fprintf(stderr, "        be called [output_prefix].contam.dat\n");
     fprintf(stderr, "    --llr -l Log likelihood ratio cutoff to filter assignments from demux_vcf.\n");
-    fprintf(stderr, "       This is the fourth column in the .assignments file. Default = 0 (no filter)\n");
+    fprintf(stderr, "        This is the fourth column in the .assignments file. Default = 0 (no filter)\n");
     fprintf(stderr, "    --disable_profile -p In addition to quantifying the ambient RNA contamination\n");
     fprintf(stderr, "        per cell, default behavior is to model the ambient RNA contamination\n");
     fprintf(stderr, "        as a mixture of individuals. This involves learning the rate at which\n");
@@ -69,8 +72,15 @@ void help(int code){
     fprintf(stderr, "        you have not set option -p), then a set number of random initial\n");
     fprintf(stderr, "        guesses will be used in optimization. Default = 10, or set a different\n");
     fprintf(stderr, "        value with this option.\n");
-    fprintf(stderr, "    --weights -w Weight all observations using the log likelihood ratios (confidence\n");
-    fprintf(stderr, "        measures) of cell-individual assignments. Default = do not weight\n");
+    fprintf(stderr, "    --no_weights -w By default, all observations are weighted by confidence: the log\n");
+    fprintf(stderr, "        likelihood ratio of individual ID, divided by the sum of all log likelihood\n");
+    fprintf(stderr, "        ratios of assignments of cells to the same individual. This option disables\n");
+    fprintf(stderr, "        this weighting and lets all cells contribute equally (although cells with higher\n");
+    fprintf(stderr, "        counts will have a stronger influence on the likelihood). You might want to\n");
+    fprintf(stderr, "        disable weighting if, for example, you have very unequal numbers of different\n");
+    fprintf(stderr, "        individuals and are worried some individual assignments might be mostly noise.\n");
+    fprintf(stderr, "        Default behavior would be to give all cells assigned to the noise individual the\n");
+    fprintf(stderr, "        same overall weight as all cells assigned to any other individual.\n"); 
     fprintf(stderr, "\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
@@ -87,7 +97,8 @@ int main(int argc, char *argv[]) {
        {"max_cells", required_argument, 0, 'c'},
        {"llr", required_argument, 0, 'l'},
        {"n_mixprop_trials", required_argument, 0, 'n'},
-       {"weights", no_argument, 0, 'w'},
+       {"no_weights", no_argument, 0, 'w'},
+       {"dump_freqs", no_argument, 0, 'd'},
        {0, 0, 0, 0} 
     };
     
@@ -100,7 +111,8 @@ int main(int argc, char *argv[]) {
     int max_cells = 50;
     double llr = 0.0;
     int n_mixprop_trials = 10;
-    bool weight = false;
+    bool weight = true;
+    bool dump_freqs = false;
 
     int option_index = 0;
     int ch;
@@ -108,7 +120,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:s:e:E:c:l:n:wph", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "o:s:e:E:c:l:n:dwph", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -141,7 +153,10 @@ int main(int argc, char *argv[]) {
                 n_mixprop_trials = atoi(optarg);
                 break;
             case 'w':
-                weight = true;
+                weight = false;
+                break;
+            case 'd':
+                dump_freqs = true;
                 break;
             default:
                 help(0);
@@ -266,6 +281,13 @@ int main(int argc, char *argv[]) {
         dump_contam_rates(outf, cf.contam_rate, cf.contam_rate_se, samples,
             barcode_group);
     }
-        
+    
+    if (dump_freqs){
+        // Write alt allele matching frequencies to a file
+        string fname = output_prefix + ".contam.dat";
+        FILE* outf = fopen(fname.c_str(), "w");
+        dump_amb_fracs(outf, cf.amb_mu);
+    }
+
     return 0;
 }
