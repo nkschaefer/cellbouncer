@@ -6,21 +6,19 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "libfastk.h"
-
-KSEQ_INIT(gzFile, gzread);
+#include "FASTK/libfastk.h"
 
 void help(int code){
     fprintf(stderr, "USAGE: get_unique_kmers\n");
-    fprintf(stderr, "After running FASTK to count k-mers on different species' transcriptomes, \
-run this prgram to read FASTK's k-mer table files and output lists of k-mers unique to each \
-species. These can then be used to demultiplex reads from multiple species without mapping \
-to a reference genome.\n");
+    fprintf(stderr, "After running FASTK to count k-mers on different species' transcriptomes,\n");
+    fprintf(stderr, "    run this prgram to read FASTK's k-mer table files and output lists of\n");
+    fprintf(stderr, "    k-mers unique to each species. These can then be used to demultiplex\n");
+    fprintf(stderr, "    reads from multiple species without mapping to a reference genome.\n");
     fprintf(stderr, "OPTIONS:\n");
-    fprintf(stderr, "--kmers -k Two or more FASTK tables from reference genomes (specify \
--k multiple times)\n");
-    fprintf(stderr, "--output_prefix -o Where to write species-specific kmers. Files will \
-be in the format {outprefix}.{index}.kmers.\n"); 
+    fprintf(stderr, "--kmers -k Two or more FASTK tables from reference genomes (specify -k\n");
+    fprintf(stderr, "    multiple times)\n");
+    fprintf(stderr, "--output_prefix -o Where to write species-specific kmers. Files will be\n");
+    fprintf(stderr, "    in the format {outprefix}.{index}.kmers.gz\n"); 
     exit(code);
 }
 
@@ -44,31 +42,28 @@ int kcomp(const Kmer_Stream* k1, const Kmer_Stream* k2){
     return 0;
 }
 
-void print_dat(FILE* outf, char* kmer){
+void print_dat(gzFile* outf, char* kmer){
+    
     for (int i = 0; i < strlen(kmer); ++i){
-        switch(kmer[i]){
-            case 'a':
-            case 'A':
-                fprintf(outf, "A");
-            break;
-            case 'c':
-            case 'C':
-                fprintf(outf, "C");
-            break;
-            case 'g':
-            case 'G':
-                fprintf(outf, "G");
-            break;
-            case 't':
-            case 'T':
-                fprintf(outf, "T");
-            break;
-            default:
-                fprintf(outf, "N");
-            break;
+        if (kmer[i] == 'a'){
+            kmer[i] = 'A';
+        }
+        else if (kmer[i] == 'c'){
+            kmer[i] = 'C';
+        }
+        else if (kmer[i] == 'g'){
+            kmer[i] = 'G';
+        }
+        else if (kmer[i] == 't'){
+            kmer[i] = 'T';
+        }
+        else if (kmer[i] != 'A' && kmer[i] != 'C' && 
+            kmer[i] != 'G' && kmer[i] != 'T'){
+            kmer[i] = 'N';
         }
     }
-    fprintf(outf, "\n");
+    gzwrite(*outf, &kmer[0], strlen(kmer));
+    gzwrite(*outf, "\n", 1);
 }
 
 int main(int argc, char* argv[]){
@@ -150,13 +145,14 @@ int main(int argc, char* argv[]){
             
         }
     }
+
     // prepare output files
-    FILE* outs[num_tables];
+    gzFile outs[num_tables];
     char namebuf[500];
     for (int i = 0; i < num_tables; ++i){
         sprintf(&namebuf[0], "%s.%d.kmers", output_prefix, i);
-        outs[i] = fopen(namebuf, "w");
-        if (outs[i] == NULL){
+        outs[i] = gzopen(namebuf, "w");
+        if (!outs[i]){
             fprintf(stderr, "ERROR opening %s for writing.\n", &namebuf[0]);
             exit(1);
         }
@@ -210,7 +206,7 @@ int main(int argc, char* argv[]){
                 char* b = Current_Kmer(tables[min_idx], &kmer_text[0]);
                 int c = Current_Count(tables[min_idx]);
                 if (c == 1){
-                    print_dat(outs[min_idx], b);
+                    print_dat(&outs[min_idx], b);
                 }
             }
             // Only increment lowest-value iterators.
@@ -237,12 +233,12 @@ int main(int argc, char* argv[]){
     for (int i = 0; i < num_tables; ++i){
         while (tables[i]->csuf != NULL){
             char* b = Current_Kmer(tables[i], &kmer_text[0]);
-            print_dat(outs[i], b);
+            print_dat(&outs[i], b);
             Next_Kmer_Entry(tables[i]);
         }
     }
     for (int i = 0; i < num_tables; ++i){
-        fclose(outs[i]);
+        gzclose(outs[i]);
     }
     //free(entries);
     //free(bases);

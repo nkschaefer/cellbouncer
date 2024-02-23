@@ -33,6 +33,9 @@ utils/bam_indiv_rg: src/bam_indiv_rg.cpp build/common.o $(DEPS)
 utils/bam_split_bcs: src/bam_split_bcs.cpp build/common.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_split_bcs.cpp -o utils/bam_split_bcs build/common.o -lz -lhts $(DEPS)
 
+utils/get_unique_kmers: src/get_unique_kmers.c src/FASTK/libfastk.c build/libfastk.o
+	$(CCOMP) -fPIC src/get_unique_kmers.c -o utils/get_unique_kmers build/libfastk.o -lz
+
 utils/kmsuftree_test: src/kmsuftree_test.cpp src/kmsuftree.h build/kmsuftree.o
 	$(COMP) $(FLAGS) src/kmsuftree_test.cpp -o utils/kmsuftree_test build/kmsuftree.o
 
@@ -59,6 +62,12 @@ build/demux_species_io.o: src/demux_species_io.cpp src/demux_species_io.h lib/li
 
 build/kmsuftree.o: src/kmsuftree.c src/kmsuftree.h
 	$(CCOMP) -fPIC -c src/kmsuftree.c -o build/kmsuftree.o
+
+build/libfastk.o: src/FASTK/libfastk.c src/FASTK/libfastk.h
+	$(CCOMP) -fPIC -c src/FASTK/libfastk.c -o build/libfastk.o
+
+build/gene_core.o: src/FASTK/gene_core.c src/FASTK/gene_core.h
+	$(CCOMP) -fPIC -c src/FASTK/gene_core.c -o build/gene_core.o
 
 lib/libhtswrapper.a:
 	#cd dependencies/htswrapper && $(MAKE) clean
