@@ -22,11 +22,10 @@
 #include <htslib/sam.h>
 #include <zlib.h>
 #include <htswrapper/bam.h>
-#include <htswrapper/bc.h>
+#include <htswrapper/robin_hood/robin_hood.h>
 #include <mixtureDist/functions.h>
 #include <mixtureDist/mixtureDist.h>
 #include <mixtureDist/mixtureModel.h>
-#include "robin_hood.h"
 #include "common.h"
 
 /**

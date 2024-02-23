@@ -46,7 +46,7 @@ void parse_barcode_map(string& fn,
         if ((keep_doublets || singdoub == 'S') && llr >= llr_cutoff){
             // Trim any trailing stuff off of the barcode, so it can
             // be interpreted as a bitset
-            unsigned long bc_hashed = hash_bc(bc_str); 
+            unsigned long bc_hashed = bc_ul(bc_str); 
             bc2hap.insert(make_pair(bc_hashed, hap_str));
             barcode_groups.insert(hap_str);
         }
@@ -354,4 +354,18 @@ double doublet_chisq(map<int, int>& idcounts, int n_samples){
     df -= 1;
     return pchisq(chisq, (double)df);
 }
+
+/**
+ * Trim the directory off of a full filename path
+ */
+string filename_nopath(string& filename){
+    size_t trim_idx = filename.find_last_of("\\/");
+    if (trim_idx != string::npos){
+        return filename.substr(trim_idx + 1, filename.length() - trim_idx - 1);
+    }
+    else{
+        return filename;
+    }
+}
+
 

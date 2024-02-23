@@ -18,7 +18,7 @@
 #include <utility>
 #include <math.h>
 #include <zlib.h>
-#include "robin_hood.h"
+#include <htswrapper/robin_hood/robin_hood.h>
 #include "common.h"
 #include "ambient_rna.h"
 #include "demux_vcf_io.h"

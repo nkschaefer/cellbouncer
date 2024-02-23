@@ -22,13 +22,13 @@
 #include <zlib.h>
 #include <htswrapper/bc.h>
 #include <htswrapper/bam.h>
+#include <htswrapper/gzreader.h>
 #include <mixtureDist/mixtureDist.h>
 #include <mixtureDist/mixtureModel.h>
 #include <mixtureDist/functions.h>
 #include <optimML/multivar_ml.h>
-#include "robin_hood.h"
+#include <htswrapper/robin_hood/robin_hood.h>
 #include "common.h"
-#include "ambient_rna.h"
 #include "demux_vcf_io.h"
 #include "demux_vcf_hts.h"
 
@@ -1244,7 +1244,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: only one of -i/-I is allowed.\n");
         exit(1);
     }
-
+    
     // Init BAM reader
     bam_reader reader = bam_reader();
 
@@ -1323,12 +1323,13 @@ all possible individuals\n", idfile_doublet.c_str());
         string samplesfile = output_prefix + ".samples"; 
         write_samples(samplesfile, samples);
     }
-
+    
     set<unsigned long> cell_barcodes;
     if (cell_barcode){
-        parse_barcode_file(cell_barcode_file, cell_barcodes); 
+        parse_barcode_file(cell_barcode_file, cell_barcodes);
         if (cell_barcodes.size() == 0){
             // Did not read barcodes correctly
+            fprintf(stderr, "ERROR reading cell barcode list\n");
             exit(1);
         }
     }

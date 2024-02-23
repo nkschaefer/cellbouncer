@@ -17,7 +17,7 @@
 #include <cstdlib>
 #include <utility>
 #include <zlib.h>
-#include "robin_hood.h"
+#include <htswrapper/robin_hood/robin_hood.h>
 #include "common.h"
 
 void parse_idfile(std::string& idfile, 

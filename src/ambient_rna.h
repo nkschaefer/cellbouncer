@@ -16,7 +16,6 @@
 #include <utility>
 #include <math.h>
 #include <mixtureDist/functions.h>
-#include <optimML/lstsq.h>
 #include <optimML/brent.h>
 #include <optimML/multivar.h>
 #include "common.h"

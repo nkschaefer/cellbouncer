@@ -16,7 +16,7 @@
 #include <utility>
 #include <zlib.h>
 #include <htswrapper/bc.h>
-#include "robin_hood.h"
+#include <htswrapper/robin_hood/robin_hood.h>
 #include "common.h"
 #include "demux_vcf_io.h"
 

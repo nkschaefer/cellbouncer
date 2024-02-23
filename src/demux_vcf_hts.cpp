@@ -20,7 +20,7 @@
 #include <htslib/vcf.h>
 #include <htswrapper/bc.h>
 #include <htswrapper/bam.h>
-#include "robin_hood.h"
+#include <htswrapper/robin_hood/robin_hood.h>
 #include "common.h"
 #include "demux_vcf_hts.h"
 

@@ -14,7 +14,7 @@
 #include <set>
 #include <cstdlib>
 #include <utility>
-#include <htswrapper/bc_hash.h>
+#include <htswrapper/bc.h>
 /**
  * Contains functions used by more than one program in this
  * repository.
@@ -50,16 +50,8 @@ int collapse_llrs(std::map<int, std::map<int, double> >& llrs, double& llr_final
 // Check for over/underrepresentation of counts of specific 
 // doublet types in a data set
 double doublet_chisq(std::map<int, int>& idcounts, int n_samples);
-/*
-// Non-negative least squares
-bool nn_lstsq(std::vector<std::vector<double> >& A, 
-    std::vector<double>& b, 
-    std::vector<double>& results);
 
-// Non-negative weighted least squares
-bool weighted_nn_lstsq(std::vector<std::vector<double> >& A,
-    std::vector<double>& b,
-    std::vector<double>& weights,
-    std::vector<double>& results);
-*/
+// Trim the path off of a file name
+std::string filename_nopath(std::string& filename);
+
 #endif

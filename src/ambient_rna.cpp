@@ -16,8 +16,8 @@
 #include <mixtureDist/functions.h>
 #include <optimML/brent.h>
 #include <optimML/multivar_ml.h>
+#include <htswrapper/robin_hood/robin_hood.h>
 #include "common.h"
-#include "robin_hood.h"
 #include "ambient_rna.h"
 
 using std::cout;

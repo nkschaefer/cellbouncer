@@ -21,7 +21,7 @@
 #include <htslib/vcf.h>
 #include <htswrapper/bam.h>
 #include <htswrapper/bc.h>
-#include "robin_hood.h"
+#include <htswrapper/robin_hood/robin_hood.h>
 #include "common.h"
 
 using std::cout;
