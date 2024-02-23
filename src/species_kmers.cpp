@@ -24,7 +24,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <htswrapper/bc.h>
-#include <htswrapper/serialize.h>
+#include <htswrapper/gzreader.h>
 #include "common.h"
 #include "species_kmers.h"
 #include "kmsuftree.h"
@@ -270,6 +270,13 @@ void species_kmer_counter::scan_gex_data(rp_info& params){
 void species_kmer_counter::parse_kmer_counts_serial(string& countsfilename,
     short species_idx){
     
+    gzreader reader(countsfilename);
+    while (reader.next()){
+        short* si = (short*) malloc(sizeof(short));
+        *si = species_idx;
+        kmer_tree_add(reader.line, kt, (void*)si, 0);
+    } 
+    /*
     ifstream infile(countsfilename);
     string line;
     while (infile >> line){
@@ -277,6 +284,7 @@ void species_kmer_counter::parse_kmer_counts_serial(string& countsfilename,
         *si = species_idx;
         kmer_tree_add(line.c_str(), kt, (void*)si, 0); 
     }
+    */
 }
 
 /**

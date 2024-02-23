@@ -16,9 +16,9 @@ void help(int code){
     fprintf(stderr, "    reads from multiple species without mapping to a reference genome.\n");
     fprintf(stderr, "OPTIONS:\n");
     fprintf(stderr, "--kmers -k Two or more FASTK tables from reference genomes (specify -k\n");
-    fprintf(stderr, "    multiple times)\n");
+    fprintf(stderr, "    multiple times). These are the files ending with .ktab\n");
     fprintf(stderr, "--output_prefix -o Where to write species-specific kmers. Files will be\n");
-    fprintf(stderr, "    in the format {outprefix}.{index}.kmers.gz\n"); 
+    fprintf(stderr, "    in the format {outprefix}.{index}.kmers (gzip compressed).\n"); 
     exit(code);
 }
 
