@@ -699,7 +699,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
  * Log likelihood function for computing error rates, for use by
  * multivar_ml_solver.
  */
-double ll_err(vector<double>& params, const map<string, double>& data_d, 
+double ll_err(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i){
     
     double n = data_d.at("n");
@@ -717,7 +717,7 @@ double ll_err(vector<double>& params, const map<string, double>& data_d,
  * multivar_ml_solver, for re-estimating reference and alt allele
  * misreading error rates.
  */
-void dll_err(vector<double>& params, const map<string, double>& data_d, 
+void dll_err(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i, vector<double>& results){
     
     double n = data_d.at("n");
@@ -1128,8 +1128,32 @@ void help(int code){
     exit(code);
 }
 
-int main(int argc, char *argv[]) {    
+double eq1(const vector<double>& params){
+    return params[0] + params[1];
+}
+void deq1(const vector<double>& params, vector<double>& results){
+    results[0] = 1.0;
+    results[1] = 1.0;
+}
+double eq2(const vector<double>& params){
+    return 2*params[0] * params[0] + params[1];
+}
+void deq2(const vector<double>& params, vector<double>& results){
+    results[0] = 4*params[0];
+    results[1] = 1.0;
+}
 
+double eq3(const vector<double>& params){
+    return 5*params[0] + 3*params[1]*params[1];
+}
+
+double deq3(const vector<double>& params, vector<double>& results){
+    results[0] = 5.0;
+    results[1] = 6*params[1];
+}
+
+int main(int argc, char *argv[]) {    
+   
     static struct option long_options[] = {
        {"bam", required_argument, 0, 'b'},
        {"vcf", required_argument, 0, 'v'},

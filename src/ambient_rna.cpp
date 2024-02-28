@@ -186,7 +186,7 @@ double d2ll_dc2(double c, const map<string, double >& data_d,
  * Log likelihood for estimating best set of p_c parameters
  * in ambient RNA
  */
-double ll_ambmu(vector<double>& params, const map<string, double>& data_d, 
+double ll_ambmu(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i){
     
     double n = data_d.at("n");
@@ -199,7 +199,7 @@ double ll_ambmu(vector<double>& params, const map<string, double>& data_d,
     return logbinom(n, k, binom_p); 
 }
 
-double ll_ambmu2(vector<double>& params, const map<string, double>& data_d, 
+double ll_ambmu2(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i){
     
     double n = data_d.at("n");
@@ -216,7 +216,7 @@ double ll_ambmu2(vector<double>& params, const map<string, double>& data_d,
  * First derivative of log likelihood for estimating best set
  * of p_c parameters in ambient RNA
  */
-void dll_ambmu(vector<double>& params, const map<string, double>& data_d, 
+void dll_ambmu(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i, vector<double>& results){
     
     double n = data_d.at("n");
@@ -231,7 +231,7 @@ void dll_ambmu(vector<double>& params, const map<string, double>& data_d,
     results[amb_idx] = dy_dp * c;
 }
 
-void dll_ambmu2(vector<double>& params, const map<string, double>& data_d, 
+void dll_ambmu2(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i, vector<double>& results){
     
     double n = data_d.at("n");
@@ -250,7 +250,7 @@ void dll_ambmu2(vector<double>& params, const map<string, double>& data_d,
 /**
  * Log likelihood function for finding best e_r & e_a
  */
-double ll_err_rates(vector<double>& params, const map<string, double>& data_d, 
+double ll_err_rates(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i){
     
     double e_r = params[0];
@@ -269,7 +269,7 @@ double ll_err_rates(vector<double>& params, const map<string, double>& data_d,
 /**
  * First derivative log likelihood function for finding best e_r & e_a
  */
-void dll_err_rates(vector<double>& params, const map<string, double>& data_d, 
+void dll_err_rates(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i, vector<double>& results){
     
     double e_r = params[0];
@@ -293,7 +293,7 @@ void dll_err_rates(vector<double>& params, const map<string, double>& data_d,
  * Log likelihood for computing expected p_c values in real cells given each
  * possible identity
  */
-double ll_expfrac(vector<double>& params, const map<string, double>& data_d, 
+double ll_expfrac(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i){
     
     double n = data_d.at("n");
@@ -317,7 +317,7 @@ double ll_expfrac(vector<double>& params, const map<string, double>& data_d,
  * Derivative of log likelihood for computing expected p_c values in real cells
  * given each possible identity
  */
-void dll_expfrac(vector<double>& params, const map<string, double>& data_d, 
+void dll_expfrac(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i, vector<double>& results){
     
     double n = data_d.at("n");
@@ -349,7 +349,7 @@ void dll_expfrac(vector<double>& params, const map<string, double>& data_d,
  * Log likelihood function for modeling ambient RNA as a mixture of 
  * individuals
  */
-double ll_as_mixture(vector<double>& params, const map<string, double>& data_d, 
+double ll_as_mixture(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i){
     
     double p_c = params[0];
@@ -366,7 +366,7 @@ double ll_as_mixture(vector<double>& params, const map<string, double>& data_d,
  * First derivative log likelihood function for modeling ambient RNA
  * as a mixture of individuals
  */
-void dll_as_mixture(vector<double>& params, const map<string, double>& data_d, 
+void dll_as_mixture(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i, vector<double>& results){
     
     double p_c = params[0];
