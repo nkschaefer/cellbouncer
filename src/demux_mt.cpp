@@ -26,6 +26,7 @@
 #include <mixtureDist/functions.h>
 #include <mixtureDist/mixtureDist.h>
 #include <mixtureDist/mixtureModel.h>
+#include <optimML/brent.h>
 #include "common.h"
 
 /**
@@ -2281,15 +2282,44 @@ pass the .ids file (-i)?\n", id_str.c_str());
     }
 }
 
+double y_mixprop(double p, const map<string, double>& data_d, const map<string, int>& data_i){
+    int m1 = data_d.at("match1");
+    int m2 = data_d.at("match2");
+    double n = (double)m1;
+    double k = (double)(m1+m2);
+    return logbinom(n, k, p);
+}
+
+double dy_dp_mixprop(double p, const map<string, double>& data_d, const map<string, int>& data_i){
+    int m1 = data_d.at("match1");
+    int m2 = data_d.at("match2");
+    double n = (double)m1;
+    double k = (double)(m1+m2);
+    return (k-n*p)/(p - p*p);
+}
+
+double d2y_dp2_mixprop(double p, const map<string, double>& data_d, const map<string, int>& data_i){
+    int m1 = data_d.at("match1");
+    int m2 = data_d.at("match2");
+    double n = (double)m1;
+    double k = (double)(m1+m2);
+    return (k*(2*p-1) - n*p*p)/(pow(p-1,2)*p*p);
+}
+
 void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_counter,
     robin_hood::unordered_map<unsigned long, int>& assignments,
     vector<hap>& clusthaps,
     hapstr& mask_global,
     int nvars,
-    robin_hood::unordered_map<unsigned long, double>& mixprops_alpha,
-    robin_hood::unordered_map<unsigned long, double>& mixprops_beta){
+    robin_hood::unordered_map<unsigned long, double>& mixprops_mean,
+    robin_hood::unordered_map<unsigned long, double>& mixprops_sd,
+    map<int, double>& id_mixprop_mean,
+    map<int, double>& id_mixprop_sd){
 
     int n_samples = (int)clusthaps.size();
+    
+    map<int, vector<int> > id_match1;
+    map<int, vector<int> > id_match2;
 
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assignments.begin();
         a != assignments.end(); ++a){
@@ -2299,40 +2329,11 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
             // Doublet.
             pair<int, int> combo = idx_to_hap_comb(a->second, n_samples);
             
-            // Fit a beta distribution to proportion matching individual 1 
-            double alpha = 0.0;
-            double beta = 0.0;
-            
+            int match1 = 0;
+            int match2 = 0;
+
             for (int x = 0; x < nvars; ++x){
-                if (mask_global.test(x)){
-                    bc as_bitset(a->first);
-                    string bc_str = bc2str(as_bitset);
-                    int hap1int = -1;
-                    if (clusthaps[combo.first].mask.test(x)){
-                        if (clusthaps[combo.first].vars.test(x)){
-                            hap1int = 1;
-                        }
-                        else{
-                            hap1int = 0;
-                        }
-                    }
-                    int hap2int = -1;
-                    if (clusthaps[combo.second].mask.test(x)){
-                        if (clusthaps[combo.second].vars.test(x)){
-                            hap2int = 1;
-                        }
-                        else{
-                            hap2int = 0;
-                        }
-                    }
-                    /*
-                    fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\n", bc_str.c_str(),
-                        x, hap1int, hap2int, hap_counter[a->first].counts1[x],
-                       hap_counter[a->first].counts2[x]); 
-                    */
-                }
-            }
-            for (int x = 0; x < nvars; ++x){
+                
                 if (mask_global[x] && clusthaps[combo.first].mask[x] &&
                     clusthaps[combo.second].mask[x] && 
                     clusthaps[combo.first].vars[x] != clusthaps[combo.second].vars[x]){
@@ -2343,38 +2344,68 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
                     if (nmaj + nmin > 0){
                         if (clusthaps[combo.first].vars[x] && !clusthaps[combo.second].vars[x]){
                             // minor allele is indv 1
-                            alpha += (double)nmin;
-                            beta += (double)nmaj;
+                            match1 += nmin;
+                            match2 += nmaj;
                         }
                         else if (clusthaps[combo.second].vars[x] && !clusthaps[combo.first].vars[x]){
                             // minor allele is indv 2
-                            alpha += (double)nmaj;
-                            beta += (double)nmin;
+                            match1 += nmaj;
+                            match2 += nmin;
                         }
                     }
                 }
             }
             
-            if (alpha + beta > 0){
-                mixprops_alpha.emplace(a->first, alpha);
-                mixprops_beta.emplace(a->first, beta);
+            if (match1 + match2 > 0){
+                
+                vector<int> match1v = {match1};
+                vector<int> match2v = {match2};
+                optimML::brent_solver solver(y_mixprop, dy_dp_mixprop, d2y_dp2_mixprop);
+                solver.add_data("match1", match1v);
+                solver.add_data("match2", match2v);
+                solver.constrain_01();
+                double p = solver.solve(0,1);
+                mixprops_mean.emplace(a->first, p);
+                mixprops_sd.emplace(a->first, solver.se); 
+
+                // Store for whole-ID tests
+                if (id_match1.count(a->second) == 0){
+                    vector<int> v;
+                    id_match1.insert(make_pair(a->second, v));
+                }
+                id_match1[a->second].push_back(match1);
+                if (id_match2.count(a->second) == 0){
+                    vector<int> v;
+                    id_match2.insert(make_pair(a->second, v));
+                }
+                id_match2[a->second].push_back(match2);
             }
         }
-    }    
+    }
+    
+    for (map<int, vector<int> >::iterator im = id_match1.begin(); im != id_match1.end();
+        ++im){
+        optimML::brent_solver solver(y_mixprop, dy_dp_mixprop, d2y_dp2_mixprop);
+        solver.add_data("match1", im->second);
+        solver.add_data("match2", id_match2[im->first]);
+        solver.constrain_01();
+        double p = solver.solve(0,1);
+        id_mixprop_mean.insert(make_pair(im->first, p));
+        id_mixprop_sd.insert(make_pair(im->first, solver.se));
+    }
 }
 
 void write_mixprops(FILE* outf,
     string& barcode_group,
-    robin_hood::unordered_map<unsigned long, double>& mixprops_alpha,
-    robin_hood::unordered_map<unsigned long, double>& mixprops_beta,
+    robin_hood::unordered_map<unsigned long, double>& mixprops_mean,
+    robin_hood::unordered_map<unsigned long, double>& mixprops_sd,
     robin_hood::unordered_map<unsigned long, int>& assignments,
     vector<string>& clust_ids){
     
-    for (robin_hood::unordered_map<unsigned long, double>::iterator mp = mixprops_alpha.begin();
-        mp != mixprops_alpha.end(); ++mp){
+    for (robin_hood::unordered_map<unsigned long, double>::iterator mp = mixprops_mean.begin();
+        mp != mixprops_mean.end(); ++mp){
         
-        bc as_bitset(mp->first);
-        string bc_str = bc2str(as_bitset);
+        string bc_str = bc2str(mp->first);
         
         if (barcode_group != ""){
             bc_str += "-" + barcode_group;
@@ -2387,9 +2418,9 @@ void write_mixprops(FILE* outf,
         string name2 = idx2name(combo.second, clust_ids);
         
         fprintf(outf, "%s\t%s\t%s\t%f\t%f\n", bc_str.c_str(), name1.c_str(), name2.c_str(),
-            mp->second, mixprops_beta[mp->first]);
+            mp->second, mixprops_sd[mp->first]);
         fprintf(outf, "%s\t%s\t%s\t%f\t%f\n", bc_str.c_str(), name2.c_str(), name1.c_str(),
-            mixprops_beta[mp->first], mp->second);
+            mixprops_sd[mp->first], mp->second);
 
     }
 
@@ -2729,15 +2760,17 @@ int main(int argc, char *argv[]) {
 were found in input file %s\n", assnfile.c_str());
             exit(1); 
         }
-        robin_hood::unordered_map<unsigned long, double> mixprops_alpha;
-        robin_hood::unordered_map<unsigned long, double> mixprops_beta;
-        infer_mixprops(hap_counter, assignments, clusthaps, mask_global, nvars, mixprops_alpha,
-            mixprops_beta);
+        robin_hood::unordered_map<unsigned long, double> mixprops_mean;
+        robin_hood::unordered_map<unsigned long, double> mixprops_sd;
+        map<int, double> id_mixprop_mean;
+        map<int, double> id_mixprop_sd;
+        infer_mixprops(hap_counter, assignments, clusthaps, mask_global, nvars, mixprops_mean,
+            mixprops_sd, id_mixprop_mean, id_mixprop_sd);
         
         // Spill to disk.
         string mixprops_out_name = output_prefix + ".props";
         FILE* mixprops_out = fopen(mixprops_out_name.c_str(), "w");
-        write_mixprops(mixprops_out, barcode_group, mixprops_alpha, mixprops_beta, assignments, clust_ids);
+        write_mixprops(mixprops_out, barcode_group, mixprops_mean, mixprops_sd, assignments, clust_ids);
         fclose(mixprops_out);
         return 0;
     }

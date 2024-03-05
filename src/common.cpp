@@ -368,4 +368,18 @@ string filename_nopath(string& filename){
     }
 }
 
-
+/**
+ * Log PDF of binomial distribution wrt n, k, p
+ */
+double logbinom(double n, double k, double p){
+    double ll = k * log(p) + (n-k)*log(1.0-p);
+    // Compute log binomial coefficient
+    if (k < n && k != 0){
+        // Use Stirling's approximation
+        double logn = log(n);
+        double logk = log(k);
+        double logn_k = log(n-k);
+        ll += n*logn - k*logk - (n-k)*logn_k + 0.5*(logn - logk - logn_k - log(2*M_PI));
+    }
+    return ll;
+}

@@ -1128,30 +1128,6 @@ void help(int code){
     exit(code);
 }
 
-double eq1(const vector<double>& params){
-    return params[0] + params[1];
-}
-void deq1(const vector<double>& params, vector<double>& results){
-    results[0] = 1.0;
-    results[1] = 1.0;
-}
-double eq2(const vector<double>& params){
-    return 2*params[0] * params[0] + params[1];
-}
-void deq2(const vector<double>& params, vector<double>& results){
-    results[0] = 4*params[0];
-    results[1] = 1.0;
-}
-
-double eq3(const vector<double>& params){
-    return 5*params[0] + 3*params[1]*params[1];
-}
-
-double deq3(const vector<double>& params, vector<double>& results){
-    results[0] = 5.0;
-    results[1] = 6*params[1];
-}
-
 int main(int argc, char *argv[]) {    
    
     static struct option long_options[] = {

@@ -19,10 +19,13 @@ demux/demux_vcf: src/demux_vcf.cpp build/common.o build/demux_vcf_io.o build/dem
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_vcf.cpp -o demux/demux_vcf build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o -lz -lhts lib/libmixturedist.a lib/liboptimml.a lib/libhtswrapper.a
 
 demux/demux_mt: src/demux_mt.cpp src/common.h build/common.o $(DEPS)
-	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o -lz -lhts lib/libhtswrapper.a lib/libmixturedist.a
+	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o -lz -lhts lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
 
 demux/demux_species: src/demux_species.cpp src/kmsuftree.h src/common.h build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -pthread src/demux_species.cpp -o demux/demux_species build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o lib/libhtswrapper.a lib/libmixturedist.a -lhts -lz
+
+demux/demux_multiseq: src/demux_multiseq.cpp $(DEPS)
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -D PROJ_ROOT=$(PROJROOT) src/demux_multiseq.cpp -o demux/demux_multiseq lib/libhtswrapper.a -lz
 
 analysis/quant_contam: src/quant_contam.cpp src/ambient_rna.h build/common.o build/demux_vcf_io.o build/ambient_rna.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/quant_contam.cpp -o analysis/quant_contam build/common.o build/demux_vcf_io.o build/ambient_rna.o lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a -lz
@@ -71,12 +74,12 @@ build/gene_core.o: src/FASTK/gene_core.c src/FASTK/gene_core.h
 
 lib/libhtswrapper.a:
 	#cd dependencies/htswrapper && $(MAKE) clean
-	cd dependencies/htswrapper && $(MAKE) PREFIX=../..
+	cd dependencies/htswrapper && $(MAKE) PREFIX=../.. BC_LENX2=$(BC_LENX2) KX2=$(KX2)
 	cd dependencies/htswrapper && $(MAKE) install PREFIX=../..
 
 lib/libmixturedist.a:
 	#cd dependencies/mixtureDist && $(MAKE) clean
-	cd dependencies/mixtureDist && $(MAKE) PREFIX=../.. -D BC_LENX2=$(BC_LENX2) -D KX2=$(KX2)
+	cd dependencies/mixtureDist && $(MAKE) PREFIX=../..
 	cd dependencies/mixtureDist && $(MAKE) install PREFIX=../..
 
 lib/liboptimml.a:

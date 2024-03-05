@@ -54,4 +54,7 @@ double doublet_chisq(std::map<int, int>& idcounts, int n_samples);
 // Trim the path off of a file name
 std::string filename_nopath(std::string& filename);
 
+// Log PDF of binomial distribution
+double logbinom(double n, double k, double p);
+
 #endif

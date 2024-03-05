@@ -73,21 +73,7 @@ double adjust_p_err(double p, double e_r, double e_a){
     return p - p*e_a + (1-p)*e_r;
 }
 
-/**
- * Log PDF of binomial distribution wrt n, k, p
- */
-double logbinom(double n, double k, double p){
-    double ll = k * log(p) + (n-k)*log(1.0-p);
-    // Compute log binomial coefficient
-    if (k < n && k != 0){
-        // Use Stirling's approximation
-        double logn = log(n);
-        double logk = log(k);
-        double logn_k = log(n-k);
-        ll += n*logn - k*logk - (n-k)*logn_k + 0.5*(logn - logk - logn_k - log(2*M_PI));
-    }
-    return ll;
-}
+
 
 /**
  * Integrate binomial log likelihood wrt p_c (expected alt allele match rate from contamination)
