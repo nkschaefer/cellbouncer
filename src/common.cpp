@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <utility>
 #include <math.h>
+#include <sys/stat.h>
 #include <mixtureDist/functions.h>
 #include <htswrapper/bc.h>
 
@@ -382,4 +383,12 @@ double logbinom(double n, double k, double p){
         ll += n*logn - k*logk - (n-k)*logn_k + 0.5*(logn - logk - logn_k - log(2*M_PI));
     }
     return ll;
+}
+
+bool file_exists(string filename){
+    struct stat buf;
+    if (stat(filename.c_str(), &buf) != 0){
+        return false;
+    }
+    return true;
 }

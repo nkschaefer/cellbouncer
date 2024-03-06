@@ -1,5 +1,5 @@
-#ifndef _UNPOOL_COMMON_H
-#define _UNPOOL_COMMON_H
+#ifndef _CELLID_COMMON_H
+#define _CELLID_COMMON_H
 #include <string>
 #include <algorithm>
 #include <vector>
@@ -56,5 +56,7 @@ std::string filename_nopath(std::string& filename);
 
 // Log PDF of binomial distribution
 double logbinom(double n, double k, double p);
+
+bool file_exists(std::string name);
 
 #endif

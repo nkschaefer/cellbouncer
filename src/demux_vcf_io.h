@@ -99,6 +99,4 @@ void dump_contam_rates(FILE* outf,
 void dump_amb_fracs(FILE* outf, 
     std::map<std::pair<int, int>, std::map<std::pair<int, int>, double> >& amb_mu);
 
-bool file_exists(std::string filename);
- 
 #endif

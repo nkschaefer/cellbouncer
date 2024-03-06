@@ -690,10 +690,3 @@ void dump_amb_fracs(FILE* outf,
     } 
 }
 
-bool file_exists(string filename){
-    struct stat buf;
-    if (stat(filename.c_str(), &buf) != 0){
-        return false;
-    }
-    return true;
-}

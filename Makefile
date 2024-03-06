@@ -8,12 +8,12 @@ IFLAGS=-I$(PREFIX)/include -Iinclude
 LFLAGS=-L$(PREFIX)/lib -Llib
 MAX_SITES ?= 2000
 MAKE=make
-PROJROOT=$($(SHELL) pwd)
+PROJROOT=$(shell pwd)
 BC_LENX2=32
 KX2=16
 DEPS=lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
 
-all: demux/demux_vcf demux/demux_mt analysis/quant_contam utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers
+all: demux/demux_vcf demux/demux_mt demux/demux_multiseq analysis/quant_contam utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers
 
 demux/demux_vcf: src/demux_vcf.cpp build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_vcf.cpp -o demux/demux_vcf build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o -lz -lhts lib/libmixturedist.a lib/liboptimml.a lib/libhtswrapper.a
@@ -25,7 +25,7 @@ demux/demux_species: src/demux_species.cpp src/kmsuftree.h src/common.h build/km
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -pthread src/demux_species.cpp -o demux/demux_species build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o lib/libhtswrapper.a lib/libmixturedist.a -lhts -lz
 
 demux/demux_multiseq: src/demux_multiseq.cpp $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -D PROJ_ROOT=$(PROJROOT) src/demux_multiseq.cpp -o demux/demux_multiseq lib/libhtswrapper.a -lz
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -D PROJ_ROOT=$(PROJROOT) src/demux_multiseq.cpp -o demux/demux_multiseq build/common.o lib/libmixturedist.a lib/libhtswrapper.a -lz
 
 analysis/quant_contam: src/quant_contam.cpp src/ambient_rna.h build/common.o build/demux_vcf_io.o build/ambient_rna.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/quant_contam.cpp -o analysis/quant_contam build/common.o build/demux_vcf_io.o build/ambient_rna.o lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a -lz
