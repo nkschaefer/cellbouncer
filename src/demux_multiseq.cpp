@@ -407,7 +407,7 @@ void check_missing_ms_wells(robin_hood::unordered_map<unsigned long, vector<umi_
     int toprank_present = -1;
     FILE* outf = fopen(outfilename.c_str(), "w");
     for (int i = 0; i < counts.size(); ++i){
-        if (well2name.count(counts[i].second) > 0 && well2name[counts[i].second] != ""){
+        if (well2name.count(counts[i].second) == 0 && well2name[counts[i].second] != ""){
             if (minrank_missing == -1){
                 minrank_missing = i;
             }
@@ -592,12 +592,10 @@ well mappings\n");
         seq_fuzzy_match msmatch(bclist, mismatches, true, true);
         
         vector<unsigned long> ms_bc;
-        vector<string> ms_well;
         bc cur_bc;
         for (int i = 0; i < bclist.size(); ++i){
             str2bc(bclist[i].c_str(), cur_bc);
             ms_bc.push_back(cur_bc.to_ulong());
-            ms_well.push_back(bc2well[cur_bc.to_ulong()]);
         }
         /*
         // Determine appropriate k-mer length for fuzzy matching
@@ -615,12 +613,14 @@ well mappings\n");
         
         map<unsigned long, int> ms_bc2idx;
         vector<string> ms_names;
+        vector<string> ms_wells;
         int ix = 0;
         for (map<unsigned long, string>::iterator bw = bc2well.begin(); 
             bw != bc2well.end(); ++bw){
             
             ms_bc2idx.insert(make_pair(bw->first, ix));
             ++ix;
+            ms_wells.push_back(bw->second);
             if (well2id.count(bw->second) > 0){
                 ms_names.push_back(well2id[bw->second]);
             }
@@ -681,7 +681,6 @@ well mappings\n");
                             // Initialize.
                             bc_ms_umis[scanner.barcode][ms_bc2idx[ms_ul]] = new umi_set(scanner.umi_len);
                             ptr = bc_ms_umis[scanner.barcode][ms_bc2idx[ms_ul]];
-                            ptr->exact_matches_only(true);
                         }
                         ptr->add(this_umi); 
                     }
@@ -696,7 +695,7 @@ well mappings\n");
         // Check to see that the desired MULTIseq barcodes are the most common ones.
         // Warn the user if unexpected ones are more common. 
         string wellcountsfn = output_prefix + ".wells";
-        check_missing_ms_wells(bc_ms_umis, ms_well, well2id, wellcountsfn);        
+        check_missing_ms_wells(bc_ms_umis, ms_wells, well2id, wellcountsfn);        
 
         // Free stuff
         for (robin_hood::unordered_map<unsigned long, vector<umi_set*> >::iterator x = 
