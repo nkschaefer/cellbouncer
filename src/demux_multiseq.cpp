@@ -21,6 +21,7 @@
 #include <htswrapper/robin_hood/robin_hood.h>
 #include <htswrapper/bc.h>
 #include <htswrapper/umi.h>
+#include <htswrapper/seq_fuzzy_match.h>
 #include <htswrapper/bc_scanner.h>
 #include <mixtureDist/functions.h>
 #include "common.h"
@@ -60,6 +61,8 @@ void help(int code){
     fprintf(stderr, "   --barcodes -b A path to a file listing MULTIseq well IDs and corresponding\n");
     fprintf(stderr, "       barcodes, tab separated. If you do not provide one, the default file (in\n");
     fprintf(stderr, "       the data directory) will be used.\n");
+    fprintf(stderr, "   --mismatches -M The number of allowable mismatches to a MULTIseq barcode to accept\n");
+    fprintf(stderr, "       it. Default = -1 (take best match overall, if there are no ties)\n");
     fprintf(stderr, "   --doublet_rate -D What is the prior expected doublet rate?\n");
     fprintf(stderr, "       (OPTIONAL; default = 0.1). Must be a decimal between 0 and 1,\n");
     fprintf(stderr, "       exclusive.\n");
@@ -83,7 +86,8 @@ int load_well2bc(string& filename,
             bc_len = bc_str.length();
         }
         else if (bc_len != bc_str.length()){
-            fprintf(stderr, "ERROR: mismatching MULTIseq barcode lengths in file %s:\n", filename.c_str());
+            fprintf(stderr, "ERROR: mismatching MULTIseq barcode lengths in file %s:\n",
+                filename.c_str());
             fprintf(stderr, "%d vs %ld\n", bc_len, bc_str.length());
             exit(1);
         }
@@ -190,23 +194,14 @@ void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string
     vector<int> valid;
     vector<int> noise;
 
-    for (robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >::iterator x = bc_ms_counts.begin();
-        x != bc_ms_counts.end(); ++x){
+    for (robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >::iterator x = 
+        bc_ms_counts.begin(); x != bc_ms_counts.end(); ++x){
         
         sort(x->second.begin(), x->second.end());
         if (x->second[0].first == 0){
             // No counts
             continue;
         }
-
-        string bc_str = bc2str(x->first);
-        fprintf(stderr, "%s", bc_str.c_str());
-        for (int i = 0; i < x->second.size(); ++i){
-            if (x->second[i].first != 0){
-                fprintf(stderr, "\t%d", -x->second[i].first);
-            }
-        }    
-        fprintf(stderr, "\n");
 
         double ll1 = 0;
         double ll2 = 0;
@@ -227,7 +222,13 @@ void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string
             double mean_err = 0;
             double tot_err = 0;
             for (int i = ngroups; i < x->second.size(); ++i){
-                mean_err += -(double)x->second[i].first;
+                // Use a pseudocount (don't let mean error count drop below 1)
+                if (x->second[i].first == 0){
+                    mean_err += 1.0;
+                }
+                else{
+                    mean_err += -(double)x->second[i].first;
+                }
                 tot_err++;
             }
             if (tot_err == 0){
@@ -255,7 +256,6 @@ void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string
                 ll3 = ll;
             }
         }
-        fprintf(stderr, "  %f %f %f\n", ll1, ll2, ll3);
 
         if (ll3 > ll1 && ll3 > ll2){
             // 3 or more == noise. Don't make an assignment.        
@@ -300,7 +300,14 @@ void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string
         }
     }
     
-    bool second_pass = true;
+    // Optional second pass through data: find mean successful count and mean unsuccessful
+    // count; throw out identifications where successful count is more likely under the
+    // data set-wide unsuccessful count distribution.
+
+    // This seems unnecessary - now, LLRs reflect what we can say about the observed data; 
+    // we don't need to care what other cells look like.
+    
+    bool second_pass = false;
 
     if (second_pass){
         double mean_valid = 0;
@@ -314,7 +321,6 @@ void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string
         for (int i = 0; i < noise.size(); ++i){
             mean_noise += noise_weight*(double)noise[i];
         }
-        fprintf(stderr, "MEAN valid %f noise %f\n", mean_valid, mean_noise);
         
         for (robin_hood::unordered_map<unsigned long, double>::iterator a = assn_llr.begin();
             a != assn_llr.end();){
@@ -362,8 +368,8 @@ void write_assignments(string filename,
     robin_hood::unordered_map<unsigned long, double>& assn_llr){
     
     FILE* f_out = fopen(filename.c_str(), "w");
-    for (robin_hood::unordered_map<unsigned long, string>::iterator a = assn1.begin(); a != assn1.end();
-        ++a){
+    for (robin_hood::unordered_map<unsigned long, string>::iterator a = assn1.begin(); 
+        a != assn1.end(); ++a){
         char type = 'S';
         string name = a->second;
         if (assn2.count(a->first) > 0){
@@ -374,6 +380,51 @@ void write_assignments(string filename,
         fprintf(f_out, "%s\t%s\t%c\t%f\n", bc_str.c_str(), name.c_str(), type, assn_llr[a->first]); 
     }
     fclose(f_out);
+}
+
+void check_missing_ms_wells(robin_hood::unordered_map<unsigned long, vector<umi_set*> >& bc_ms_umis,
+    vector<string>& ms_wells,
+    map<string, string>& well2name,
+    string& outfilename){
+    
+    fprintf(stderr, "check missing MS wells\n");    
+    // Count each well across all cells
+    vector<pair<int, string> > counts;
+    for (int i = 0; i < ms_wells.size(); ++i){
+        counts.push_back(make_pair(0, ms_wells[i]));
+    }
+    for (robin_hood::unordered_map<unsigned long, vector<umi_set*> >::iterator x = 
+        bc_ms_umis.begin(); x != bc_ms_umis.end(); ++x){
+        for (int i = 0; i < x->second.size(); ++i){
+            if (x->second[i] != NULL){
+                counts[i].first += -x->second[i]->count();
+            }
+        }
+    }
+    sort(counts.begin(), counts.end());
+    
+    int minrank_missing = -1;
+    int toprank_present = -1;
+    FILE* outf = fopen(outfilename.c_str(), "w");
+    for (int i = 0; i < counts.size(); ++i){
+        if (well2name.count(counts[i].second) > 0 && well2name[counts[i].second] != ""){
+            if (minrank_missing == -1){
+                minrank_missing = i;
+            }
+        }
+        else{
+            toprank_present = i;
+        }
+        fprintf(outf, "%d\t%s\t%s\n", -counts[i].first, counts[i].second.c_str(),
+            well2name[counts[i].second].c_str());
+    }
+    fclose(outf);
+    if (minrank_missing < toprank_present){
+        fprintf(stderr, "WARNING: one or more un-named wells has higher counts than one or \
+more named/expected wells. You may have mis-specified well-to-ID mappings in provided \
+metadata. Please see the output well counts file to evaluate.\n");
+    }
+
 }
 
 int main(int argc, char *argv[]) {    
@@ -388,6 +439,7 @@ int main(int argc, char *argv[]) {
        {"barcodes", required_argument, 0, 'b'},
        {"cell_barcodes", required_argument, 0, 'B'},
        {"doublet_rate", required_argument, 0, 'D'},
+       {"mismatches", required_argument, 0, 'M'},
        {0, 0, 0, 0} 
     };
     
@@ -398,6 +450,7 @@ int main(int argc, char *argv[]) {
     string mapfn = "";
     string wlfn = "";
     string cell_barcodesfn;
+    int mismatches = -1;
 
     fprintf(stderr, "%s\n", STRINGIZE(PROJ_ROOT));
     string pr = STRINGIZE(PROJ_ROOT);
@@ -413,7 +466,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:1:2:m:w:b:B:D:h", 
+    while((ch = getopt_long(argc, argv, "o:1:2:m:M:w:b:B:D:h", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -433,6 +486,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'm':
                 mapfn = optarg;
+                break;
+            case 'M':
+                mismatches = atoi(optarg);
                 break;
             case 'w':
                 wlfn = optarg;
@@ -457,12 +513,18 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: --output_prefix/-o is required\n");
         exit(1);
     }
+    if (mismatches < -1){
+        fprintf(stderr, "ERROR: mismatches must be >= 0, or -1 to allow all matches\n");
+        exit(1);
+    }
     
     // Data structure to store counts
     robin_hood::unordered_map<unsigned long, vector<pair<int, string> > > bc_ms_counts;
 
     string countsfilename = output_prefix + ".counts";
     if (file_exists(countsfilename)){
+        fprintf(stderr, "Loading previously-computed counts (delete file to avoid this \
+next time)...\n");
         load_counts(countsfilename, bc_ms_counts);
     }
     else{
@@ -492,17 +554,6 @@ int main(int argc, char *argv[]) {
             parse_barcode_file(cell_barcodesfn, cell_barcodes);
         }    
 
-        // Determine appropriate k-mer length for fuzzy matching
-        // k must be < (bc_length + 1)/2
-        int ms_k;
-        if (ms_bc_len % 2 == 0){
-            // Even barcode length.
-            ms_k = ms_bc_len/2;
-        }
-        else{
-            ms_k = (ms_bc_len-1)/2;
-        }
-
         // Load MULTIseq well -> unique identifier mapping
         map<string, string> well2id;
         if (mapfn == ""){
@@ -526,8 +577,10 @@ int main(int argc, char *argv[]) {
             for (map<string, string>::iterator wi = well2id.begin(); wi != well2id.end();
                 ++wi){
                 if (wellnames.find(wi->first) == wellnames.end()){
-                    fprintf(stderr, "ERROR: well -> ID mapping file contains a well named %s\n", wi->first.c_str());
-                    fprintf(stderr, "This well ID is not present in the MULTIseq barcode -> well mappings\n");
+                    fprintf(stderr, "ERROR: well -> ID mapping file contains a well named %s\n",
+                        wi->first.c_str());
+                    fprintf(stderr, "This well ID is not present in the MULTIseq barcode -> \
+well mappings\n");
                     exit(1);
                 }
             }
@@ -536,12 +589,36 @@ int main(int argc, char *argv[]) {
         }
         
         // Initiate MULTIseq barcode whitelist
-        bc_whitelist wl_ms(bclist, ms_bc_len, ms_k);
+        seq_fuzzy_match msmatch(bclist, mismatches, true, true);
+        
+        vector<unsigned long> ms_bc;
+        vector<string> ms_well;
+        bc cur_bc;
+        for (int i = 0; i < bclist.size(); ++i){
+            str2bc(bclist[i].c_str(), cur_bc);
+            ms_bc.push_back(cur_bc.to_ulong());
+            ms_well.push_back(bc2well[cur_bc.to_ulong()]);
+        }
+        /*
+        // Determine appropriate k-mer length for fuzzy matching
+        // k must be < (bc_length + 1)/2
+        int ms_k;
+        if (ms_bc_len % 2 == 0){
+            // Even barcode length.
+            ms_k = ms_bc_len/2;
+        }
+        else{
+            ms_k = (ms_bc_len-1)/2;
+        }
+        */
+        //bc_whitelist wl_ms(bclist, ms_bc_len, ms_k);
         
         map<unsigned long, int> ms_bc2idx;
         vector<string> ms_names;
         int ix = 0;
-        for (map<unsigned long, string>::iterator bw = bc2well.begin(); bw != bc2well.end(); ++bw){
+        for (map<unsigned long, string>::iterator bw = bc2well.begin(); 
+            bw != bc2well.end(); ++bw){
+            
             ms_bc2idx.insert(make_pair(bw->first, ix));
             ++ix;
             if (well2id.count(bw->second) > 0){
@@ -551,15 +628,16 @@ int main(int argc, char *argv[]) {
                 ms_names.push_back("");
             }
         }
-
+        
         // Data structure to store MULTIseq barcode counts per cell barcode
         // counts come from UMIs
         robin_hood::unordered_map<unsigned long, vector<umi_set*> > bc_ms_umis;
-        //robin_hood::unordered_map<unsigned long, map<unsigned long, umi_set > > bc_ms_umis;
         
         // Set up object that will scan each pair of read files
         bc_scanner scanner;
         scanner.init_multiseq_v3(wlfn);
+        
+        char ms_bc_buf[ms_bc_len+1];
 
         for (int i = 0; i < read1fn.size(); ++i){
             
@@ -567,7 +645,11 @@ int main(int argc, char *argv[]) {
             scanner.add_reads(read1fn[i], read2fn[i]);
             
             while (scanner.next()){
-                if (has_cell_barcodes && cell_barcodes.find(scanner.barcode) == cell_barcodes.end()){
+                
+                // Skip reads if we have a cell barcode whitelist and the current
+                // barcode isn't in it
+                if (has_cell_barcodes && 
+                    cell_barcodes.find(scanner.barcode) == cell_barcodes.end()){
                     continue;
                 }
                 
@@ -579,7 +661,13 @@ int main(int argc, char *argv[]) {
                     // MULTIseq barcodes are the first 8 bp (or however long supplied barcodes are)
                     // of R2, forward orientation
                     unsigned long ms_ul;
-                    if (wl_ms.lookup(scanner.read_f, false, ms_ul)){
+                    
+                    strncpy(&ms_bc_buf[0], scanner.read_f, ms_bc_len);
+                    ms_bc_buf[ms_bc_len] = '\0';            
+                    int idx = msmatch.match(&ms_bc_buf[0]);
+                    if (idx != -1){
+                        ms_ul = ms_bc[idx];
+                    //if (wl_ms.lookup(scanner.read_f, false, ms_ul)){
                         // Store UMI
                         umi this_umi(scanner.umi, scanner.umi_len);    
                         if (bc_ms_umis.count(scanner.barcode) == 0){
@@ -596,16 +684,6 @@ int main(int argc, char *argv[]) {
                             ptr->exact_matches_only(true);
                         }
                         ptr->add(this_umi); 
-                        /*
-                        if (bc_ms_umis[scanner.barcode].count(ms_ul) == 0){
-                            umi_set s;
-                            bc_ms_umis[scanner.barcode].insert(make_pair(ms_ul, s));
-                            bc_ms_umis[scanner.barcode][ms_ul].exact_matches_only(true);
-                            bc_ms_umis[scanner.barcode][ms_ul].set_len(scanner.umi_len);
-                        }
-                        bc_ms_umis[scanner.barcode].at(ms_ul).add(this_umi);
-                        */
-
                     }
                 }
             }
@@ -614,10 +692,15 @@ int main(int argc, char *argv[]) {
         // Write counts to disk
         string countsfn = output_prefix + ".counts";
         dump_counts(countsfn, bc_ms_umis, ms_names, bc_ms_counts);
-        
+       
+        // Check to see that the desired MULTIseq barcodes are the most common ones.
+        // Warn the user if unexpected ones are more common. 
+        string wellcountsfn = output_prefix + ".wells";
+        check_missing_ms_wells(bc_ms_umis, ms_well, well2id, wellcountsfn);        
+
         // Free stuff
-        for (robin_hood::unordered_map<unsigned long, vector<umi_set*> >::iterator x = bc_ms_umis.begin();
-            x != bc_ms_umis.end(); ){
+        for (robin_hood::unordered_map<unsigned long, vector<umi_set*> >::iterator x = 
+            bc_ms_umis.begin(); x != bc_ms_umis.end(); ){
             for (int i = 0; i < x->second.size(); ++i){
                 if (x->second[i] != NULL){
                     delete x->second[i];
