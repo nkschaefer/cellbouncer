@@ -17,6 +17,9 @@ void help(int code){
     fprintf(stderr, "OPTIONS:\n");
     fprintf(stderr, "--kmers -k Two or more FASTK tables from reference genomes (specify -k\n");
     fprintf(stderr, "    multiple times). These are the files ending with .ktab\n");
+    fprintf(stderr, "--names -n The names of the species for which you have provided k-mer tables,\n");
+    fprintf(stderr, "   in the same order (specify -n multiple names). Names should not contain spaces\n");
+    fprintf(stderr, "   or special characters.\n");
     fprintf(stderr, "--output_prefix -o Where to write species-specific kmers. Files will be\n");
     fprintf(stderr, "    in the format {outprefix}.{index}.kmers (gzip compressed).\n"); 
     exit(code);
@@ -69,14 +72,14 @@ void print_dat(gzFile* outf, char* kmer){
 int main(int argc, char* argv[]){
     
     // Set defaults
-
-    char kmers[50][100];
+    // Assume all strings will be under 500 char
+    char kmers[50][500];
     int kmers_idx = 0;
-    char names[50][100];
+    char names[50][500];
     int names_idx = 0;
-    char readsfile[100];
-    char proffile[100];
-    char output_prefix[100];   
+    char readsfile[500];
+    char proffile[500];
+    char output_prefix[500];   
     readsfile[0] = '\0';
     output_prefix[0] = '\0';
     
@@ -87,14 +90,17 @@ int main(int argc, char* argv[]){
     }
     
     // Parse arguments
-    while ((ch = getopt(argc, argv, "k:n:r:o:h")) != -1){
+    while ((ch = getopt(argc, argv, "k:n:o:h")) != -1){
         switch(ch){
             case 'k':
                 strcpy(&kmers[kmers_idx][0], optarg);
-                for (int i = strlen(optarg); i < 100; ++i){
-                    kmers[kmers_idx][i] = '\0';
-                }
+                kmers[kmers_idx][strlen(optarg)] = '\0';
                 kmers_idx++;
+                break;
+            case 'n':
+                strcpy(&names[names_idx][0], optarg);
+                names[names_idx][strlen(optarg)] = '\0';
+                names_idx++;
                 break;
             case 'h':
                 help(0);
@@ -118,11 +124,26 @@ int main(int argc, char* argv[]){
         fprintf(stderr, "ERROR: --kmers / -k is required\n");
         exit(1);
     }
+    if (names_idx == 0){
+        fprintf(stderr, "ERROR: --names / -n is required\n");
+        exit(1);
+    }
+    if (kmers_idx != names_idx){
+        fprintf(stderr, "ERROR: unequal number of k-mers (-k) and names (-n) provided\n");
+        exit(1);
+    }
     if (kmers_idx == 1){
         fprintf(stderr, "ERROR: cannot demultiplex with only one species\n");
         exit(1);
     }
-    
+    for (int i = 0; i < names_idx; ++i){
+        for (int j = 0; j < strlen(names[names_idx]); ++j){
+            if (names[names_idx][i] == ' '){
+                fprintf(stderr, "ERROR: spaces detected in given species name(s)\n");
+                exit(1);
+            }
+        }
+    }
     // Load k-mer tables
     int num_tables = kmers_idx;
     Kmer_Stream* tables[num_tables];
@@ -146,9 +167,17 @@ int main(int argc, char* argv[]){
         }
     }
 
+    // Write out species names
+    char namebuf[500];
+    sprintf(&namebuf[0], "%s.names", output_prefix);
+    FILE* f = fopen(&namebuf[0], "w");
+    for (int i = 0; i < num_tables; ++i){
+        fprintf(f, "%s\n", names[i]);
+    }
+    fclose(f);
+
     // prepare output files
     gzFile outs[num_tables];
-    char namebuf[500];
     for (int i = 0; i < num_tables; ++i){
         sprintf(&namebuf[0], "%s.%d.kmers", output_prefix, i);
         outs[i] = gzopen(namebuf, "w");
