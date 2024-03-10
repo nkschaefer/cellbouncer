@@ -13,7 +13,7 @@ BC_LENX2=32
 KX2=16
 DEPS=lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
 
-all: demux/demux_vcf demux/demux_mt demux/demux_multiseq analysis/quant_contam utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers
+all: demux/demux_vcf demux/demux_mt demux/demux_multiseq analysis/quant_contam utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/fastq_cell_bcs
 
 demux/demux_vcf: src/demux_vcf.cpp build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_vcf.cpp -o demux/demux_vcf build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o -lz -lhts lib/libmixturedist.a lib/liboptimml.a lib/libhtswrapper.a
@@ -41,6 +41,9 @@ utils/get_unique_kmers: src/get_unique_kmers.c src/FASTK/libfastk.c build/libfas
 
 utils/kmsuftree_test: src/kmsuftree_test.cpp src/kmsuftree.h build/kmsuftree.o
 	$(COMP) $(FLAGS) src/kmsuftree_test.cpp -o utils/kmsuftree_test build/kmsuftree.o
+
+utils/fastq_cell_bcs: src/fastq_cell_bcs.cpp build/common.o $(DEPS)
+	$(COMP) $(FLAGS) $(IFLAGS) $(LFLAGS) src/fastq_cell_bcs.cpp -o utils/fastq_cell_bcs build/common.o -lz -lhts $(DEPS)
 
 build/common.o: src/common.cpp src/common.h lib/libhtswrapper.a lib/libmixturedist.a
 	$(COMP) $(IFLAGS) $(FLAGS) src/common.cpp -c -o build/common.o

@@ -26,8 +26,8 @@
 #include <mutex>
 #include <sys/stat.h>
 #include <htswrapper/bc.h>
+#include <htswrapper/umi.h>
 #include <htswrapper/robin_hood/robin_hood.h>
-#include <htswrapper/serialize.h>
 #include "common.h"
 #include "kmsuftree.h"
 
@@ -67,9 +67,14 @@ class species_kmer_counter{
         short this_species;
         kmer_tree_p kt;
         int k;
+        
+        int umi_start;
+        int umi_len;
 
-        std::mutex data_mutex;
+        std::mutex counts_mutex;
+        std::mutex umi_mutex;
         robin_hood::unordered_map<unsigned long, std::map<short, int> >* bc_species_counts;
+        robin_hood::unordered_map<unsigned long, umi_set* > bc_species_umis;
         bc_whitelist* wl;
 
         // Task-specific
@@ -101,7 +106,8 @@ class species_kmer_counter{
         
         species_kmer_counter(int nt, int k, int ns,
             bc_whitelist* wl, 
-            robin_hood::unordered_map<unsigned long, map<short, int> >* bsc);
+            robin_hood::unordered_map<unsigned long, map<short, int> >* bsc,
+            int umi_start = 16, int umi_len = 12);
 
         ~species_kmer_counter();
 

@@ -24,6 +24,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <htswrapper/bc.h>
+#include <htswrapper/umi.h>
 #include <htswrapper/gzreader.h>
 #include "common.h"
 #include "species_kmers.h"
@@ -43,7 +44,10 @@ species_kmer_counter::species_kmer_counter(int nt,
     int k, 
     int ns,
     bc_whitelist* wl,
-    robin_hood::unordered_map<unsigned long, map<short, int> >* bsc){
+    robin_hood::unordered_map<unsigned long, map<short, int> >* bsc,
+    int umi_start,
+    int umi_len){
+    
     this->terminate_threads = false;
     this->num_threads = nt;
     this->k = k;
@@ -52,6 +56,8 @@ species_kmer_counter::species_kmer_counter(int nt,
     this->initialized = false;
     this->on = false;
     this->bc_species_counts = bsc;
+    this->umi_start = umi_start;
+    this->umi_len = umi_len;
 }
 
 species_kmer_counter::~species_kmer_counter(){
@@ -61,6 +67,12 @@ species_kmer_counter::~species_kmer_counter(){
     }
     if (this->initialized){
         kmsuftree_destruct(kt, 0);
+    }
+    // Free all UMI counters
+    for (robin_hood::unordered_map<unsigned long, umi_set*>::iterator x = bc_species_umis.begin();
+        x != bc_species_umis.end(); ){
+        delete x->second;
+        x = bc_species_umis.erase(x);
     }
 }
 
@@ -196,6 +208,13 @@ void species_kmer_counter::close_pool(){
     }
     this->threads.clear();
     this->on = false;
+
+    // Free all UMI counters
+    for (robin_hood::unordered_map<unsigned long, umi_set*>::iterator x = bc_species_umis.begin();
+        x != bc_species_umis.end(); ){
+        delete x->second;
+        x = bc_species_umis.erase(x);
+    }
 }
 
 /**
@@ -249,6 +268,22 @@ void species_kmer_counter::scan_gex_data(rp_info& params){
     unsigned long bc_key;
     if (wl->lookup(params.seq_f.c_str(), bc_key)){
         
+        bool dup_read = false;
+        if (umi_start >= 0 && umi_len > 0){
+            umi u(params.seq_f + umi_start, umi_len);
+            if (bc_species_umis.count(bc_key) == 0){
+                umi_set* s = new umi_set(umi_len);
+                bc_species_umis.emplace(bc_key, s);
+            }
+            if (bc_species_umis[bc_key]->add(u)){
+                dup_read = true;
+            }
+        }
+        
+        if (dup_read){
+            return;
+        }
+
         // In 10x scRNA-seq data, only the reverse read contains information
         // forward read is barcode
         int nk = scan_seq_kmers(params.seq_r);
