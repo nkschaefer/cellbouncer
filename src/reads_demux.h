@@ -23,7 +23,7 @@
 class reads_demuxer{
     private:
         // For barcode matching
-        bc_whitelist whitelist;
+        bc_whitelist* whitelist;
         
         std::string file_prefix;
 
@@ -42,7 +42,8 @@ class reads_demuxer{
         std::map<short, std::string> idx2species;
         
         // Map species to output file
-        std::vector<gzFile> outfiles;
+        gzFile* outfiles;
+        int n_outfiles;
 
         // Output directory
         std::string outdir;

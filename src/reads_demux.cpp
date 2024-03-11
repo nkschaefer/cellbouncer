@@ -31,7 +31,7 @@ reads_demuxer::reads_demuxer(bc_whitelist& whitelist,
     map<short, string>& idx2species,
     string& outdir){
     
-    this->whitelist = whitelist;
+    this->whitelist = &whitelist;
     this->bc2species = bc2species;
     this->idx2species = idx2species;
     this->outdir = outdir;
@@ -41,38 +41,34 @@ reads_demuxer::reads_demuxer(bc_whitelist& whitelist,
 
 // Destructor
 reads_demuxer::~reads_demuxer(){
-    if (initialized){
-        for (int i = 0; i < outfiles.size(); ++i){
-            gzclose(outfiles[i]);
-        }
-    }
+    close();
 }
 
 // If already initialized for a given set of files, close.
 void reads_demuxer::close(){
     if (this->initialized){
-        for (int i = 0; i < outfiles.size(); ++i){
+        for (int i = 0; i < n_outfiles; ++i){
             gzclose(outfiles[i]);
+            outfiles[i] = NULL;
         }
+        n_outfiles = 0;
+        free(outfiles);
+
         r1 = "";
         r2 = "";
         r3 = "";
         is_atac = false;
-         outfiles.clear(); 
         initialized = false;
     }
 }
 
 // Set up for RNA-seq reads or feature barcoding data
 void reads_demuxer::init_rna_or_custom(string file_prefix, string& r1filename, string& r2filename){
-    
     // If already initialized for something else, close existing files
     close();
-
     // Trim paths from filenames for output filenames
     string r1filetrim = filename_nopath(r1filename);
     string r2filetrim = filename_nopath(r2filename);
-
     // Append prefix (i.e. "GEX") identifier to output files, if necessary
     string prefix = file_prefix + "_";
     if (r1filetrim.length() < prefix.length() || r1filetrim.substr(0, prefix.length()) != prefix){
@@ -81,15 +77,21 @@ void reads_demuxer::init_rna_or_custom(string file_prefix, string& r1filename, s
     if (r2filetrim.length() < prefix.length() || r2filetrim.substr(0, prefix.length()) != prefix){
         r2filetrim = prefix + r2filetrim;
     }
-
+    if (r1filetrim.length() < 3 || r1filetrim.substr(r1filetrim.length()-3, 3) != ".gz"){
+        r1filetrim += ".gz";
+    }
+    if (r2filetrim.length() < 3 || r2filetrim.substr(r2filetrim.length()-3, 3) != ".gz"){
+        r2filetrim += ".gz";
+    }
     // To keep the 10X pipeline happy, we'll create output files with the same name as
     // input files, separated in directories according to species of origin.
     if (outdir[outdir.length()-1] != '/'){
         outdir += "/";
     }
     
-    outfiles.reserve(2 * idx2species.size());
-
+    n_outfiles = idx2species.size()*2;
+    outfiles = (gzFile*)malloc(n_outfiles * sizeof(gzFile)); 
+    
     for (map<short, string>::iterator spec = idx2species.begin(); spec != idx2species.end(); ++spec){
         string dirn = outdir + spec->second;
         if (!mkdir(dirn.c_str(), 0775)){
@@ -108,11 +110,11 @@ void reads_demuxer::init_rna_or_custom(string file_prefix, string& r1filename, s
             exit(1);
         }
     }
-
-    r1 = r1filename;
-    r2 = r2filename;
-    r3 = "";
+    this->r1 = r1filename;
+    this->r2 = r2filename;
+    this->r3 = "";
     initialized = true;
+    is_atac = false;
 }
 
 void reads_demuxer::init_rna(string& r1filename, string& r2filename){
@@ -127,7 +129,6 @@ bool reads_demuxer::scan_rna(){
     if (!initialized || is_atac){
         return false;
     }
-    
     // Now iterate through read files, find/match barcodes, and assign to the correct files.
     // Prep input file(s).
     int f_progress;
@@ -156,8 +157,8 @@ bool reads_demuxer::scan_rna(){
             fprintf(stderr, "ERROR: read order not matching R2 at seq %s in R1 file\n", seq_f->name.s);
             exit(1);
         }
-        unsigned long bc_key;
-        if (whitelist.lookup1_bf(seq_f->seq.s, bc_key, false)){
+        unsigned long bc_key = 0;
+        if (whitelist->lookup1_bf(seq_f->seq.s, bc_key, false)){
             int species = bc2species[bc_key];
             write_fastq(seq_f->name.s, seq_f->name.l, seq_f->seq.s, seq_f->seq.l, seq_f->qual.s,
                 species*2);
@@ -165,7 +166,7 @@ bool reads_demuxer::scan_rna(){
                 species*2 + 1);
         } 
     }
-
+    close();
     kseq_destroy(seq_f);
     kseq_destroy(seq_r);
     return true;  
@@ -196,14 +197,23 @@ void reads_demuxer::init_atac(string& r1filename, string& r2filename, string& r3
     if (r3filetrim.length() < 5 || r3filetrim.substr(0, 5) != "ATAC_"){
         r3filetrim = "ATAC_" + r3filetrim;
     }
-
+    if (r1filetrim.length() < 3 || r1filetrim.substr(r1filetrim.length()-3, 3) != ".gz"){
+        r1filetrim += ".gz";
+    }
+    if (r2filetrim.length() < 3 || r2filetrim.substr(r2filetrim.length()-3, 3) != ".gz"){
+        r2filetrim += ".gz";
+    }
+    if (r3filetrim.length() < 3 || r3filetrim.substr(r3filetrim.length()-3, 3) != ".gz"){
+        r3filetrim += ".gz";
+    }
     // To keep the 10X pipeline happy, we'll create output files with the same name as
     // input files, separated in directories according to species of origin.
     if (outdir[outdir.length()-1] != '/'){
         outdir += "/";
     }
     
-    outfiles.reserve(idx2species.size() * 3);
+    n_outfiles = idx2species.size()*3;
+    outfiles = (gzFile*)malloc(n_outfiles * sizeof(gzFile));
 
     for (map<short, string>::iterator spec = idx2species.begin(); spec != idx2species.end(); ++spec){
         string dirn = outdir + spec->second;
@@ -229,10 +239,11 @@ void reads_demuxer::init_atac(string& r1filename, string& r2filename, string& r3
             exit(1);
         }
     }
-    r1 = r1filename;
-    r2 = r2filename;
-    r3 = r3filename;
+    this->r1 = r1filename;
+    this->r2 = r2filename;
+    this->r3 = r3filename;
     initialized = true;
+    is_atac = true;
 }
 
 bool reads_demuxer::scan_atac(){
@@ -282,10 +293,10 @@ bool reads_demuxer::scan_atac(){
             exit(1);
         }
         
-        unsigned long bc_key;
+        unsigned long bc_key = 0;
         // ATAC barcode is in seq_i
         // Orientation: reverse complement, end of read
-        if (whitelist.lookup2_er(seq_i->seq.s, bc_key, false)){
+        if (whitelist->lookup2_er(seq_i->seq.s, bc_key, false)){
             int species = bc2species[bc_key];
             write_fastq(seq_f->name.s, seq_f->name.l, seq_f->seq.s, 
                 seq_f->seq.l, seq_f->qual.s, species*3);
@@ -299,6 +310,7 @@ bool reads_demuxer::scan_atac(){
     kseq_destroy(seq_f);
     kseq_destroy(seq_r);
     kseq_destroy(seq_i);
+    close();
     return true;
 }
 

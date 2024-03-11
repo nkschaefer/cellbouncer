@@ -24,7 +24,10 @@
 #include <htswrapper/seq_fuzzy_match.h>
 #include <htswrapper/bc_scanner.h>
 #include <mixtureDist/functions.h>
+#include <mixtureDist/mixtureDist.h>
+#include <mixtureDist/mixtureModel.h>
 #include "common.h"
+
 
 using std::cout;
 using std::endl;
@@ -58,6 +61,7 @@ void help(int code){
     fprintf(stderr, "       STARsolo. Only cells in this list will be processed.\n");
     fprintf(stderr, "\n   ===== OPTIONAL =====\n");
     fprintf(stderr, "   --help -h Display this message and exit.\n");
+    
     fprintf(stderr, "   --barcodes -b A path to a file listing MULTIseq well IDs and corresponding\n");
     fprintf(stderr, "       barcodes, tab separated. If you do not provide one, the default file (in\n");
     fprintf(stderr, "       the data directory) will be used.\n");
@@ -66,6 +70,7 @@ void help(int code){
     fprintf(stderr, "   --doublet_rate -D What is the prior expected doublet rate?\n");
     fprintf(stderr, "       (OPTIONAL; default = 0.1). Must be a decimal between 0 and 1,\n");
     fprintf(stderr, "       exclusive.\n");
+    fprintf(stderr, "   --output_unsassigned -u Print entries for unassigned barcodes in assignments file\n");
     exit(code);
 }
 
@@ -151,8 +156,9 @@ void dump_counts(string& filename,
     fclose(f);
 }
      
-void load_counts(string& filename,
-    robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >& bc_ms_counts){
+int load_counts(string& filename,
+    robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >& bc_ms_counts,
+    vector<string>& labels){
     
     string line;
     ifstream inf(filename);
@@ -177,22 +183,158 @@ void load_counts(string& filename,
                 }
                 else{
                     int val = atoi(field.c_str());
-                    bc_ms_counts[cur_bc.to_ulong()].push_back(make_pair(-val, header[idx]));
+                    if (val > 0){
+                        bc_ms_counts[cur_bc.to_ulong()].push_back(make_pair(-val, header[idx]));
+                    }
                 }
             }
             ++idx;
         }
         first = false;
     }
+
+    for (int i = 0; i < header.size()-1; ++i){
+        labels.push_back(header[i+1]);
+    }
+    return header.size()-1;
 }
 
 void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >& bc_ms_counts,
+    vector<string> labels,
     robin_hood::unordered_map<unsigned long, string>& assn1,
     robin_hood::unordered_map<unsigned long, string>& assn2,
-    robin_hood::unordered_map<unsigned long, double>& assn_llr){
+    robin_hood::unordered_map<unsigned long, double>& assn_llr,
+    bool output_unassigned){
 
-    vector<int> valid;
-    vector<int> noise;
+    int n_labels = labels.size();
+
+    vector<vector<double> > obs;
+    vector<unsigned long> bcs;
+
+    vector<mixtureDist> dists;
+    
+    double off_target = 0.1;
+    double covhi = 100;
+    double covlow = 1;
+
+    vector<string> names = {"multinomial", "poisson"};
+    for (int i = 0; i < n_labels; ++i){
+        vector<double> params;
+        for (int j = 0; j < n_labels; ++j){
+            if (j == i){
+                params.push_back(1.0 - off_target);
+            }
+            else{
+                params.push_back(off_target/(double)(n_labels-1));
+            }
+        }
+        mixtureDist dist(names, vector<vector<double> >{ params, vector<double>{ covhi }});
+        dist.name = labels[i];
+        dist.set_num_inputs(0, n_labels);
+        dists.push_back(dist);
+        for (int j = i + 1; j < n_labels; ++j){
+            vector<double> params2;
+            for (int k = 0; k < n_labels; ++k){
+                if (k == i || k == j){
+                    params2.push_back((1.0-off_target)/2.0);
+                }
+                else{
+                    params2.push_back(off_target/(n_labels-2));
+                }
+            }
+            mixtureDist dist2(names, vector<vector<double> >{ params2, vector<double>{ covhi }});
+            if (labels[i] < labels[j]){
+                dist2.name = labels[i] + "+" + labels[j];
+            }
+            else{
+                dist2.name = labels[j] + "+" + labels[i];
+            }
+            dist2.set_num_inputs(0, n_labels);
+            dists.push_back(dist2);
+        }
+    }
+
+    // Create a dist for garbage
+    vector<double> params_noise;
+    for (int i = 0; i < i < n_labels; ++i){
+        params_noise.push_back(1.0/(double)n_labels);
+    }
+    mixtureDist dist_noise(names, vector<vector<double> >{ params_noise, vector<double>{ covlow }});
+    dist_noise.name = "noise";
+    dist_noise.set_num_inputs(0, n_labels);
+    dists.push_back(dist_noise);
+
+    for (robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >::iterator x = 
+        bc_ms_counts.begin(); x != bc_ms_counts.end(); ++x){
+        
+        int tot = 0;
+        vector<double> row;
+        for (int i = 0; i < x->second.size(); ++i){
+            tot += -x->second[i].first;
+            row.push_back((double)-x->second[i].first);
+        }
+        if (tot > 0){
+            row.push_back((double)tot);
+            obs.push_back(row);
+            bcs.push_back(x->first);
+        }
+    }
+
+    mixtureModel mod(dists);
+    mod.fit(obs);
+    mod.print();
+    exit(0);
+
+}
+
+void assign_ids3(robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >& bc_ms_counts,
+    int n_labels,
+    robin_hood::unordered_map<unsigned long, string>& assn1,
+    robin_hood::unordered_map<unsigned long, string>& assn2,
+    robin_hood::unordered_map<unsigned long, double>& assn_llr,
+    bool output_unassigned){
+
+    vector<vector<double> > obs;
+    vector<unsigned long> bcs;
+
+    // Define 3 distributions:
+    // Single-label, high count
+    // Double-label, high count
+    // Noise (3+ labels), low count
+    vector<mixtureDist> dists;
+    
+    double off_target = 0.1;
+    vector<double> params_single = { 1.0-off_target, off_target/2, off_target/2 };
+    vector<double> params_double = { (1.0-off_target)/2, (1.0-off_target)/2, off_target };
+    vector<double> params_noise = { 1.0/3.0, 1.0/3.0, 1.0/3.0 };
+    
+    /* 
+    vector<string> names = {"multinomial", "poisson"};
+    mixtureDist singlet(names, vector<vector<double> >{ params_single, vector<double>{ 100 } });
+    singlet.name = "singlet";
+    mixtureDist doublet(names, vector<vector<double> >{ params_double, vector<double>{ 100 } });
+    doublet.name = "doublet";
+    mixtureDist noise(names, vector<vector<double> >{ params_noise, vector<double>{ 1 } });
+    noise.name = "noise";
+    singlet.set_num_inputs(0, 3);
+    doublet.set_num_inputs(0, 3);
+    noise.set_num_inputs(0, 3); 
+    dists.push_back(singlet);
+    dists.push_back(doublet);
+    dists.push_back(noise);
+    */
+    mixtureDist singlet("multinomial", params_single);
+    mixtureDist doublet("multinomial", params_double);
+    mixtureDist noise("multinomial", params_noise);
+    singlet.name = "singlet";
+    doublet.name = "doublet";
+    noise.name = "noise";
+    singlet.set_num_inputs(0, 3);
+    doublet.set_num_inputs(0, 3);
+    noise.set_num_inputs(0, 3);
+    dists.push_back(singlet);
+    dists.push_back(doublet);
+    dists.push_back(noise);
 
     for (robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >::iterator x = 
         bc_ms_counts.begin(); x != bc_ms_counts.end(); ++x){
@@ -201,8 +343,92 @@ void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string
         if (x->second[0].first == 0){
             // No counts
             continue;
-        }
+        }    
 
+        int tot = 0;
+        int past2 = 0;
+        for (int i = 0; i < x->second.size(); ++i){
+            tot += -x->second[i].first;
+            if (i > 1){
+                past2 += -x->second[i].first;
+            }
+        }
+        vector<double> row = { (double)-x->second[0].first, (double)-x->second[1].first, (double)past2 };
+        fprintf(stderr, "ROW %d %d %d\n", -x->second[0].first, -x->second[1].first, past2);
+        obs.push_back(row);
+        bcs.push_back(x->first);
+    }
+    
+    mixtureModel mod(dists);
+    mod.fit(obs);
+    mod.print();
+    exit(0);
+
+}
+
+double median(vector<int>& vals){
+    sort(vals.begin(), vals.end());
+    if (vals.size() == 0){
+        return 0;
+    }
+    else if (vals.size() == 1){
+        return vals[0];
+    }
+    if (vals.size() % 2 == 0){
+        double v1 = (double)vals[vals.size()/2];
+        double v2 = (double)vals[vals.size()/2-1];
+        return (0.5*v1 + 0.5*v2);
+    }
+    else{
+        return vals[(vals.size()-1)/2];
+    }
+}
+
+void assign_ids2(robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >& bc_ms_counts,
+    robin_hood::unordered_map<unsigned long, string>& assn1,
+    robin_hood::unordered_map<unsigned long, string>& assn2,
+    robin_hood::unordered_map<unsigned long, double>& assn_llr,
+    bool output_unassigned){
+
+    vector<int> valid;
+    vector<int> doub;
+    vector<int> noise;
+    
+    double sum1 = 0.0;
+    double tot1 = 0.0;
+    double sum2 = 0.0;
+    double tot2 = 0.0;
+    double sum3 = 0.0;
+    double tot3 = 0.0;
+
+    for (robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >::iterator x = 
+        bc_ms_counts.begin(); x != bc_ms_counts.end(); ++x){
+         
+        // If we don't have a positive count for the second BC, add a pseudocount
+        bool pseudo2 = false;
+        // If we don't have a positive count for the third BC, add a pseudocount
+        bool pseudo3 = false;
+
+        sort(x->second.begin(), x->second.end());
+        if (x->second.size() == 0){
+            // No counts
+            continue;
+        }
+        else if (x->second.size() == 1){
+            pseudo2 = true;
+            pseudo3 = true;
+            x->second.push_back(make_pair(-1, ""));
+            x->second.push_back(make_pair(-1, ""));
+        }
+        else if (x->second.size() == 2){
+            pseudo3 = true;
+            x->second.push_back(make_pair(-1, ""));
+        }
+        
+        int tot = 0;
+        for (int i = 0; i < x->second.size(); ++i){
+            tot += -x->second[i].first;
+        }
         double ll1 = 0;
         double ll2 = 0;
         double ll3 = 0;
@@ -222,13 +448,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string
             double mean_err = 0;
             double tot_err = 0;
             for (int i = ngroups; i < x->second.size(); ++i){
-                // Use a pseudocount (don't let mean error count drop below 1)
-                if (x->second[i].first == 0){
-                    mean_err += 1.0;
-                }
-                else{
-                    mean_err += -(double)x->second[i].first;
-                }
+                mean_err += -(double)x->second[i].first;
                 tot_err++;
             }
             if (tot_err == 0){
@@ -246,6 +466,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string
             for (int i = ngroups; i < x->second.size(); ++i){
                 ll += dpois(-x->second[i].first, mean_err);
             }
+            
             if (ngroups == 1){
                 ll1 = ll;
             }
@@ -256,50 +477,105 @@ void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string
                 ll3 = ll;
             }
         }
+        
+        if (pseudo2){
+            tot--;
+        }
+        if (pseudo3){
+            tot--;
+        }
+        
+        double ll1b = dpois(tot, 17);
+        double ll2b = dpois(tot, 20);
+        double ll3b = dpois(tot, 13);
+
+        double p_contam = 1.0-ppois(tot, 13);
+        double frac1 = (double)-x->second[0].first / (double)tot;
+        
+        string name;
+        double llr;
+        bool store = false;
+        
+        double llmax = ll1;
+        if (ll2 > llmax){
+            llmax = ll2;
+        }
+        if (ll3 > llmax){
+            llmax = ll3;
+        }
+        double probsum = pow(2, ll1-llmax) + pow(2, ll2-llmax) + pow(2, ll3-llmax);
+        probsum = log2(probsum) + llmax;
+        double p1 = pow(2, ll1-probsum);
+        double p2 = pow(2, ll2-probsum);
+        double p3 = pow(2, ll3-probsum);
+        
+        sum1 += p1*(double)tot;
+        tot1 += p1;
+        sum2 += p2*(double)tot;
+        tot2 += p2;
+        sum3 += p3*(double)tot;
+        tot3 += p3;
 
         if (ll3 > ll1 && ll3 > ll2){
             // 3 or more == noise. Don't make an assignment.        
-            if (x->second[0].first != 0){
-                noise.push_back(-x->second[0].first);
-            }
-            if (x->second[1].first != 0){
-                noise.push_back(-x->second[1].first);
-            }
-            if (x->second[2].first != 0){
-                noise.push_back(-x->second[2].first);
-            }
+            //fprintf(stdout, "N\t%f\t%f\t%f\t%f\t%f\n", llr, p_contam, p1, p2, p3);
+            fprintf(stdout, "N\t%f\t%f\t%f\t%f\t%f\t%f\n", ll1, ll2, ll3, ll1b, ll2b, ll3b);
+            noise.push_back(tot);
         }
         else if (ll2 > ll1 && ll2 > ll3){
-            // Doublet.
-            valid.push_back(-x->second[0].first);
-            valid.push_back(-x->second[1].first);
-            if (x->second[2].first != 0){
-                noise.push_back(-x->second[2].first);
+            if (!pseudo2){
+                // Doublet.
+                store = true;
+                doub.push_back(tot);
+                if (ll1 > ll3){
+                    llr = ll2 - ll1;
+                }
+                else{
+                    llr = ll2 - ll3;
+                }
+                //fprintf(stdout, "D\t%f\t%f\t%f\t%f\t%f\n", llr, p_contam, p1, p2, p3);
+                fprintf(stdout, "D\t%f\t%f\t%f\t%f\t%f\t%f\n", ll1, ll2, ll3, ll1b, ll2b, ll3b);
+                if (x->second[0].second < x->second[1].second){
+                    name = x->second[0].second + "+" + x->second[1].second;
+                }
+                else{
+                    name = x->second[1].second + "+" + x->second[0].second;
+                }
             }
-            string first = x->second[0].second;
-            string second = x->second[1].second;
-            if (second < first){
-                string tmp = first;
-                first = second;
-                second = tmp;
+            else{
+                // Noise
+                noise.push_back(tot);
             }
-            assn1.emplace(x->first, first);
-            assn2.emplace(x->first, second);
-            assn_llr.emplace(x->first, ll2-ll1);
         }
         else if (ll1 > ll2 && ll1 > ll3){
-            valid.push_back(-x->second[0].first);
-            if (x->second[1].first != 0){
-                noise.push_back(-x->second[1].first);
-            }
-            if (x->second[2].first != 0){
-                noise.push_back(-x->second[2].first);
-            }
-            assn1.emplace(x->first, x->second[0].second);
-            assn_llr.emplace(x->first, ll1-ll2);
+            store = true;
+            llr = ll1 - ll2;
+            name = x->second[0].second;
+            valid.push_back(tot);
+            //fprintf(stdout, "S\t%f\t%f\t%f\t%f\t%f\n", llr, p_contam, p1, p2, p3);
+            fprintf(stdout, "S\t%f\t%f\t%f\t%f\t%f\t%f\n", ll1, ll2, ll3, ll1b, ll2b, ll3b);
+        }
+        else{
+            //noise.push_back(tot);
         }
     }
     
+    sum1 /= tot1;
+    sum2 /= tot2;
+    sum3 /= tot3;
+
+    fprintf(stderr, "1 %f 2 %f 3 %f\n", sum1, sum2, sum3);
+
+    double med_noise = median(noise);
+    double l_noise = (med_noise - 1.0/3.0)*(50.0/49.0);
+    fprintf(stderr, "noise %f\n", l_noise);
+    double med_valid = median(valid);
+    double l_valid = (med_valid - 1.0/3.0)*(50.0/49.0);
+    fprintf(stderr, "valid %f\n", l_valid); 
+    double med_doub = median(doub);
+    double l_doub = (med_doub - 1.0/3.0)*(50.0/49.0);
+    fprintf(stderr, "doub %f\n", l_doub); 
+    exit(0);
     // Optional second pass through data: find mean successful count and mean unsuccessful
     // count; throw out identifications where successful count is more likely under the
     // data set-wide unsuccessful count distribution.
@@ -440,6 +716,7 @@ int main(int argc, char *argv[]) {
        {"cell_barcodes", required_argument, 0, 'B'},
        {"doublet_rate", required_argument, 0, 'D'},
        {"mismatches", required_argument, 0, 'M'},
+       {"output_unassigned", no_argument, 0, 'u'},
        {0, 0, 0, 0} 
     };
     
@@ -451,6 +728,7 @@ int main(int argc, char *argv[]) {
     string wlfn = "";
     string cell_barcodesfn;
     int mismatches = -1;
+    bool output_unassigned = false;
 
     fprintf(stderr, "%s\n", STRINGIZE(PROJ_ROOT));
     string pr = STRINGIZE(PROJ_ROOT);
@@ -466,7 +744,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:1:2:m:M:w:b:B:D:h", 
+    while((ch = getopt_long(argc, argv, "o:1:2:m:M:w:b:B:D:uh", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -502,6 +780,9 @@ int main(int argc, char *argv[]) {
             case 'D':
                 doublet_rate = atof(optarg);
                 break;
+            case 'u':
+                output_unassigned = true;
+                break;
             default:
                 help(0);
                 break;
@@ -520,12 +801,16 @@ int main(int argc, char *argv[]) {
     
     // Data structure to store counts
     robin_hood::unordered_map<unsigned long, vector<pair<int, string> > > bc_ms_counts;
+    
+    // How many possible MULTI-seq labels are there?
+    int n_labels;
+    vector<string> labels;
 
     string countsfilename = output_prefix + ".counts";
     if (file_exists(countsfilename)){
         fprintf(stderr, "Loading previously-computed counts (delete file to avoid this \
 next time)...\n");
-        load_counts(countsfilename, bc_ms_counts);
+        n_labels = load_counts(countsfilename, bc_ms_counts, labels);
     }
     else{
         if (read1fn.size() == 0 || read2fn.size() == 0){    
@@ -587,7 +872,8 @@ well mappings\n");
             // If the user has omitted one or more wells that turn up often in the data, we will
             // alert the user about this later.
         }
-        
+        n_labels = well2id.size();
+
         // Initiate MULTIseq barcode whitelist
         seq_fuzzy_match msmatch(bclist, mismatches, true, true);
         
@@ -623,6 +909,7 @@ well mappings\n");
             ms_wells.push_back(bw->second);
             if (well2id.count(bw->second) > 0){
                 ms_names.push_back(well2id[bw->second]);
+                labels.push_back(well2id[bw->second]);
             }
             else{
                 ms_names.push_back("");
@@ -713,7 +1000,7 @@ well mappings\n");
     robin_hood::unordered_map<unsigned long, string> assn1;
     robin_hood::unordered_map<unsigned long, string> assn2;
     robin_hood::unordered_map<unsigned long, double> assn_llr;
-    assign_ids(bc_ms_counts, assn1, assn2, assn_llr);
+    assign_ids2(bc_ms_counts, assn1, assn2, assn_llr, output_unassigned);
     
     string assnfilename = output_prefix + ".assignments";
     write_assignments(assnfilename, assn1, assn2, assn_llr);

@@ -270,7 +270,8 @@ void species_kmer_counter::scan_gex_data(rp_info& params){
         
         bool dup_read = false;
         if (umi_start >= 0 && umi_len > 0){
-            umi u(params.seq_f + umi_start, umi_len);
+            unique_lock<mutex> lock(this->umi_mutex);
+            umi u(params.seq_f.c_str() + umi_start, umi_len);
             if (bc_species_umis.count(bc_key) == 0){
                 umi_set* s = new umi_set(umi_len);
                 bc_species_umis.emplace(bc_key, s);
@@ -289,7 +290,7 @@ void species_kmer_counter::scan_gex_data(rp_info& params){
         int nk = scan_seq_kmers(params.seq_r);
 
         if (nk > 0){    
-            unique_lock<mutex> lock(this->data_mutex);
+            unique_lock<mutex> lock(this->counts_mutex);
             if (bc_species_counts->count(bc_key) == 0){
                 map<short, int> m;
                 bc_species_counts->emplace(bc_key, m);
