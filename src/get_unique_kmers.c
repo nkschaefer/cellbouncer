@@ -387,7 +387,6 @@ int main(int argc, char* argv[]){
     int ties[num_tables];
     int finished = 0;
     while (!finished){
-        break;
         // Each iteration: check for unique k-mers
         // Then increment only iterators with lowest sort-order k-mers
         // A k-mer is unique if it's lower sort order than the other streams
@@ -455,7 +454,6 @@ int main(int argc, char* argv[]){
     // Any remaining entries in the last iterator are unique.
     for (int i = 0; i < num_tables; ++i){
         while (tables[i]->csuf != NULL){
-            break;
             char* b = Current_Kmer(tables[i], &kmer_text[0]);
             print_dat(&outs[i], b, tree, maxdust);
             Next_Kmer_Entry(tables[i]);
