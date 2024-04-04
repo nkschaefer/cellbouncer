@@ -30,6 +30,7 @@
 #include <htswrapper/robin_hood/robin_hood.h>
 #include <mixtureDist/mixtureDist.h>
 #include <mixtureDist/mixtureModel.h>
+#include <mixtureDist/functions.h>
 #include "demux_species_io.h"
 #include "reads_demux.h"
 #include "species_kmers.h"
@@ -67,6 +68,17 @@ void help(int code){
     fprintf(stderr, "       Standard behavior is to create this file and then demultiplex\n");
     fprintf(stderr, "       reads; this option causes the program to quit after generating\n");
     fprintf(stderr, "       the file.\n");
+    fprintf(stderr, "   --batch_num -b If you have split input read files into chunks (i.e. using\n");
+    fprintf(stderr, "       split_read_files in the utilities directory), you can run this program\n");
+    fprintf(stderr, "       once per chunk (i.e. on a cluster) and then combine the results.\n");
+    fprintf(stderr, "       Supply a unique index for the batch (i.e. whatever was appended to the split\n");
+    fprintf(stderr, "       fastq file names) and this run will count k-mers only and append the batch\n");
+    fprintf(stderr, "       index to the count data file name. Use the same --output_directory for all\n");
+    fprintf(stderr, "       batches from the same data set. Once all batches have run, use the\n");
+    fprintf(stderr, "       combine_species_counts program in the utilities directory to combine data\n");
+    fprintf(stderr, "       from all batches. Then proceed again with this program (it will automatically\n");
+    fprintf(stderr, "       load the combined counts and demultiplex the given reads, which can be the\n");
+    fprintf(stderr, "       split read files or the original onesi).\n");
     fprintf(stderr, "\n   ===== READ FILE INPUT OPTIONS =====\n");
     fprintf(stderr, "   --atac_r1 -1 ATAC R1 reads to demultiplex (can specify multiple times)\n");
     fprintf(stderr, "   --atac_r2 -2 ATAC R2 reads to demultiplex (can specify multiple times)\n");
@@ -143,11 +155,23 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
     robin_hood::unordered_map<unsigned long, short>& bc2species, 
     robin_hood::unordered_map<unsigned long, pair<unsigned int, unsigned int> >& bc2doublet,
     robin_hood::unordered_map<unsigned long, double>& bc2llr,
+    robin_hood::unordered_set<unsigned long>& bcs_pass,
     map<short, string>& idx2species,
-    double doublet_rate){
+    double doublet_rate,
+    string& model_out_name){
     
+    fprintf(stderr, "Fitting model to counts...\n");
+
     int n_species = idx2species.size();
     
+    // Create output file to write dist params 
+    FILE* outf = fopen(model_out_name.c_str(), "w");
+    fprintf(outf, "name\tweight");
+    for (map<short, string>::iterator i2s = idx2species.begin(); i2s != idx2species.end(); ++i2s){
+        fprintf(outf, "\t%s", i2s->second.c_str());
+    }
+    fprintf(outf, "\n");
+
     vector<mixtureDist> dists;
     
     // Which component distributions represent doublets? 
@@ -187,7 +211,6 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
         dists.push_back(dist);
         singlet_dist_count++;
         
-        
         // Create doublet distribution
         for (int j = i2s->first+1; j < n_species; ++j){
             vector<double> doublet_params;
@@ -226,8 +249,8 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
         bc_species_counts.begin(); x != bc_species_counts.end(); ++x){
         bcs.push_back(x->first);
         vector<double> row;
-        for (map<short, int>::iterator sc = x->second.begin(); sc != x->second.end(); ++sc){
-            row.push_back((double)sc->second);
+        for (short i = 0; i < idx2species.size(); ++i){
+            row.push_back((double)x->second[i]);
         }
         obs.push_back(row);
     }
@@ -248,14 +271,27 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
     // Create and fit mixture model 
     mixtureModel mod(dists, dist_weights); 
     mod.fit(obs);
-    mod.print();
+    
+    for (int i = 0; i < mod.n_components; ++i){
+        fprintf(outf, "%s\t%f", mod.dists[i].name.c_str(), mod.weights[i]);
+        for (int j = 0; j < mod.dists[i].params[0].size(); ++j){
+            fprintf(outf, "\t%f", mod.dists[i].params[0][j]);
+        }
+        fprintf(outf, "\n");   
+    }
+    fclose(outf);
 
     // Use fit distributions and doublet rate prior to assign identities
     // and log likelihood ratios to cell barcodes
 
+    // Also prepare data for second mixture model fitting to filter cells
+    vector<vector<double> > obs_filt;
+    vector<unsigned long> bcs_filt;
+
     for (int i = 0; i < obs.size(); ++i){
         
         vector<pair<double, int> > lls;
+        double rowtot = 0;
         for (int j = 0; j < mod.n_components; ++j){
             double ll = mod.dists[j].loglik(obs[i]);
             // Incorporate prior prob of doublet rate
@@ -267,19 +303,56 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
             }
             lls.push_back(make_pair(-ll, j));
         }
+        for (int j = 0; j < obs[i].size(); ++j){
+            rowtot += obs[i][j];
+        }
         sort(lls.begin(), lls.end());
 
         double llr = -lls[0].first - -lls[1].first;
-        int maxmod = lls[0].second;
-        bool is_doublet = dist_doublet[maxmod];
-        if (is_doublet){
-            bc2doublet.emplace(bcs[i], dist2doublet_comb[maxmod]);            
+        
+        if (llr > 0){
+            vector<double> obs_filt_row{ rowtot, llr };
+            obs_filt.push_back(obs_filt_row);
+            bcs_filt.push_back(bcs[i]);
+
+            int maxmod = lls[0].second;
+            bool is_doublet = dist_doublet[maxmod];
+            if (is_doublet){
+                bc2doublet.emplace(bcs[i], dist2doublet_comb[maxmod]);            
+            }
+            else{
+                bc2species.emplace(bcs[i], dist2singlet[maxmod]);
+            }
+            bc2llr.emplace(bcs[i], llr);
+        
         }
-        else{
-            bc2species.emplace(bcs[i], dist2singlet[maxmod]);
-        }
-        bc2llr.emplace(bcs[i], llr);
     }
+    
+    vector<mixtureDist> dists_filt;
+    vector<vector<double> > params_low;
+    pair<double, double> gammalow = gamma_moments(1, 1);
+    pair<double, double> gammahigh = gamma_moments(100, 100);
+    fprintf(stderr, "gamma %f %f | %f %f\n", gammalow.first, gammalow.second, gammahigh.first, gammahigh.second);
+    params_low.push_back(vector<double>{ 1 });
+    params_low.push_back(vector<double>{ gammalow.first, gammalow.second });
+    vector<vector<double> > params_high;
+    params_high.push_back(vector<double>{ 1000 });
+    params_high.push_back(vector<double>{ gammahigh.first, gammahigh.second });
+    dists_filt.push_back(mixtureDist(vector<string>{ "poisson", "gamma"}, params_low));
+    dists_filt.push_back(mixtureDist(vector<string>{ "poisson", "gamma"}, params_high));
+    mixtureModel model_filt = mixtureModel(dists_filt);
+    fprintf(stderr, "Fitting distributions to filter the barcode list...\n");
+    model_filt.fit(obs_filt);
+    fprintf(stderr, "done\n");
+    int npass = 0;
+    for (int i = 0; i < obs_filt.size(); ++i){
+        if (model_filt.assignments[i] == 1){
+            unsigned long bc = bcs_filt[i];
+            bcs_pass.insert(bc);
+            ++npass;
+        }
+    } 
+    fprintf(stderr, "%d barcodes likely represent cells\n", npass);
 }
 
 int main(int argc, char *argv[]) {    
@@ -301,6 +374,7 @@ int main(int argc, char *argv[]) {
        {"doublet_rate", required_argument, 0, 'D'},
        {"k", required_argument, 0, 'k'},
        {"num_threads", required_argument, 0, 't'},
+       {"batch_num", required_argument, 0, 'b'},
        {0, 0, 0, 0} 
     };
     
@@ -322,6 +396,7 @@ int main(int argc, char *argv[]) {
     vector<string> kmerfiles;
     vector<string> speciesnames;
     bool dump = false;
+    int batch_num = -1;
 
     int option_index = 0;
     int ch;
@@ -329,7 +404,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "t:o:1:2:3:r:R:x:X:n:k:w:W:D:dh", 
+    while((ch = getopt_long(argc, argv, "t:o:1:2:3:r:R:x:X:n:k:w:W:D:b:dh", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -383,6 +458,9 @@ int main(int argc, char *argv[]) {
             case 'D':
                 doublet_rate = atof(optarg);
                 break;
+            case 'b':
+                batch_num = atoi(optarg);
+                break;
             default:
                 help(0);
                 break;
@@ -405,16 +483,46 @@ int main(int argc, char *argv[]) {
     string speciesfilename = outdir + "species_names.txt";
     bool countsfile_given = false;
     bool speciesfile_given = false;
-    if (file_exists(countsfilename) && file_exists(speciesfilename)){
-        countsfile_given = true;
-        speciesfile_given = true;
+    string assnfilename = outdir + "species.assignments";
+    bool assnfile_given = false;
+    string assnfilename_filt = outdir + "species.filt.assignments";
+    string convfilename = outdir + "bcmap.txt";
+    bool convfile_given = false;
+    
+    bool batch_given = false;
+    string batch_str = "";
+    if (batch_num >= 0){
+        batch_given = true;
+        char batchbuf[100];
+        sprintf(&batchbuf[0], "%d", batch_num);
+        batch_str = batchbuf;
+        countsfilename = outdir + "species_counts." + batch_str + ".txt";
+        speciesfilename = outdir + "species_names." + batch_str + ".txt";
+        convfilename = outdir + "bcmap." + batch_str + ".txt";
     }
-    else{
-        countsfilename = "";
-        speciesfilename = "";
+    
+    if (file_exists(countsfilename) && file_exists(speciesfilename)){
+        if (batch_given){
+            // Nothing to do here
+            fprintf(stderr, "Previous run detected in batch mode. Nothing to do.\n");
+            return 0;
+        }
+        else{
+            fprintf(stderr, "Previous run detected. Loading data from %s\n", outdir.c_str());
+            fprintf(stderr, "To avoid this behvaior, specify a different --output_directory or delete \
+the current one (or its contents).\n");
+            countsfile_given = true;
+            speciesfile_given = true;
+            if (file_exists(assnfilename)){
+                assnfile_given = true;
+            }
+            if (file_exists(convfilename)){
+                convfile_given = true;
+            }
+        }
     }
 
-    if (whitelist_atac_filename == "" && whitelist_rna_filename == ""){
+    if (whitelist_atac_filename == "" && whitelist_rna_filename == "" && !assnfile_given && !dump){
         fprintf(stderr, "ERROR: at least one whitelist is required\n");
         exit(1);
     }
@@ -429,19 +537,22 @@ counts file options)\n");
             exit(1);
         }
     }
-    if (atac_r1files.size() > 0 && whitelist_atac_filename == ""){
-        fprintf(stderr, "ERROR: if ATAC data is provided, you must provide an ATAC barcode whitelist\n");
+    if (atac_r1files.size() > 0 && !assnfile_given && whitelist_atac_filename == ""){
+        fprintf(stderr, "ERROR: if ATAC data is provided, you must provide an ATAC barcode whitelist, unless \
+you have already assigned cells to species\n");
         exit(1);
     }
-    if (rna_r1files.size() > 0 && whitelist_rna_filename == ""){
-        fprintf(stderr, "ERROR: if RNA-seq is provided, you must provide an RNA-seq barcode whitelist\n");
+    if (rna_r1files.size() > 0 && !assnfile_given && whitelist_rna_filename == ""){
+        fprintf(stderr, "ERROR: if RNA-seq is provided, you must provide an RNA-seq barcode whitelist, unless \
+you have already assigned cells to species\n");
         exit(1);
     }
-    if (custom_r1files.size() > 0 && whitelist_rna_filename == ""){
-        fprintf(stderr, "ERROR: if a custom type of read data is provied, you must provide an RNA-seq barcode whitelist\n");
+    if (custom_r1files.size() > 0 && !assnfile_given && whitelist_rna_filename == ""){
+        fprintf(stderr, "ERROR: if a custom type of read data is provied, you must provide an RNA-seq barcode \
+whitelist, unless you have already assigned cells to species\n");
         exit(1);
     }
-    if (kmerbase == "" && (countsfilename == "" || speciesfilename == "")){
+    if (kmerbase == "" && (!countsfile_given || !speciesfile_given)){
         fprintf(stderr, "ERROR: you must either load counts from a prior run using \
 -C and -S, or specify k-mer count files using -k.\n");
         exit(1);
@@ -473,6 +584,18 @@ both -w and -W are required.\n");
             k-mer counts, you must provide an RNA-seq bc whitelist (-W)\n");
         exit(1);
     }
+    if (atac_r1files.size() > 0 && rna_r1files.size() > 0 && !dump){
+        // Demultiplexing multiome data.
+        if (whitelist_rna_filename == "" || whitelist_atac_filename == ""){
+            // Missing at least one whitelist file.
+            if (!convfile_given){
+                fprintf(stderr, "ERROR: demultiplexing multiome (ATAC and RNA-seq) data, but you \
+have not provided the two required (RNA-seq and ATAC-seq) whitelists, and no data from a previous \
+run was detected. Please provide the required whitelists.\n");
+                exit(1);
+            }
+        }
+    }
     if (atac_r1files.size() > 0 && rna_r1files.size() > 0 && 
         (whitelist_atac_filename == "" || whitelist_rna_filename == "")){
         fprintf(stderr, "ERROR: demultiplexing combined ATAC and RNA-seq data (multiome), \
@@ -487,7 +610,7 @@ but whitelist files (-w and -W) not provided. Exiting.\n");
         fprintf(stderr, "ERROR: doublet rate must be between 0 and 1, exclusive.\n");
         exit(1);
     }
-   
+
     // Attempt to read unique kmer data
     if (kmerbase != ""){
         string sname = kmerbase + ".names";
@@ -535,27 +658,16 @@ data for %s with more species.\n", kmerbase.c_str());
         // Assume directory already exists
     }
 
-    // Read whitelists
-    // Not necessary if reading pre-generated species counts from a file AND
-    // not demultiplexing reads.
+    // Set up names of files to read/write
+    string model_out_name = outdir + "dists.txt";
+    
+    // Declare barcode whitelist
     bc_whitelist wl;
+
+    // True if both ATAC and RNA-seq data provided
+    // (requires two whitelists)
     bool multiome = false;
 
-    if (!(dump && countsfile_given)){
-        if (whitelist_rna_filename != "" && whitelist_atac_filename != ""){
-            wl.init(whitelist_rna_filename, whitelist_atac_filename);
-            multiome = true;
-        }
-        else if (whitelist_rna_filename != ""){
-            wl.init(whitelist_rna_filename);
-            multiome = false;
-        }
-        else{
-            wl.init(whitelist_atac_filename);
-            multiome = false;
-        }
-    }
-    
     // Map each species name to a numeric index
     map<short, string> idx2species;
     map<string, short> species2idx;
@@ -571,7 +683,25 @@ data for %s with more species.\n", kmerbase.c_str());
     
     robin_hood::unordered_map<unsigned long, map<short, int> > bc_species_counts;
     
+    // Multiome data uses different ATAC and RNA-seq barcodes
+    // This maps an RNA-seq barcode (which goes into the BAM) to an ATAC-seq barcode
+    robin_hood::unordered_map<unsigned long, unsigned long> bc_conversion;
+
     if (!countsfile_given){
+
+        // Read barcode whitelist(s)
+        if (whitelist_rna_filename != "" && whitelist_atac_filename != ""){
+            wl.init(whitelist_rna_filename, whitelist_atac_filename);
+            multiome = true;
+        }
+        else if (whitelist_rna_filename != ""){
+            wl.init(whitelist_rna_filename);
+            multiome = false;
+        }
+        else{
+            wl.init(whitelist_atac_filename);
+            multiome = false;
+        }
         
         // Init species k-mer counter 
         species_kmer_counter counter(num_threads, k, kmerfiles.size(), &wl, &bc_species_counts);
@@ -602,12 +732,7 @@ data for %s with more species.\n", kmerbase.c_str());
 
         // Create file listing species names (in case we need to re-run without
         // loading the BAMs)
-        string species_names_out = outdir;
-        if (species_names_out[species_names_out.length()-1] != '/'){
-            species_names_out += "/";
-        }
-        species_names_out += "species_names.txt";
-        FILE* sn_out = fopen(species_names_out.c_str(), "w");
+        FILE* sn_out = fopen(speciesfilename.c_str(), "w");
         for (map<short, string>::iterator i2s = idx2species.begin(); i2s != idx2species.end();
             ++i2s){
             fprintf(sn_out, "%d\t%s\n", i2s->first, i2s->second.c_str());
@@ -617,16 +742,29 @@ data for %s with more species.\n", kmerbase.c_str());
         // Create a counts file so we don't have to do the expensive process of counting 
         // k-mers next time, if we need to do something over.
 
-        string countsfile_out = outdir;
-        if (countsfile_out[countsfile_out.length()-1] != '/'){
-            countsfile_out += "/";
-        }
-        countsfile_out += "species_counts.txt";
-        FILE* countsfile = fopen(countsfile_out.c_str(), "w");         
+        FILE* countsfile = fopen(countsfilename.c_str(), "w");         
         // Dump species counts
         print_bc_species_counts(bc_species_counts, idx2species, countsfile); 
         fclose(countsfile);
     
+        if (multiome){
+            // Also dump a mapping of RNA -> ATAC barcodes
+            FILE* mapfile = fopen(convfilename.c_str(), "w");
+            for (robin_hood::unordered_map<unsigned long, map<short, int> >::iterator x = 
+                bc_species_counts.begin(); x != bc_species_counts.end(); ++x){
+                unsigned long bc_atac = wl.wl1towl2(x->first);
+                if (bc_atac != 0){
+                    bc_conversion.emplace(x->first, bc_atac);
+                    fprintf(mapfile, "%ld\t%ld\n", x->first, bc_atac);
+                }
+            }            
+            fclose(mapfile);
+        }
+
+        if (batch_given){
+            // Just needed to count species k-mers in reads for this batch. Stop here.
+            return 0;
+        }
     }
     else{
         // Obtain species-specific k-mer counts from a data file (from a previous run), 
@@ -639,40 +777,98 @@ data for %s with more species.\n", kmerbase.c_str());
     robin_hood::unordered_map<unsigned long, short> bc2species;
     robin_hood::unordered_map<unsigned long, pair<unsigned int, unsigned int> > bc2doublet;
     robin_hood::unordered_map<unsigned long, double> bc2llr;
-
-    // Fit a mixture model to the data
-    fit_model(bc_species_counts, bc2species, bc2doublet, bc2llr, idx2species,
-        doublet_rate);
-
-    FILE* bc_out;
-    if (dump){
-        bc_out = stdout;
-    }
-    else{
-        string bc_out_name = outdir;
-        if (bc_out_name[bc_out_name.length()-1] != '/'){
-            bc_out_name += "/";
-        }   
-        bc_out_name += "bc_assignments.txt";
-        bc_out = fopen(bc_out_name.c_str(), "w");
-    }
     
-    print_assignments(bc_out, bc2species, bc2doublet, bc2llr, idx2species);
 
-    if (dump){
-        // Our job is done here
-        exit(0);
+    if (!dump && assnfile_given){
+        
+        // Load assignments from file.
+        string bc_str;
+        string species;
+        char type;
+        double llr;
+        bc cur_bc;
+        ifstream inf(assnfilename.c_str());
+        
+        while (inf >> bc_str >> species >> type >> llr){
+            unsigned long bc_ul = str2bc(bc_str.c_str(), cur_bc);
+            // Don't bother with doublets.
+            if (type == 'S'){
+                bc2species.emplace(bc_ul, species2idx[species]);
+                bc2llr.emplace(bc_ul, llr); 
+            }
+        }
     }
     else{
+        // Fit a mixture model to the data
+        robin_hood::unordered_set<unsigned long> bcs_pass;
+
+        fit_model(bc_species_counts, bc2species, bc2doublet, bc2llr, bcs_pass,
+            idx2species, doublet_rate, model_out_name);
+        
+        FILE* bc_out = fopen(assnfilename.c_str(), "w");
+        print_assignments(bc_out, bc2species, bc2doublet, bc2llr, idx2species, false, bcs_pass);
+        fclose(bc_out);
+
+        // Create filtered version
+        bc_out = fopen(assnfilename_filt.c_str(), "w");
+        print_assignments(bc_out, bc2species, bc2doublet, bc2llr, idx2species, true, bcs_pass);
         fclose(bc_out);
     }
     
+    if (dump){
+        // Our job is done here
+        return 0;
+    }
+    
+    bc_whitelist wl_out;
+
+    // Now we're on to the demultiplexing part.
+    // See if we need to load barcode conversions.
+    if (multiome){
+        if (convfile_given){
+            ifstream inf(convfilename.c_str());
+            unsigned long bc_rna;
+            unsigned long bc_atac;
+            while (inf >> bc_rna >> bc_atac){
+                bc_conversion.emplace(bc_rna, bc_atac);
+            } 
+        }
+        else{
+            // Try load from whitelists.
+            wl.init(whitelist_rna_filename, whitelist_atac_filename);
+            for (robin_hood::unordered_map<unsigned long, map<short, int> >::iterator x = bc_species_counts.begin();
+                x != bc_species_counts.end(); ++x){
+                unsigned long barcode_atac = wl.wl1towl2(x->first);
+                bc_conversion.emplace(x->first, barcode_atac);
+            }
+        }
+        
+        // Initialize the whitelist
+        vector<unsigned long> rnalist;
+        vector<unsigned long> ataclist;
+        for (robin_hood::unordered_map<unsigned long, unsigned long >::iterator x = bc_conversion.begin(); 
+            x != bc_conversion.end(); ++x){
+            rnalist.push_back(x->first);
+            ataclist.push_back(x->second);
+        }
+        wl_out.init(rnalist, ataclist);
+    }
+    else{
+        // Single-whitelist, RNA-seq. only feed it the barcodes that have assignments.
+        vector<unsigned long> ul_list;
+        for (robin_hood::unordered_map<unsigned long, short>::iterator b2s = bc2species.begin(); b2s != 
+            bc2species.end(); ++b2s){
+            ul_list.push_back(b2s->first);
+        } 
+        wl_out.init(ul_list);
+    } 
+
     // See if we can/should create "library files" for multiome data, to save headaches later
     create_library_file(rna_r1files, atac_r1files, custom_r1files, 
         custom_names, idx2species, outdir);
     
     // Now go through reads and demultiplex by species.
-    reads_demuxer demuxer(wl, bc2species, idx2species, outdir);
+    reads_demuxer demuxer(wl_out, bc2species, idx2species, outdir);
 
     for (int i = 0; i < atac_r1files.size(); ++i){
         fprintf(stderr, "Processing ATAC files %s, %s, and %s\n", 

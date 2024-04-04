@@ -36,7 +36,9 @@ void print_assignments(FILE* outf,
     robin_hood::unordered_map<unsigned long, short>& bc2species,
     robin_hood::unordered_map<unsigned long, std::pair<unsigned int, unsigned int> >& bc2doublet,
     robin_hood::unordered_map<unsigned long, double>& bc2llr,
-    std::map<short, std::string>& idx2species);
+    std::map<short, std::string>& idx2species,
+    bool use_filter,
+    robin_hood::unordered_set<unsigned long>& filter);
 void create_library_file(std::vector<std::string>& rna_r1files,
     std::vector<std::string>& atac_r1files,
     std::vector<std::string>& custom_r1files,

@@ -46,7 +46,7 @@ void load_counts_from_file(
     std::vector<std::string>& indvs,   
     std::string& filename);
 
-void dump_cellcounts(FILE* out_cell,
+void dump_cellcounts(gzFile& out_cell,
     robin_hood::unordered_map<unsigned long, std::map<std::pair<int, int>, 
         std::map<std::pair<int, int>, std::pair<float, float> > > >& indv_allelecounts, 
     std::vector<std::string>& samples);

@@ -223,11 +223,17 @@ void print_assignments(FILE* outf,
     robin_hood::unordered_map<unsigned long, short>& bc2species,
     robin_hood::unordered_map<unsigned long, pair<unsigned int, unsigned int> >& bc2doublet,
     robin_hood::unordered_map<unsigned long, double>& bc2llr,
-    map<short, string>& idx2species){
+    map<short, string>& idx2species,
+    bool use_filter,
+    robin_hood::unordered_set<unsigned long>& filter){
     
     for (robin_hood::unordered_map<unsigned long, double>::iterator b2llr = bc2llr.begin();
         b2llr != bc2llr.end(); ++b2llr){
         
+        if (use_filter && filter.find(b2llr->first) == filter.end()){
+            continue;
+        }
+
         char type = 'S';
         string name;
         if (bc2doublet.count(b2llr->first) > 0){

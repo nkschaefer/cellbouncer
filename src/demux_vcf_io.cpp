@@ -16,6 +16,7 @@
 #include <utility>
 #include <zlib.h>
 #include <htswrapper/bc.h>
+#include <htswrapper/gzreader.h>
 #include <htswrapper/robin_hood/robin_hood.h>
 #include "common.h"
 #include "demux_vcf_io.h"
@@ -232,7 +233,69 @@ void load_counts_from_file(
         map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
     vector<string>& indvs,   
     string& filename){
+   
+    gzreader reader(filename);
+    while(reader.next()){
+        istringstream splitter(reader.line);
+        string field;
+        int idx = 0;
+
+        unsigned long cell;
+        int indv1;
+        int indv2;
+        int type1;
+        int type2;
+        float ref;
+        float alt;
     
+        pair<int, int> indv1key;
+        pair<int, int> indv2key;
+
+        while(getline(splitter, field, '\t')){
+            if (idx == 0){
+                // cell
+                cell = atol(field.c_str());
+                if (indv_allelecounts.count(cell) == 0){
+                    map<pair<int, int>, map<pair<int, int>, pair<float, float> > > m;
+                    indv_allelecounts.emplace(cell, m);
+                }
+            }
+            else if (idx == 1){
+                // indv 1
+                indv1 = atoi(field.c_str());
+            }
+            else if (idx == 2){
+                // type 1
+                type1 = atoi(field.c_str());
+                indv1key = make_pair(indv1, type1);
+                    if (indv_allelecounts[cell].count(indv1key) == 0){
+                        map<pair<int, int>, pair<float, float> > m;
+                        indv_allelecounts[cell].insert(make_pair(indv1key, m));
+                    }
+            }
+            else if (idx == 3){
+                // indv 2
+                indv2 = atoi(field.c_str());
+            }
+            else if (idx == 4){
+                // type 2
+                type2 = atoi(field.c_str());
+                indv2key = make_pair(indv2, type2);
+            }
+            else if (idx == 5){
+                // ref count
+                ref = atof(field.c_str());
+            }
+            else if (idx == 6){
+                // alt count
+                alt = atof(field.c_str());
+                indv_allelecounts[cell][indv1key].insert(make_pair(indv2key, make_pair(ref, alt)));
+            }
+            ++idx;
+        }
+    }
+    
+    /*
     // Use sample -> index mapping from VCF header 
     map<string, int> indv2idx;
     for (int i = 0; i < indvs.size(); ++i){
@@ -329,33 +392,45 @@ void load_counts_from_file(
         }
         indv_allelecounts[cell][key].insert(make_pair(key2, make_pair(count1, count2)));
     }
+    */
 }
 
 /**
  * Print counts to text files.
  */
-void dump_cellcounts(FILE* out_cell,
+void dump_cellcounts(gzFile& out_cell,
     robin_hood::unordered_map<unsigned long, map<pair<int, int>, 
         map<pair<int, int>, pair<float, float> > > >& indv_allelecounts, 
     vector<string>& samples){
     
+    char linebuf[1024];
+
     for (robin_hood::unordered_map<unsigned long, map<pair<int, int>, 
         map<pair<int, int>, pair<float, float> > > >::iterator x = indv_allelecounts.begin();
         x != indv_allelecounts.end(); ++x){
         
         for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = 
                 x->second.begin(); y != x->second.end(); ++y){
-            string indv = idx2name(y->first.first, samples);
+            //string indv = idx2name(y->first.first, samples);
             int nalt = y->first.second;
             for (map<pair<int, int>, pair<float, float> >::iterator z = 
                 y->second.begin(); z != y->second.end(); ++z){
-                string indv2 = "NA";
-                if (z->first.first != -1){
-                    indv2 = idx2name(z->first.first, samples);
-                }
+                //string indv2 = "NA";
+                //if (z->first.first != -1){
+                //    indv2 = idx2name(z->first.first, samples);
+                //}
                 int nalt2 = z->first.second;
-                fprintf(out_cell, "%ld\t%s\t%d\t%s\t%d\t%f\t%f\n", x->first, indv.c_str(),
-                    nalt, indv2.c_str(), nalt2, z->second.first, z->second.second);
+                
+                sprintf(&linebuf[0], "%ld\t%d\t%d\t%d\t%d\t%f\t%f\n", x->first, y->first.first,
+                    nalt, z->first.first, nalt2, z->second.first, z->second.second);
+                
+                gzwrite(out_cell, &linebuf[0], strlen(linebuf));
+                   
+                //fprintf(out_cell, "%ld\t%d\t%d\t%d\t%d\t%f\t%f\n", x->first, y->first.first,
+                //   nalt, z->first.first, nalt2, z->second.first, z->second.second);
+
+                //fprintf(out_cell, "%ld\t%s\t%d\t%s\t%d\t%f\t%f\n", x->first, indv.c_str(),
+                //    nalt, indv2.c_str(), nalt2, z->second.first, z->second.second);
             }
         }
     } 

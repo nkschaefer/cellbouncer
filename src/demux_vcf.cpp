@@ -36,12 +36,61 @@ using std::cout;
 using std::endl;
 using namespace std;
 
-// ===== Utility functions =====
+struct llr_node{
+    short ind_low;
+    short ind_high;
+    double llr;
+
+    llr_node(short l, short h, double ll){ 
+        this->ind_low = l;
+        this->in_high = h;
+        this->llr = ll;
+    };
+
+};
+
+class llr_table{
+    private:
+        robin_hood::unordered_set<short> 
+        robin_hood::unordered_set<pair<double, llr_node*> > lookup_llr;
+        int n_nodes;
+    public:
+        llr_table(){
+            n_nodes = 0;
+        };
+        void insert(short i1, short i2, double llr){
+            llr_node* node;
+            if (llr > 0){
+                node = new llr_node(i2, i1, llr);
+                llr = -llr;
+            }
+            else{
+                node = new llr_node(i1, i2, llr);
+            }
+            lookup_node.emplace(i1, node);
+            lookup_node.emplace(i2, node);
+            lookup_llr.insert(make_pair(llr, node));
+            n_nodes++;
+        };
+        void get_max(short& maxidx, double& maxllr){
+            while (n_nodes > 1){
+                // Delete least likely
+                robin_hood::unordered_set<pair<double, llr_node*> >::iterator it = lookup_llr.begin();
+                short del_idx = it->second->ind_low;
+                while (lookup_node.count(del_idx) == 0){
+                    lookup_llr.erase(it);
+                    it = lookup_llr.begin();
+                    del_idx = it->second->ind_low;
+                }
+                lookup_llr.erase(it);
+                
+                
 
 
 
-
-// ===== Functions related to deciding identities of cells =====
+            }
+        };
+};
 
 /** 
  * Helper function used by compute_kcomps().
@@ -397,6 +446,8 @@ void compute_k_comps(map<int, map<int, double> >& llrs,
  */
 void populate_llr_table(map<pair<int, int>, 
         map<pair<int, int>, pair<float, float> > >& counts,
+    robin_hood::unordered_map<double, int>& lookup_llr,
+
     map<int, map<int, double> >& llrs,
     vector<string>& samples,
     set<int>& allowed_assignments,
@@ -1483,11 +1534,13 @@ all possible individuals\n", idfile_doublet.c_str());
         
         // Write the data just compiled to disk.
         string fname = output_prefix + ".counts";
-        FILE* outf = fopen(fname.c_str(), "w");   
+        //FILE* outf = fopen(fname.c_str(), "w");   
+        gzFile outf = gzopen(fname.c_str(), "w");
         fprintf(stderr, "Writing allele counts to disk...\n");
         dump_cellcounts(outf, indv_allelecounts, samples);
         fprintf(stderr, "Done\n");
-        fclose(outf);
+        //fclose(outf);
+        gzclose(outf);
     }
         
     // Map cell barcodes to numeric IDs of best individual assignments 

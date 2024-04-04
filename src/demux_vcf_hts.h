@@ -36,10 +36,10 @@ struct var{
     char ref;
     char alt;
     
-    // This limits us to 100 individuals in the input VCF
-    bitset<100> haps1;
-    bitset<100> haps2;
-    bitset<100> haps_covered;
+    // This limits us to 500 individuals in the input VCF
+    bitset<500> haps1;
+    bitset<500> haps2;
+    bitset<500> haps_covered;
     vector<float> gqs;
     float vq;
     var(){

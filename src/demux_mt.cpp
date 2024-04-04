@@ -2283,26 +2283,26 @@ pass the .ids file (-i)?\n", id_str.c_str());
 }
 
 double y_mixprop(double p, const map<string, double>& data_d, const map<string, int>& data_i){
-    int m1 = data_d.at("match1");
-    int m2 = data_d.at("match2");
-    double n = (double)m1;
-    double k = (double)(m1+m2);
+    int m1 = data_i.at("match1");
+    int m2 = data_i.at("match2");
+    double k = (double)m1;
+    double n = (double)(m1+m2);
     return logbinom(n, k, p);
 }
 
 double dy_dp_mixprop(double p, const map<string, double>& data_d, const map<string, int>& data_i){
-    int m1 = data_d.at("match1");
-    int m2 = data_d.at("match2");
-    double n = (double)m1;
-    double k = (double)(m1+m2);
+    int m1 = data_i.at("match1");
+    int m2 = data_i.at("match2");
+    double k = (double)m1;
+    double n = (double)(m1+m2);
     return (k-n*p)/(p - p*p);
 }
 
 double d2y_dp2_mixprop(double p, const map<string, double>& data_d, const map<string, int>& data_i){
-    int m1 = data_d.at("match1");
-    int m2 = data_d.at("match2");
-    double n = (double)m1;
-    double k = (double)(m1+m2);
+    int m1 = data_i.at("match1");
+    int m2 = data_i.at("match2");
+    double k = (double)m1;
+    double n = (double)(m1+m2);
     return (k*(2*p-1) - n*p*p)/(pow(p-1,2)*p*p);
 }
 
@@ -2314,7 +2314,8 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
     robin_hood::unordered_map<unsigned long, double>& mixprops_mean,
     robin_hood::unordered_map<unsigned long, double>& mixprops_sd,
     map<int, double>& id_mixprop_mean,
-    map<int, double>& id_mixprop_sd){
+    map<int, double>& id_mixprop_sd,
+    vector<string>& clust_ids){
 
     int n_samples = (int)clusthaps.size();
     
@@ -2357,7 +2358,17 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
             }
             
             if (match1 + match2 > 0){
-                
+                /*        
+                double mean = (double)match1/(double)(match1+match2);
+                double var = (double)(match1*match2)/(pow((double)match1+match2,2)*(double)(match1+match2+1));
+                string n = idx2name(a->second, clust_ids);
+                pair<int, int> combo = idx_to_hap_comb(a->second, clust_ids.size());
+                string n1 = idx2name(combo.first, clust_ids);
+                string n2 = idx2name(combo.second, clust_ids);
+                fprintf(stdout, "%s\t%s\t%f\t%f\n", n1.c_str(), n2.c_str(), mean, sqrt(var));
+                fprintf(stdout, "%s\t%s\t%f\t%f\n", n2.c_str(), n1.c_str(), mean, sqrt(var));
+                continue;
+
                 vector<int> match1v = {match1};
                 vector<int> match2v = {match2};
                 optimML::brent_solver solver(y_mixprop, dy_dp_mixprop, d2y_dp2_mixprop);
@@ -2367,7 +2378,7 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
                 double p = solver.solve(0,1);
                 mixprops_mean.emplace(a->first, p);
                 mixprops_sd.emplace(a->first, solver.se); 
-
+                */
                 // Store for whole-ID tests
                 if (id_match1.count(a->second) == 0){
                     vector<int> v;
@@ -2382,16 +2393,35 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
             }
         }
     }
-    
     for (map<int, vector<int> >::iterator im = id_match1.begin(); im != id_match1.end();
         ++im){
+        
         optimML::brent_solver solver(y_mixprop, dy_dp_mixprop, d2y_dp2_mixprop);
         solver.add_data("match1", im->second);
         solver.add_data("match2", id_match2[im->first]);
         solver.constrain_01();
+        solver.add_beta_prior(10000, 10000);
         double p = solver.solve(0,1);
+        fprintf(stdout, "%f\t%f\n", p, solver.se);
         id_mixprop_mean.insert(make_pair(im->first, p));
         id_mixprop_sd.insert(make_pair(im->first, solver.se));
+        
+        /*
+        int alpha = 0;
+        int beta = 0;
+        for (int i = 0; i < im->second.size(); ++i){
+            alpha += im->second[i];
+            beta += id_match2[im->first][i];
+        }
+        double p;
+        if (alpha <= beta){
+            p = 1.0 - pbeta(0.5, alpha, beta);
+        }
+        else{
+            p = pbeta(0.5, alpha, beta);
+        }
+        */
+        //fprintf(stderr, "%d %d | %f | %f\n", alpha, beta, (double)alpha/(double)(alpha+beta), p);
     }
 }
 
@@ -2765,7 +2795,7 @@ were found in input file %s\n", assnfile.c_str());
         map<int, double> id_mixprop_mean;
         map<int, double> id_mixprop_sd;
         infer_mixprops(hap_counter, assignments, clusthaps, mask_global, nvars, mixprops_mean,
-            mixprops_sd, id_mixprop_mean, id_mixprop_sd);
+            mixprops_sd, id_mixprop_mean, id_mixprop_sd, clust_ids);
         
         // Spill to disk.
         string mixprops_out_name = output_prefix + ".props";

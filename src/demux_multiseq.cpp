@@ -390,17 +390,6 @@ void assign_ids2(robin_hood::unordered_map<unsigned long, vector<pair<int, strin
     robin_hood::unordered_map<unsigned long, double>& assn_llr,
     bool output_unassigned){
 
-    vector<int> valid;
-    vector<int> doub;
-    vector<int> noise;
-    
-    double sum1 = 0.0;
-    double tot1 = 0.0;
-    double sum2 = 0.0;
-    double tot2 = 0.0;
-    double sum3 = 0.0;
-    double tot3 = 0.0;
-
     for (robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >::iterator x = 
         bc_ms_counts.begin(); x != bc_ms_counts.end(); ++x){
          
@@ -485,81 +474,43 @@ void assign_ids2(robin_hood::unordered_map<unsigned long, vector<pair<int, strin
             tot--;
         }
         
-        double ll1b = dpois(tot, 17);
-        double ll2b = dpois(tot, 20);
-        double ll3b = dpois(tot, 13);
-
-        double p_contam = 1.0-ppois(tot, 13);
-        double frac1 = (double)-x->second[0].first / (double)tot;
-        
-        string name;
         double llr;
-        bool store = false;
-        
-        double llmax = ll1;
-        if (ll2 > llmax){
-            llmax = ll2;
-        }
-        if (ll3 > llmax){
-            llmax = ll3;
-        }
-        double probsum = pow(2, ll1-llmax) + pow(2, ll2-llmax) + pow(2, ll3-llmax);
-        probsum = log2(probsum) + llmax;
-        double p1 = pow(2, ll1-probsum);
-        double p2 = pow(2, ll2-probsum);
-        double p3 = pow(2, ll3-probsum);
-        
-        sum1 += p1*(double)tot;
-        tot1 += p1;
-        sum2 += p2*(double)tot;
-        tot2 += p2;
-        sum3 += p3*(double)tot;
-        tot3 += p3;
-
         if (ll3 > ll1 && ll3 > ll2){
             // 3 or more == noise. Don't make an assignment.        
-            //fprintf(stdout, "N\t%f\t%f\t%f\t%f\t%f\n", llr, p_contam, p1, p2, p3);
-            fprintf(stdout, "N\t%f\t%f\t%f\t%f\t%f\t%f\n", ll1, ll2, ll3, ll1b, ll2b, ll3b);
-            noise.push_back(tot);
         }
         else if (ll2 > ll1 && ll2 > ll3){
             if (!pseudo2){
                 // Doublet.
-                store = true;
-                doub.push_back(tot);
                 if (ll1 > ll3){
                     llr = ll2 - ll1;
                 }
                 else{
                     llr = ll2 - ll3;
                 }
-                //fprintf(stdout, "D\t%f\t%f\t%f\t%f\t%f\n", llr, p_contam, p1, p2, p3);
-                fprintf(stdout, "D\t%f\t%f\t%f\t%f\t%f\t%f\n", ll1, ll2, ll3, ll1b, ll2b, ll3b);
                 if (x->second[0].second < x->second[1].second){
-                    name = x->second[0].second + "+" + x->second[1].second;
+                    assn1.emplace(x->first, x->second[0].second);
+                    assn2.emplace(x->first, x->second[1].second);
                 }
                 else{
-                    name = x->second[1].second + "+" + x->second[0].second;
+                    assn1.emplace(x->first, x->second[1].second);
+                    assn2.emplace(x->first, x->second[0].second);
                 }
+                assn_llr.emplace(x->first, llr);
             }
             else{
                 // Noise
-                noise.push_back(tot);
             }
         }
         else if (ll1 > ll2 && ll1 > ll3){
-            store = true;
             llr = ll1 - ll2;
-            name = x->second[0].second;
-            valid.push_back(tot);
-            //fprintf(stdout, "S\t%f\t%f\t%f\t%f\t%f\n", llr, p_contam, p1, p2, p3);
-            fprintf(stdout, "S\t%f\t%f\t%f\t%f\t%f\t%f\n", ll1, ll2, ll3, ll1b, ll2b, ll3b);
+            assn1.emplace(x->first, x->second[0].second);
+            assn_llr.emplace(x->first, llr);
         }
         else{
-            //noise.push_back(tot);
         }
     }
-    
+    /* 
+    return; 
     sum1 /= tot1;
     sum2 /= tot2;
     sum3 /= tot3;
@@ -636,6 +587,7 @@ void assign_ids2(robin_hood::unordered_map<unsigned long, vector<pair<int, strin
             }
         }
     }
+    */
 }
 
 void write_assignments(string filename, 
