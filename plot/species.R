@@ -1,4 +1,10 @@
 #! /usr/bin/env Rscript
+library(ggplot2)
+library(ggsci)
+library(cowplot)
+library(viridis)
+library(pheatmap)
+
 args <- commandArgs(trailingOnly=TRUE)
 
 if (length(args) < 1){
@@ -9,11 +15,13 @@ if (length(args) < 1){
 outdir <- args[1]
 countsfile <- paste(outdir, 'species_counts.txt', sep='/')
 namesfile <- paste(outdir, 'species_names.txt', sep='/')
-assnfile <- paste(outdir, 'bc_assignments.txt', sep='/')
+assnfile <- paste(outdir, 'species.filt.assignments', sep='/')
+assnfile_full <- paste(outdir, "species.assignments", sep='/')
 
 counts <- read.table(countsfile)
 names <- read.table(namesfile)
 assn <- read.table(assnfile)
+assnfull <- read.table(assnfile_full)
 
 if (length(colnames(assn)) > 4){
     assn$V4 <- assn$V5
@@ -21,6 +29,16 @@ if (length(colnames(assn)) > 4){
 }
 
 colnames(assn) <- c("bc", "species", "type", "llr")
+colnames(assnfull) <- c("bc", "species", "type", "llr")
+
+snames <- unique(assnfull$species)
+snames <- factor(snames, labels=snames, levels=snames)
+ncol <- length(snames)
+pal <- colorRampPalette(pal_d3("category20")(20))(ncol)
+if (ncol < 20){
+    pal <- pal_d3("category20")(ncol)
+}
+name2col <- setNames(pal, snames)
 
 counts <- counts[,seq(1, length(rownames(names))+1)]
 colnames(counts) <- c("bc", names$V2)
@@ -34,97 +52,66 @@ counts$bc <- gsub("-1", "", counts$bc)
 counts$tot <- rowSums(counts[2:length(colnames(counts))])
 
 counts <- merge(counts, assn)
-counts <- counts[order(counts$llr),]
-counts <- counts[order(counts$species),]
-rownames(counts) <- counts$bc
-assn[which(assn$type=="D"),]$species <- "Doublet"
-spec <- unique(assn[which(assn$type=="S"),]$species)
-spec <- spec[order(spec)]
-spec <- c(spec, "Doublet")
-assn$species <- factor(assn$species, labels=spec, levels=spec)
-rownames(assn) <- assn$bc
-assn$count <- 1
-assn <- merge(assn, counts[,which(colnames(counts) %in% c("bc", "tot"))])
-assncounts <- aggregate(assn$count, by=list(species=assn$species), FUN=sum)
-assncounts$species <- factor(assncounts$species, labels=spec, levels=spec)
-assncounts$x <- assncounts$x / sum(assncounts$x)
-assncounts_weight <- aggregate(assn$tot, by=list(species=assn$species), FUN=sum)
-assncounts_weight$species <- factor(assncounts_weight$species, labels=spec, levels=spec)
-assncounts_weight$x <- assncounts_weight$x / sum(assncounts_weight$x)
-colnames(assncounts)[2] <- "frac"
-colnames(assncounts_weight)[2] <- "frac_weighted"
-assncounts <- merge(assncounts, assncounts_weight, by='species')
 
-print(assncounts[1:10,])
-assn <- assn[,c(2), drop=FALSE]
-
-for (n in names$V2){
-    counts[[n]] <- counts[[n]] / counts$tot
+for (cn in colnames(counts)[seq(2, length(colnames(counts))-3)]){
+    counts[[cn]] <- counts[[cn]] / counts$tot
 }
-counts <- counts[,-c(1,length(colnames(counts))-3, length(colnames(counts))-2, length(colnames(counts))-1, length(colnames(counts)))]
 
-# Load distribution data
-dists <- read.table(paste(outdir, 'dists.txt', sep='/'), header=T, row.names=1)
-distann <- dists[,c(1),drop=FALSE]
-distann$species <- rownames(distann)
-distann[grep(".", distann$species, fixed=T),]$species <- "Doublet"
-distann$species <- factor(distann$species, labels=spec, levels=spec)
-distann <- distann[,-c(1),drop=FALSE]
-dists <- dists[,-c(1)]
-dists <- dists[,order(colnames(dists))]
-dists <- dists[order(rownames(dists)),]
+metacols <- seq(length(colnames(counts))-3, length(colnames(counts)))
+meta <- counts[,metacols]
+meta <- meta[,c(2), drop=FALSE]
+rownames(meta) <- counts$bc
 
-library(pheatmap)
-library(cowplot)
-library(ggplot2)
+countsm <- as.matrix(counts[,-c(c(1), metacols)])
+rownames(countsm) <- counts$bc
 
-ncolor <- 50
-cols=colorRampPalette(c("#255957", "#7C9885", "#E2F1AF"))(ncolor)
+basename <- gsub("/$", "", args[1])
 
-cells <- pheatmap(as.matrix(counts),
-    cluster_cols=FALSE,
-    cluster_rows=FALSE,
-    scale='none',
-    color=cols,
-    breaks=seq(0,1,1/ncolor),
-    show_rownames=FALSE,
-    show_colnames=FALSE,
-    annotation_row=assn)
+title = ggdraw() + 
+    draw_label(basename, size=12, fontface='bold', lineheight=0.9, hjust=0.6) +
+    theme(plot.margin=margin(0,0,0,0))
 
-dists <- pheatmap(as.matrix(dists),
-    cluster_rows=FALSE,
-    cluster_cols=FALSE,
-    scale='none',
-    color=cols,
-    legend=FALSE,
+name2col2 <- list(species=name2col)
+heatm <- pheatmap(countsm, 
+    scale='none', 
+    cluster_cols=FALSE, 
+    show_rownames=FALSE, 
+    annotation_row=meta,
+    annotation_colors=name2col2,
     annotation_legend=FALSE,
-    annotation_names_row=FALSE,
+    breaks=seq(0,1,0.01),
     angle_col=90,
-    width=5,
-    breaks=seq(0, 1, 1/ncolor),
-    show_rownames=FALSE,
-    annotation_row=distann)
+    color=mako(100),
+    main='Normalized k-mer counts per cell')
 
-percs <- ggplot(assncounts) + 
-    geom_bar(aes(x="Prop.", fill=species, y=frac), stat='identity') + 
-    geom_bar(aes(x="Prop. weighted",, fill=species, y=frac_weighted), stat='identity') + 
-    scale_fill_discrete("species") + 
-    theme(axis.ticks.x=element_blank(), axis.text.y=element_blank(),
-        axis.title.x=element_blank(), axis.title.y=element_blank(),
-        axis.ticks.y=element_blank(), panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank())
-    theme_nothing()
+assn$count <- 1
+assnfull$count <- 1
+assnagg <- aggregate(assn$count, by=list(species=assn$species), FUN=sum)
+assnagg$x <- assnagg$x / sum(assnagg$x)
+assnfullagg <- aggregate(assnfull$count, by=list(species=assnfull$species), FUN=sum)
+assnfullagg$x <- assnfullagg$x / sum(assnfullagg$x)
 
-row2 <- cowplot::plot_grid(dists$gtable, NULL, nrow=1, rel_widths=c(0.8, 0.2))
+colnames(assnagg)[2] <- "Frac"
+colnames(assnfullagg)[2] <- "Frac"
+assnagg$type <- "Filtered"
+assnfullagg$type <- "All"
 
-col1 <- plot_grid(cells$gtable, row2, ncol=1, nrow=2, rel_heights=c(2/3,1/3))
-col2 <- plot_grid(percs)
+assnbothagg <- rbind(assnagg, assnfullagg)
 
-pdf(paste(outdir, '/', 'counts.pdf', sep=''), bg='white', width=8.5, height=7)
+bars <- ggplot(assnbothagg) + geom_bar(aes(x=type, y=Frac, fill=species), stat='identity') + 
+    theme_bw() +
+    scale_y_continuous("Fraction of barcodes") + 
+    scale_x_discrete("Cell group") +
+    scale_fill_manual(values=name2col) +
+    theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank())
 
-#cowplot::plot_grid(cells$gtable, row2, ncol=1, nrow=2, rel_heights=c(2/3,1/3))
-cowplot::plot_grid(col1, col2, ncol=2, rel_widths=c(0.8,0.2))
+row2 <- plot_grid(heatm$gtable, bars, ncol=2, rel_widths=c(0.6, 0.4))
 
+png(paste(basename, '/', 'species.png', sep=''), width=8, height=6, bg='white', units='in', res=150)
+plot_grid(title, row2, nrow=2, rel_heights=c(0.1,0.9))
 dev.off()
 
+pdf(paste(basename, '/', 'species.pdf', sep=''), width=8, height=6)
+plot_grid(title, row2, nrow=2, rel_heights=c(0.1,0.9))
+dev.off()
 
