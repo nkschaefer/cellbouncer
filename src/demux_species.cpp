@@ -140,6 +140,38 @@ void help(int code){
     exit(code);
 }
 
+// Which component distributions represent doublets? 
+map<int, bool> dist_doublet;
+// What are the idenities of component distributions representing doublets?
+map<int, pair<int, int> > dist2doublet_comb;
+// What are the identities of component distributions representing singlets?
+map<int, int> dist2singlet;
+
+void mm_callback(const vector<mixtureDist*>& dists,
+    const vector<double>& dist_weights,
+    vector<double>& shared_params){
+    
+    // Ensure each parameter for each doublet model is an average
+    // of those of its two parent species
+    for (int i = 0; i < dists.size(); ++i){
+        if (dist_doublet[i]){
+            double paramsum = 0.0;
+            for (int dim_idx = 0; dim_idx < dists[i]->params[0].size(); ++dim_idx){
+                double parent1 = dists[dist2doublet_comb[i].first]->params[0][dim_idx];
+                double parent2 = dists[dist2doublet_comb[i].second]->params[0][dim_idx];
+                double pmean = (parent1 + parent2)/2.0;
+                dists[i]->params[0][dim_idx] = pmean;
+                paramsum += pmean;
+            }
+            if (paramsum != 1.0){
+                for (int dim_idx = 0; dim_idx < dists[i]->params[0].size(); ++dim_idx){
+                    dists[i]->params[0][dim_idx] /= paramsum;
+                }
+            }
+        }
+    }
+}
+
 /**
  * Use a mixture of multinomial distributions to model k-mer counts from each species
  * in each cell. Each species of origin will be a source distribution, as will
@@ -174,13 +206,6 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
 
     vector<mixtureDist> dists;
     
-    // Which component distributions represent doublets? 
-    map<int, bool> dist_doublet;
-    // What are the idenities of component distributions representing doublets?
-    map<int, pair<int, int> > dist2doublet_comb;
-    // What are the identities of component distributions representing singlets?
-    map<int, int> dist2singlet;
-
     int doublet_dist_count = 0;
     int singlet_dist_count = 0;
 
@@ -211,11 +236,15 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
         dists.push_back(dist);
         singlet_dist_count++;
         
-        // Create doublet distribution
-        for (int j = i2s->first+1; j < n_species; ++j){
+    }
+   
+    for (int i = 0; i < n_species-1; ++i){
+        for (int j = i + 1; j < n_species; ++j){
+            
+            // Create doublet distribution
             vector<double> doublet_params;
-            for (int i = 0; i < n_species; ++i){
-                if (i == i2s->first || i == j){
+            for (int x = 0; x < n_species; ++x){
+                if (x == i || x == j){
                     // Target species
                     doublet_params.push_back(target_weight/2.0);
                 }
@@ -224,24 +253,26 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
                     doublet_params.push_back((1.0-target_weight)/((double)(n_species-2)));
                 }
             }
+
             mixtureDist dist("multinomial", doublet_params);
             string dname;
-            if (i2s->second < idx2species[j]){
-                dname = i2s->second + "." + idx2species[j];
+            string name1 = idx2species[i];
+            string name2 = idx2species[j];
+            if (name1 < name2){
+                dname = name1 + "+" + name2;
             }
             else{
-                dname = idx2species[j] + "." + i2s->second;
+                dname = name2 + "+" + name1;
             }
             dist.name = dname;
             dist.set_num_inputs(n_species);
             dist_doublet.insert(make_pair(dists.size(), true));
-            dist2doublet_comb.insert(make_pair(dists.size(), make_pair(i2s->first, j)));
+            dist2doublet_comb.insert(make_pair(dists.size(), make_pair(i, j)));
             dists.push_back(dist);
             doublet_dist_count++;
         }
-        
-    }
-    
+    } 
+
     // Prepare input data
     vector<vector<double> > obs;
     vector<unsigned long> bcs;
@@ -270,6 +301,7 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
     
     // Create and fit mixture model 
     mixtureModel mod(dists, dist_weights); 
+    mod.set_callback(mm_callback);
     mod.fit(obs);
     
     for (int i = 0; i < mod.n_components; ++i){
