@@ -46,13 +46,15 @@ void parse_idfile(string& idfile,
     ifstream infile(idfile.c_str());
     string id;
     while (infile >> id){
-        size_t sep_pos = id.find("x");
+        size_t sep_pos = id.find("+");
+        /*
         if (sep_pos == string::npos){
             sep_pos = id.find("X");
         }
         if (sep_pos == string::npos){
-            sep_pos = id.find("+");
+            sep_pos = id.find("x");
         }
+        */
         if (sep_pos != string::npos){
             string id1 = id.substr(0, sep_pos);
             string id2 = id.substr(sep_pos+1, id.length()-sep_pos-1);
@@ -232,7 +234,8 @@ void load_counts_from_file(
     robin_hood::unordered_map<unsigned long, map<pair<int, int>, 
         map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
     vector<string>& indvs,   
-    string& filename){
+    string& filename,
+    set<int>& allowed_ids){
    
     gzreader reader(filename);
     while(reader.next()){
@@ -268,10 +271,13 @@ void load_counts_from_file(
                 // type 1
                 type1 = atoi(field.c_str());
                 indv1key = make_pair(indv1, type1);
+                if (allowed_ids.size() == 0 || 
+                    allowed_ids.find(indv1key.first) != allowed_ids.end()){
                     if (indv_allelecounts[cell].count(indv1key) == 0){
                         map<pair<int, int>, pair<float, float> > m;
                         indv_allelecounts[cell].insert(make_pair(indv1key, m));
                     }
+                }
             }
             else if (idx == 3){
                 // indv 2
@@ -289,7 +295,11 @@ void load_counts_from_file(
             else if (idx == 6){
                 // alt count
                 alt = atof(field.c_str());
-                indv_allelecounts[cell][indv1key].insert(make_pair(indv2key, make_pair(ref, alt)));
+                if (allowed_ids.size() == 0 || 
+                    allowed_ids.find(indv1key.first) != allowed_ids.end() &&
+                    (indv2key.first == -1 || allowed_ids.find(indv2key.first) != allowed_ids.end())){
+                    indv_allelecounts[cell][indv1key].insert(make_pair(indv2key, make_pair(ref, alt)));
+                }
             }
             ++idx;
         }
@@ -557,10 +567,14 @@ void load_assignments_from_file(string& filename,
         unsigned long as_ul = as_bitset.to_ulong();
 
         int indv_idx = -1;
-        size_t splitpos = idstr.find("+");
-        if (splitpos == string::npos){
-            splitpos = idstr.find("x");
+        size_t splitpos = string::npos;
+        if (s_d == 'D'){
+            splitpos = idstr.find("+");
+            //if (splitpos == string::npos){
+            //    splitpos = idstr.find("x");
+            //}
         }
+
         if (splitpos != string::npos){
             string id1 = idstr.substr(0, splitpos);
             string id2 = idstr.substr(splitpos+1, idstr.length()-splitpos-1);

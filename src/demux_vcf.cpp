@@ -36,59 +36,241 @@ using std::cout;
 using std::endl;
 using namespace std;
 
-struct llr_node{
-    short ind_low;
-    short ind_high;
-    double llr;
-
-    llr_node(short l, short h, double ll){ 
-        this->ind_low = l;
-        this->in_high = h;
-        this->llr = ll;
-    };
-
-};
-
 class llr_table{
     private:
-        robin_hood::unordered_set<short> 
-        robin_hood::unordered_set<pair<double, llr_node*> > lookup_llr;
-        int n_nodes;
+        // Set of pairs rather than map allows duplicate LLRs
+        map<double, vector<pair<short, short> > > lookup_llr;
+        map<double, vector<pair<short, short> > >::iterator it;
+        vector<double> maxllr;
+        vector<double> minllr;
+
     public:
-        llr_table(){
-            n_nodes = 0;
+        vector<bool> included;
+        int n_indvs;
+        llr_table(int x){
+            n_indvs = 0;
+            int n_elt = x + (int)round(pow(2, binom_coef_log(x, 2)));
+            included.reserve(n_elt);
+            maxllr.reserve(n_elt);
         };
+        ~llr_table(){
+            lookup_llr.clear();
+            included.clear();
+            maxllr.clear();
+            minllr.clear();
+        }
+        void print(string& bc_str, vector<string>& samples){
+            
+            for (map<double, vector<pair<short, short> > >::iterator x = lookup_llr.begin();
+                x != lookup_llr.end(); ++x){
+                for (int i = 0; i < x->second.size(); ++i){
+                    if (included[x->second[i].first] && included[x->second[i].second]){
+                        string n1 = idx2name(x->second[i].first, samples);
+                        string n2 = idx2name(x->second[i].second, samples);
+                        fprintf(stdout, "%s\t%s\t%s\t%f\n", bc_str.c_str(),
+                            n1.c_str(), n2.c_str(), -x->first);
+                        fprintf(stdout, "%s\t%s\t%s\t%f\n", bc_str.c_str(),
+                            n2.c_str(), n1.c_str(), x->first);
+                    }
+                }
+            }
+        }
+
+        void print_ranges(string& barcode, vector<string>& samples){
+            int n_samples = samples.size();
+            for (int i = 0; i < n_samples; ++i){
+                if (included[i]){
+                    fprintf(stdout, "%s\t%s\t%f\t%f\n", barcode.c_str(), idx2name(i, samples).c_str(), 
+                        minllr[i], maxllr[i]);
+                }
+                for (int j = i + 1; j < n_samples; ++j){
+                    int k = hap_comb_to_idx(i, j, n_samples);
+                    fprintf(stdout, "%s\t%s\t%f\t%f\n", barcode.c_str(), idx2name(k, samples).c_str(),
+                        minllr[k], maxllr[k]);
+                }
+            }
+        }
+
         void insert(short i1, short i2, double llr){
-            llr_node* node;
+              
+            while(included.size() < i1+1){
+                included.push_back(false);
+                maxllr.push_back(0.0);
+                minllr.push_back(0.0);
+            }
+            while(included.size() < i2+1){
+                included.push_back(false);
+                maxllr.push_back(0.0);
+                minllr.push_back(0.0);
+            }
+            if (!included[i1]){
+                ++n_indvs;
+            }
+            if (!included[i2]){
+                ++n_indvs;
+            }
+            if (!included[i1] || maxllr[i1] < llr){
+                maxllr[i1] = llr;
+            }
+            if (!included[i1] || minllr[i1] > llr){
+                minllr[i1] = llr;
+            }
+            if (!included[i2] || maxllr[i2] < -llr){
+                maxllr[i2] = -llr;
+            }
+            if (!included[i2] || minllr[i2] > -llr){
+                minllr[i2] = -llr;
+            }
+            included[i1] = true;
+            included[i2] = true;
+            
+            short low;
+            short high;
             if (llr > 0){
-                node = new llr_node(i2, i1, llr);
+                low = i2;
+                high = i1;
                 llr = -llr;
             }
             else{
-                node = new llr_node(i1, i2, llr);
+                low = i1;
+                high = i2;
             }
-            lookup_node.emplace(i1, node);
-            lookup_node.emplace(i2, node);
-            lookup_llr.insert(make_pair(llr, node));
-            n_nodes++;
+            if (lookup_llr.count(llr) == 0){
+                vector<pair<short, short> > v;
+                lookup_llr.emplace(llr, v);
+            }
+            lookup_llr[llr].push_back(make_pair(low, high));
         };
-        void get_max(short& maxidx, double& maxllr){
-            while (n_nodes > 1){
-                // Delete least likely
-                robin_hood::unordered_set<pair<double, llr_node*> >::iterator it = lookup_llr.begin();
-                short del_idx = it->second->ind_low;
-                while (lookup_node.count(del_idx) == 0){
-                    lookup_llr.erase(it);
-                    it = lookup_llr.begin();
-                    del_idx = it->second->ind_low;
+        
+        void disallow(short i){
+            if (i < included.size()){
+                if (included[i]){
+                    maxllr[i] = 0.0;
+                    minllr[i] = 0.0;
+                    --n_indvs;
                 }
-                lookup_llr.erase(it);
-                
-                
-
-
-
+                included[i] = false;
             }
+        }
+
+        bool del(int n_keep){
+
+            if (n_indvs < n_keep){
+                return false;
+            }
+            
+            it = lookup_llr.begin();
+            while (n_indvs > n_keep && it != lookup_llr.end()){
+                bool del_all = it->second.size() <= (n_indvs - n_keep);
+                map<double, int> maxllr_counts;
+                int indv_tot = 0;
+                for (vector<pair<short, short> >::iterator x = it->second.begin();
+                    x != it->second.end();){
+                    if (!included[x->first] || !included[x->second]){
+                        it->second.erase(x);
+                    }
+                    else if (del_all){
+                        if (included[x->first]){
+                            --n_indvs;
+                            included[x->first] = false;
+                            minllr[x->first] = 0.0;
+                            maxllr[x->first] = 0.0;
+                        }
+                        it->second.erase(x);
+                    }
+                    else{
+                        double mllr = maxllr[x->first];
+                        if (maxllr_counts.count(mllr) == 0){
+                            maxllr_counts.insert(make_pair(mllr, 1));
+                        }
+                        else{
+                            maxllr_counts[mllr]++;
+                        }
+                        indv_tot++;
+                        ++x;
+                    }
+                }
+                
+                if (indv_tot <= n_indvs - n_keep){
+                    del_all = true;
+                }
+
+                if (!del_all){
+                    double cutoff = 0.0;
+                    int runtot = 0;
+                    for (map<double, int>::iterator m = maxllr_counts.begin(); m != maxllr_counts.end();
+                        ++m){
+                        runtot += m->second;
+                        cutoff = m->first;
+                        if (runtot >= n_indvs - n_keep){
+                            break;
+                        }
+                    }
+                    for (vector<pair<short, short> >::iterator x = it->second.begin(); x != it->second.end(); ){
+                        if (maxllr[x->first] <= cutoff){
+                            if (included[x->first]){
+                                included[x->first] = false;
+                                maxllr[x->first] = 0.0;
+                                minllr[x->first] = 0.0;
+                                n_indvs--;
+                            }
+                            it->second.erase(x);
+                        }
+                        else{
+                            ++x;
+                        }
+                    }
+                }
+                else{
+                    for (vector<pair<short, short> >::iterator x = it->second.begin(); x != 
+                        it->second.end(); ){
+                        if (included[x->first]){
+                            included[x->first] = false;
+                            n_indvs--;
+                            maxllr[x->first] = 0.0;
+                            minllr[x->first] = 0.0;
+                        }
+                        it->second.erase(x);
+                    }
+                    lookup_llr.erase(it++);
+                }
+            }
+
+            if (n_indvs != n_keep){
+                return false;
+            }
+            return true;
+        }
+        
+        void get_max(int& best_idx, double& best_llr){
+            if (n_indvs < 2){
+                best_idx = -1;
+                best_llr = 0.0;
+                return;
+            }
+            best_idx = -1;
+            best_llr = 0.0;
+            bool success = del(2);
+            if (!success){
+                return;
+            }
+            if (n_indvs == 2){
+                while (best_idx == -1 && it != lookup_llr.end()){
+                    for (vector<pair<short, short> >::iterator x = it->second.begin(); 
+                        x != it->second.end(); ){
+                        if (included[x->first] && included[x->second]){
+                            best_idx = x->second;
+                            best_llr = -it->first;
+                            break;
+                        }
+                        it->second.erase(x);
+                    } 
+                    if (best_idx == -1){
+                        ++it;
+                    }
+                }
+            }
+            return;
         };
 };
 
@@ -103,27 +285,38 @@ class llr_table{
  */
 void get_kcomps_cond(map<int, map<int, double> >& kcomps,
     map<int, map<int, double> >& llrs,
+    llr_table& tab,
     int n_samples,
     vector<string>& samples,
     set<int>& allowed_assignments){
 
     for (map<int, map<int, double> >::iterator llr = llrs.begin(); llr != llrs.end();
         ++llr){
+
         vector<int> js;
         vector<int> comps;
         for (map<int, double>::iterator llr2 = llr->second.begin(); llr2 != llr->second.end();
             ++llr2){
             if (llr2->first >= n_samples){
-                pair<int, int> comb = idx_to_hap_comb(llr2->first, n_samples);
-                int j = -1;
-                if (comb.first == llr->first){
-                    j = comb.second;
+                //if (allowed_assignments.size() == 0 || allowed_assignments.find(llr2->first) != 
+                //    allowed_assignments.end()){
+                
+                if (!tab.included[llr2->first]){
+                //    continue;
                 }
-                else{
-                    j = comb.first;
+
+                if (true){
+                    pair<int, int> comb = idx_to_hap_comb(llr2->first, n_samples);
+                    int j = -1;
+                    if (comb.first == llr->first){
+                        j = comb.second;
+                    }
+                    else{
+                        j = comb.first;
+                    }
+                    js.push_back(j);
+                    comps.push_back(-llr2->second);
                 }
-                js.push_back(j);
-                comps.push_back(-llr2->second);
             }
         }
         
@@ -174,9 +367,11 @@ void get_kcomps_cond(map<int, map<int, double> >& kcomps,
  * so a single decision can be made across all comparisons.
  */
 void compute_k_comps(map<int, map<int, double> >& llrs,
+    llr_table& tab,
     vector<int>& ks,
     vector<string>& samples,
-    set<int>& allowed_assignments){
+    set<int>& allowed_assignments,
+    double doublet_rate){
     
     // Get a table of LLRs between different combination members, conditional on a cell
     // being half another member. In other words, keys/values here are
@@ -184,22 +379,28 @@ void compute_k_comps(map<int, map<int, double> >& llrs,
     // LLR is the log likelihood ratio of ID2A vs ID2B being included in a double model
     // with ID1. 
     map<int, map<int, map<int, double> > > kcomp_cond;
-    
     for (map<int, map<int, double> >::iterator samp = llrs.begin(); samp != llrs.end(); ++samp){
+        if (!tab.included[samp->first]){
+            continue;
+        }
         map<int, map<int, double> > llrstmp;
         llrstmp.insert(make_pair(samp->first, samp->second));
         map<int, map<int, double> > kcomp; 
-        get_kcomps_cond(kcomp, llrstmp, samples.size(), samples, allowed_assignments);
+        get_kcomps_cond(kcomp, llrstmp, tab, samples.size(), samples, allowed_assignments);
         kcomp_cond.insert(make_pair(samp->first, kcomp));
     }
-    
     // compute all single vs double comparisons
     for (int i = 0; i < samples.size(); ++i){
         if (allowed_assignments.size() != 0 && 
             allowed_assignments.find(i) == allowed_assignments.end()){
             continue;
         }
+        else if (!tab.included[i]){
+            continue;
+        }
+
         for (int ki = 0; ki < ks.size(); ++ki){
+            // NOTE: ks is already a filtered list (allowable)
             int k = ks[ki];
             pair<int, int> comb = idx_to_hap_comb(k, samples.size());
             if (comb.first != i && comb.second != i){
@@ -217,15 +418,28 @@ void compute_k_comps(map<int, map<int, double> >& llrs,
                 else{
                     ll2 += llrs[i][comb.second];
                 }
-                llrs[i].insert(make_pair(k, 0.5*ll1 + 0.5*ll2));
+                double llr = 0.5*ll1 + 0.5*ll2;
+                if (doublet_rate != 0.5 && doublet_rate < 1.0){
+                    // i is singlet, k is doublet
+                    llr += log2(1.0 - doublet_rate) - log2(doublet_rate);
+                }
+                tab.insert(i, k, llr);
+            }
+            else{
+                // It's already been computed.
+                double llr = llrs[i][k];
+                if (doublet_rate != 0.5 && doublet_rate < 1.0){
+                    llr += log2(1.0 - doublet_rate) - log2(doublet_rate);
+                }
+                tab.insert(i, k, llr);
             }
         }
     }
+
     // compute all double vs double comparisons
     for (int ki = 0; ki < ks.size()-1; ++ki){
         int k1 = ks[ki];
-        map<int, double> m;
-        llrs.insert(make_pair(k1, m));
+        
         pair<int, int> comb1 = idx_to_hap_comb(k1, samples.size());
         for (int kj = ki+1; kj < ks.size(); ++kj){
             int k2 = ks[kj];
@@ -402,30 +616,7 @@ void compute_k_comps(map<int, map<int, double> >& llrs,
                 llrcount++;
             }
             double llr = llrsum / llrcount;
-            llrs[k1].insert(make_pair(k2, llr));
-        }
-    }
-    
-    // Finally, if we are filtering assignments, need to delete all disallowed identities from
-    // the LLR table, now that we used them to help compute LLRs of allowed identities.
-    if (allowed_assignments.size() > 0){
-        for (map<int, map<int, double> >::iterator llr = llrs.begin(); llr != llrs.end(); ){
-            if (allowed_assignments.find(llr->first) != 
-                allowed_assignments.end()){
-                for (map<int, double>::iterator llr2 = llr->second.begin(); llr2 != llr->second.end(); ){
-                    if (allowed_assignments.find(llr2->first) != 
-                        allowed_assignments.end()){
-                        ++llr2;
-                    }
-                    else{
-                        llr->second.erase(llr2++);
-                    }
-                }
-                ++llr;
-            }
-            else{
-                llrs.erase(llr++);
-            }
+            tab.insert(k1, k2, llr);
         }
     }
 }
@@ -444,11 +635,10 @@ void compute_k_comps(map<int, map<int, double> >& llrs,
  *  there because they make up allowed doublet identities (this is the actual 
  *  filtered list of possible identities).
  */
-void populate_llr_table(map<pair<int, int>, 
-        map<pair<int, int>, pair<float, float> > >& counts,
-    robin_hood::unordered_map<double, int>& lookup_llr,
-
+bool populate_llr_table(map<pair<int, int>, 
+    map<pair<int, int>, pair<float, float> > >& counts,
     map<int, map<int, double> >& llrs,
+    llr_table& tab,
     vector<string>& samples,
     set<int>& allowed_assignments,
     set<int>& allowed_assignments2,
@@ -463,7 +653,7 @@ void populate_llr_table(map<pair<int, int>,
             allowed_assignments.end()){
             continue;
         }
-
+        
         // Set default expectation for indv1
         // 0 = homozygous ref (~0% alt allele)
         // 1 = heterozygous (~50% alt allele)
@@ -542,7 +732,6 @@ void populate_llr_table(map<pair<int, int>,
                     llrs[i].insert(make_pair(j, 0.0));
                 }
                 llrs[i][j] += (ll1-ll2);
-                
                 if (doublet_rate > 0.0){
                     // Store comparisons between i and (i,j) combo and 
                     // between j and (i,j) combo
@@ -559,8 +748,37 @@ void populate_llr_table(map<pair<int, int>,
             }
         }
     }
-    
+    // Populate LLR table with singlet/singlet comparisons
+    for (map<int, map<int, double> >::iterator x = llrs.begin(); x != llrs.end(); ++x){
+        for (map<int, double>::iterator y = x->second.begin(); y != x->second.end(); ++y){
+            if (y->first < samples.size()){
+                if (allowed_assignments.size() == 0 || 
+                    (allowed_assignments.find(x->first) != allowed_assignments.end() &&
+                     allowed_assignments.find(y->first) != allowed_assignments.end())){
+                    tab.insert(x->first, y->first, y->second);
+                }
+            }
+        }
+    }
     if (doublet_rate > 0.0){ 
+        
+        // Toss out unlikely individuals (based on losing end of largest LLR
+        // in the table, iteratively), until we are left with 10 individuals
+        int n_target = 10;
+        if (tab.n_indvs > n_target){
+            bool success = tab.del(n_target);
+            if (!success){
+                return false;
+            }
+        }
+        
+        // If we started with more than 3 individuals and threw out enough to get down
+        // below 3, give up trying to make an assignment. This will only happen if there
+        // are lots of ties, which would be the result of very sparse data.
+
+        if (tab.n_indvs < 3 && tab.n_indvs < samples.size()){
+            return false;
+        }
         
         // Get a list of all possible double identities to consider.
         vector<int> ks;
@@ -569,88 +787,53 @@ void populate_llr_table(map<pair<int, int>,
                 allowed_assignments.find(i) == allowed_assignments.end()){
                 continue;
             }
+            else if (!tab.included[i]){
+                continue;
+            }
+
             for (int j = i + 1; j < samples.size(); ++j){
                 if (allowed_assignments.size() != 0 && 
                     allowed_assignments.find(j) == allowed_assignments.end()){
                     continue;
                 }
-                int k = hap_comb_to_idx(i, j, samples.size());
-                ks.push_back(k);
-            }
-        }
-
-        // put k indices in increasing order so we know what order to store comparisons
-        // in the data structure
-        sort(ks.begin(), ks.end());
-
-        // With all possible values of k to consider, we already have all member component vs 
-        // double model comparisons computed. We now need to compute all other possible
-        // single vs double model comparisons, as well as double model vs double model comparisons.
-        
-        compute_k_comps(llrs, ks, samples, allowed_assignments);
-    }
-
-    // Erase impossible combinations.
-    //
-    // Only need to check if we've limited allowable IDs or set doublet rate to 1
-    // (doublet rate set to zero already would have excluded doublet combos from
-    // being added to the LLR table)
-    
-    if (allowed_assignments.size() > 0 || doublet_rate == 1.0){
-        for (map<int, map<int, double> >::iterator llr = llrs.begin(); llr != llrs.end(); ){
-            bool pass = true;
-            if (doublet_rate == 1 && llr->first < samples.size()){
-                pass = false;
-            }
-            else if (allowed_assignments2.size() > 0 && 
-                allowed_assignments2.find(llr->first) == allowed_assignments2.end()){
-                pass = false;
-            }
-            if (pass){
-                for (map<int, double>::iterator llr2 = llr->second.begin(); llr2 != llr->second.end(); ){
-                    
-                    bool pass2 = true;
-                    if (doublet_rate == 1 && llr2->first < samples.size()){
-                        pass2 = false;
-                    }
-                    else if (allowed_assignments2.size() > 0 && 
-                        allowed_assignments2.find(llr2->first) == allowed_assignments2.end()){
-                        pass2 = false;
-                    }
-                    if (pass2){    
-                        ++llr2;
-                    }
-                    else{
-                        llr->second.erase(llr2++);
-                    }
+                else if (!tab.included[j]){
+                    continue;
                 }
-                ++llr;
+                int k = hap_comb_to_idx(i, j, samples.size());
+                if (allowed_assignments.size() == 0 || allowed_assignments.find(k) != 
+                    allowed_assignments.end()){
+                    
+                    ks.push_back(k);
+                }
             }
-            else{
-                llrs.erase(llr++);
+        }
+        
+        if (ks.size() > 0){
+            // put k indices in increasing order so we know what order to store comparisons
+            // in the data structure
+            
+            sort(ks.begin(), ks.end());
+            // With all possible values of k to consider, we already have all member component vs 
+            // double model comparisons computed. We now need to compute all other possible
+            // single vs double model comparisons, as well as double model vs double model comparisons.
+            
+            compute_k_comps(llrs, tab, ks, samples, allowed_assignments, doublet_rate);
+            
+        }
+    }
+    
+    // Disallow impossible combinations. We should already have excluded disallowed k combinations
+    // so only need to exclude single individuals.
+    if (allowed_assignments.size() > 0 || doublet_rate == 1.0){
+        for (int i = 0; i < samples.size(); ++i){
+            if (doublet_rate == 1 || (allowed_assignments2.size() > 0 && 
+                allowed_assignments2.find(i) == allowed_assignments2.end())){
+                tab.disallow(i);
             }
         }
     }
-    if (doublet_rate > 0.0 && doublet_rate < 1.0){
-        // Finally, need to adjust LLR table using doublet prior.
-        for (map<int, map<int, double> >::iterator llr = llrs.begin(); llr != llrs.end();
-            ++llr){
-            // Only need to adjust ratios where one is a single and the
-            // other is a double. 
-            // Since sorted numerically, the first index will never be 
-            // a double in a single/double combination.
-            if (llr->first >= samples.size()){
-                break;
-            }
-            for (map<int, double>::iterator llr2 = llr->second.begin(); llr2 != 
-                llr->second.end(); ++llr2){
-                if (llr->first < samples.size() && llr2->first >= samples.size()){
-                    // Adjust LLR.
-                    llr2->second += log2(1.0-doublet_rate) - log2(doublet_rate);
-                }  
-            }
-        }
-    }
+
+    return true;
 }
 
 /**
@@ -704,28 +887,21 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
         // Get a table of log likelihood ratios between every possible
         // pair of identities
         map<int, map<int, double> > llrs;
-        populate_llr_table(x->second, llrs, samples, allowed_assignments, 
+        llr_table tab(samples.size());
+        bool success = populate_llr_table(x->second, llrs, tab, samples, allowed_assignments, 
             allowed_assignments2,doublet_rate, error_rate_ref, error_rate_alt);
-
+        
         // Debugging only: print this table and quit
         if (print_llrs){
-            bc as_bitset(x->first);
-            string bc_str = bc2str(as_bitset);
-            for (map<int, map<int, double> >::iterator llr = llrs.begin(); llr != 
-                llrs.end(); ++llr){
-                for (map<int, double>::iterator llr2 = llr->second.begin();
-                    llr2 != llr->second.end(); ++llr2){
-                    fprintf(stdout, "%s\t%s\t%s\t%f\n", bc_str.c_str(),
-                        idx2name(llr->first, samples).c_str(),
-                        idx2name(llr2->first, samples).c_str(),
-                        llr2->second);
-                    fprintf(stdout, "%s\t%s\t%s\t%f\n", bc_str.c_str(),
-                        idx2name(llr2->first, samples).c_str(),
-                        idx2name(llr->first, samples).c_str(),
-                        -llr2->second);
-                }
-            }
+            string bc_str = bc2str(x->first);
+            tab.print(bc_str, samples);
+            
+            int x;
+            double y;
+            tab.get_max(x, y);
+            fprintf(stderr, "%s %f\n", idx2name(x, samples).c_str(), y);
             exit(0);
+        
         }    
         
         // Now that we have a table of all pairwise LLRs between assignments for this cell,
@@ -734,9 +910,12 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
         // This is done by iteratively finding the largest LLR between identities and eliminating
         // the least likely one, until only two identities are left. The final LLR is the LLR between
         // the best and second best assignment.
+        double llr_final = 0.0;
+        int assn = -1;
+        if (success){
+            tab.get_max(assn, llr_final);
+        }
         
-        double llr_final;
-        int assn = collapse_llrs(llrs, llr_final);
         // Only store information if an assignment has been made (don't accept equal
         // likelihood of two choices)
         if (llr_final > 0.0){
@@ -1158,7 +1337,7 @@ void help(int code){
     fprintf(stderr ,"       but not explicitly listed in the file will still be considered.\n");
     fprintf(stderr, "       Names of individuals must match those in the VCF, and combinations\n");
     fprintf(stderr, "       of two individuals can be specified by giving both individual names\n");
-    fprintf(stderr, "       separated by \"+\" or \"x\", with names in either order.\n");
+    fprintf(stderr, "       separated by \"+\", with names in either order.\n");
     fprintf(stderr, "----- I/O options -----\n");
     fprintf(stderr, "    --barcode_group -g If you plan to combine cells from multiple runs\n");
     fprintf(stderr, "       together, and there might be cell barcode collisions (i.e. the \n");
@@ -1428,7 +1607,7 @@ all possible individuals\n", idfile_doublet.c_str());
         // Figure out the appropriate file name from the previous run and
         // load the counts, instead of reading through the BAM file.
         fprintf(stderr, "Loading counts...\n");
-        load_counts_from_file(indv_allelecounts, samples, countsfilename);
+        load_counts_from_file(indv_allelecounts, samples, countsfilename, allowed_ids);
     }
     else{
         // initialize the BAM reader

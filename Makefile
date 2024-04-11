@@ -16,7 +16,7 @@ DEPS=lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
 all: demux/demux_vcf demux/demux_mt demux/demux_multiseq demux/demux_species analysis/quant_contam utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/fastq_cell_bcs utils/split_read_files utils/atac_fq_preprocess
 
 demux/demux_vcf: src/demux_vcf.cpp build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_vcf.cpp -o demux/demux_vcf build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o -lz -lhts lib/libmixturedist.a lib/liboptimml.a lib/libhtswrapper.a
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -g src/demux_vcf.cpp -o demux/demux_vcf build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o -lz -lhts lib/libmixturedist.a lib/liboptimml.a lib/libhtswrapper.a
 
 demux/demux_mt: src/demux_mt.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o -lz -lhts lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
