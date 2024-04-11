@@ -190,6 +190,7 @@ int load_counts(string& filename,
             }
             ++idx;
         }
+
         first = false;
     }
 
@@ -388,7 +389,8 @@ void assign_ids2(robin_hood::unordered_map<unsigned long, vector<pair<int, strin
     robin_hood::unordered_map<unsigned long, string>& assn1,
     robin_hood::unordered_map<unsigned long, string>& assn2,
     robin_hood::unordered_map<unsigned long, double>& assn_llr,
-    bool output_unassigned){
+    bool output_unassigned,
+    vector<string>& labels){
 
     for (robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >::iterator x = 
         bc_ms_counts.begin(); x != bc_ms_counts.end(); ++x){
@@ -509,6 +511,136 @@ void assign_ids2(robin_hood::unordered_map<unsigned long, vector<pair<int, strin
         else{
         }
     }
+
+    map<string, int> label2idx;
+    for (int i = 0; i < labels.size(); ++i){
+        label2idx.insert(make_pair(labels[i], i));
+    }
+
+    map<string, vector<double> > dists_fit;
+    map<string, double> weight_tot;
+    
+    for (robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >::iterator bmc = 
+        bc_ms_counts.begin(); bmc != bc_ms_counts.end(); ++bmc){
+        string name;
+        double llr;
+        if (assn1.count(bmc->first) > 0){
+            if (assn2.count(bmc->first) > 0){
+                name = assn1[bmc->first] + "+" + assn2[bmc->first];
+            }
+            else{
+                name = assn1[bmc->first];
+            }
+            llr = assn_llr[bmc->first];
+        }
+        else{
+            name = "Unassigned";
+            llr = 1.0;
+        }
+        if (dists_fit.count(name) == 0){
+            vector<double> v;
+            dists_fit.insert(make_pair(name, v));
+            for (int i = 0; i < label2idx.size(); ++i){
+                dists_fit[name].push_back(0.0);
+            }
+            weight_tot.insert(make_pair(name, 0));
+        }
+        
+        for (vector<pair<int, string> >::iterator c = bmc->second.begin(); c != bmc->second.end(); ++c){
+            // skip "pseudocounts" added earlier
+            if (label2idx.count(c->second) == 0){
+                continue;
+            }
+            int idx = label2idx[c->second];
+            dists_fit[name][idx] += -(double)c->first * llr;
+            weight_tot[name] += llr;
+        }
+    }
+    
+    vector<mixtureDist> dists_new;
+
+    for (map<string, vector<double> >::iterator df = dists_fit.begin(); df != dists_fit.end(); ++df){
+         
+        double tot = 0;
+        for (int i = 0; i < df->second.size(); ++i){
+            if (df->second[i] == 0){
+                df->second[i] = 1.0;
+            }
+            tot += df->second[i];        
+        }
+        for (int i = 0; i < df->second.size(); ++i){
+            df->second[i] /= tot;
+        }
+        
+        mixtureDist dist("multinomial", df->second);
+        dist.set_num_inputs(label2idx.size());
+        dist.name = df->first;
+        dists_new.push_back(dist);
+        dists_new[dists_new.size()-1].print(0);
+    }
+    
+    for (robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >::iterator bmc = bc_ms_counts.begin();
+        bmc != bc_ms_counts.end(); ++bmc){
+        
+        vector<double> obs;
+        for (int i = 0; i < label2idx.size(); ++i){
+            obs.push_back(0.0);
+        }
+        for (vector<pair<int, string> >::iterator bmc2 = bmc->second.begin(); bmc2 != 
+            bmc->second.end(); ++bmc2){
+            if (label2idx.count(bmc2->second) > 0){
+                obs[label2idx[bmc2->second]] = -(double)bmc2->first;
+            }
+        }
+        
+        vector<pair<double, string> > lls;
+        for (int i = 0; i < dists_new.size(); ++i){
+            double ll = dists_new[i].loglik(obs);
+            lls.push_back(make_pair(-ll, dists_new[i].name));
+        }
+        sort(lls.begin(), lls.end());
+        string assn = lls[0].second;
+        double llr = -lls[0].first - -lls[1].first;
+        if (llr > 0){
+            string bc_str = bc2str(bmc->first);
+            string name_old;
+            if (assn1.count(bmc->first) > 0){
+                if (assn2.count(bmc->first) > 0){
+                    name_old = assn1[bmc->first] + "+" + assn2[bmc->first];
+                }
+                else{
+                    name_old = assn1[bmc->first];
+                }
+            }
+            else{
+                name_old = "Unassigned";
+            }
+            fprintf(stdout, "%s\t%s\t%f\t%s\t%f\n", bc_str.c_str(), name_old.c_str(),
+                assn_llr[bmc->first], assn.c_str(), llr);
+        }
+    }
+
+    exit(0);
+
+
+    // Get distributions for off-target
+    for (robin_hood::unordered_map<unsigned long, string>::iterator a = assn1.begin(); a != assn1.end(); ++a){
+        int tot = 0;
+        for (vector<pair<int, string> >::iterator c = bc_ms_counts[a->first].begin(); c != 
+            bc_ms_counts[a->first].end(); ++c){
+            if (c->second != a->second){
+                tot += -c->first;
+            }
+        }
+        
+        for (vector<pair<int, string> >::iterator c = bc_ms_counts[a->first].begin(); c != 
+            bc_ms_counts[a->first].end(); ++c){
+            if (c->second != a->second){
+                fprintf(stdout, "%s\t%f\n", c->second.c_str(), (double)-c->first / (double)tot);        
+            }
+        }
+    }
+    exit(0);
     /* 
     return; 
     sum1 /= tot1;
@@ -952,7 +1084,7 @@ well mappings\n");
     robin_hood::unordered_map<unsigned long, string> assn1;
     robin_hood::unordered_map<unsigned long, string> assn2;
     robin_hood::unordered_map<unsigned long, double> assn_llr;
-    assign_ids2(bc_ms_counts, assn1, assn2, assn_llr, output_unassigned);
+    assign_ids2(bc_ms_counts, assn1, assn2, assn_llr, output_unassigned, labels);
     
     string assnfilename = output_prefix + ".assignments";
     write_assignments(assnfilename, assn1, assn2, assn_llr);
