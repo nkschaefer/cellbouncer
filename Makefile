@@ -19,7 +19,7 @@ demux/demux_vcf: src/demux_vcf.cpp build/common.o build/demux_vcf_io.o build/dem
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -g src/demux_vcf.cpp -o demux/demux_vcf build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o -lz -lhts lib/libmixturedist.a lib/liboptimml.a lib/libhtswrapper.a
 
 demux/demux_mt: src/demux_mt.cpp src/common.h build/common.o $(DEPS)
-	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o -lz -lhts lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
+	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a -lhts -lz
 
 demux/demux_species: src/demux_species.cpp src/kmsuftree.h src/common.h build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -pthread src/demux_species.cpp -o demux/demux_species build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o lib/libhtswrapper.a lib/libmixturedist.a -lhts -lz
@@ -34,10 +34,10 @@ analysis/doublet_dragon: src/doublet_dragon.cpp build/common.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/doublet_dragon.cpp -o analysis/doublet_dragon build/common.o lib/liboptimml.a lib/libmixturedist.a lib/libhtswrapper.a -lz
 
 utils/bam_indiv_rg: src/bam_indiv_rg.cpp build/common.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_indiv_rg.cpp -o utils/bam_indiv_rg build/common.o -lz -lhts $(DEPS)
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_indiv_rg.cpp -o utils/bam_indiv_rg build/common.o $(DEPS) -lz -lhts
 
 utils/bam_split_bcs: src/bam_split_bcs.cpp build/common.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_split_bcs.cpp -o utils/bam_split_bcs build/common.o -lz -lhts $(DEPS)
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_split_bcs.cpp -o utils/bam_split_bcs build/common.o $(DEPS) -lz -lhts
 
 utils/get_unique_kmers: src/get_unique_kmers.c src/FASTK/libfastk.c build/libfastk.o
 	$(CCOMP) -fPIC -g src/get_unique_kmers.c -o utils/get_unique_kmers build/libfastk.o -lz
@@ -46,16 +46,16 @@ utils/kmsuftree_test: src/kmsuftree_test.cpp src/kmsuftree.h build/kmsuftree.o
 	$(COMP) $(FLAGS) src/kmsuftree_test.cpp -o utils/kmsuftree_test build/kmsuftree.o
 
 utils/fastq_cell_bcs: src/fastq_cell_bcs.cpp build/common.o $(DEPS)
-	$(COMP) $(FLAGS) $(IFLAGS) $(LFLAGS) src/fastq_cell_bcs.cpp -o utils/fastq_cell_bcs build/common.o -lz -lhts $(DEPS)
+	$(COMP) $(FLAGS) $(IFLAGS) $(LFLAGS) src/fastq_cell_bcs.cpp -o utils/fastq_cell_bcs build/common.o $(DEPS) -lz -lhts
 
 utils/atac_fq_preprocess: src/atac_fq_preprocess.cpp build/common.o $(DEPS)
-	$(COMP) $(FLAGS) $(IFLAGS) $(LFLAGS) src/atac_fq_preprocess.cpp -o utils/atac_fq_preprocess build/common.o -lz -lhts $(DEPS)
+	$(COMP) $(FLAGS) $(IFLAGS) $(LFLAGS) src/atac_fq_preprocess.cpp -o utils/atac_fq_preprocess build/common.o $(DEPS) -lz -lhts
 
 utils/split_read_files: src/split_read_files.cpp build/common.o
-	$(COMP) $(FLAGS) $(IFLAGS) $(LFLAGS) src/split_read_files.cpp -o utils/split_read_files build/common.o -lz -lhts $(DEPS) 
+	$(COMP) $(FLAGS) $(IFLAGS) $(LFLAGS) src/split_read_files.cpp -o utils/split_read_files build/common.o $(DEPS) -lz -lhts
 
 utils/combine_species_counts: src/combine_species_counts.cpp build/common.o
-	$(COMP) $(FLAGS) $(IFLAGS) $(LFLAGS) src/combine_species_counts.cpp -o utils/combine_species_counts build/common.o -lz -lhts $(DEPS)
+	$(COMP) $(FLAGS) $(IFLAGS) $(LFLAGS) src/combine_species_counts.cpp -o utils/combine_species_counts build/common.o $(DEPS) -lz -lhts
 
 build/common.o: src/common.cpp src/common.h lib/libhtswrapper.a lib/libmixturedist.a
 	$(COMP) $(IFLAGS) $(FLAGS) src/common.cpp -c -o build/common.o

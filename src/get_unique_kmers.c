@@ -361,7 +361,7 @@ int main(int argc, char* argv[]){
     }
 
     // Write out species names
-    char namebuf[500];
+    char namebuf[strlen(output_prefix) + 7];
     sprintf(&namebuf[0], "%s.names", output_prefix);
     FILE* f = fopen(&namebuf[0], "w");
     for (int i = 0; i < num_tables; ++i){

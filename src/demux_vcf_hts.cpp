@@ -146,7 +146,7 @@ int read_vcf(string& filename,
                 int nmiss = 0;
                 int num_loaded = bcf_get_genotypes(bcf_header, bcf_record, &gts, &n_gts);
                 if (num_loaded <= 0){
-                    fprintf(stderr, "ERROR loading genotypes at %s %lld\n", 
+                    fprintf(stderr, "ERROR loading genotypes at %s %ld\n", 
                         chrom.c_str(), bcf_record->pos);
                     exit(1);
                 }
