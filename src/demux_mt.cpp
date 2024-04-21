@@ -2400,9 +2400,11 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
         solver.add_data("match1", im->second);
         solver.add_data("match2", id_match2[im->first]);
         solver.constrain_01();
-        solver.add_beta_prior(10000, 10000);
+        //solver.add_beta_prior(10000, 10000);
         double p = solver.solve(0,1);
-        fprintf(stdout, "%f\t%f\n", p, solver.se);
+	pair<int, int> comb = idx_to_hap_comb(im->first, clust_ids.size());
+        fprintf(stdout, "%s\t%s\t%f\t%f\n", clust_ids[comb.first].c_str(), 
+	    clust_ids[comb.second].c_str(), p, solver.se);
         id_mixprop_mean.insert(make_pair(im->first, p));
         id_mixprop_sd.insert(make_pair(im->first, solver.se));
         
