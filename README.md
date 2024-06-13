@@ -1,4 +1,4 @@
-<p align="center">
+<p align=>
 <img src="logo.png", width=300, alt="CellBouncer" />
 </p>
 
