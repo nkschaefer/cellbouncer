@@ -1,5 +1,5 @@
-<p align=>
-<img src="logo.png", width=300, alt="CellBouncer" />
+<p>
+<img src="img/logo.png", width=300, alt="CellBouncer" />
 </p>
 
 Tools for demultiplexing and keeping the riffraff out of pooled single cell sequencing experiments. 
@@ -32,5 +32,9 @@ The programs in `cellbouncer` are standalone command line tools. If you run one 
 In the `plot` directory, there are R scripts to plot output from some of the programs. If you run one with no arguments, it will tell you how to run it.
 
 ## Programs
+<p>
+<img src="img/demux_species.png", width=200, alt="demux_species" />
+</p>
+### demux_species
 
 
