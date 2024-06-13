@@ -6,7 +6,7 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
-|Demultiplex cells by **species**|A transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species|[`demux_species`](docs/demux_species)|
+|Demultiplex cells by **species**|A transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species|[`demux_species`](docs/demux_species.md)|
 |Demultiplex cells by **individual of origin**, and I hope individuals are unrelated enough to have different mitochondrial haplotypes|Nothing|`demux_mt`|
 |Demultiplex cells by **individual of origin**|VCF of known variants|`demux_vcf`|
 |Demultiplex individuals by **individual of origin** or **treatment**|MULTIseq/HTO/CITE-seq data|`demux_tags`|
@@ -36,10 +36,14 @@ In the `plot` directory, there are R scripts to plot output from some of the pro
 <img src="img/demux_species.png", width=200, alt="demux_species" />
 </p>
 
-### [demux_species](docs/demux_species)
+### [demux_species](docs/demux_species.md)
+Before mapping data, infer the species of origin of each cell barcode by counting k-mers unique to each species' transcriptome. Separate FASTQ files by species and optionally plot species abundances.
+
 <p>
 <img src="img/mito.png", width=200, alt="demux_mt" />
 </p>
 
 ### demux_mt
+Using a BAM file of aligned scATAC-seq (ideally) or whole-cell scRNA-seq data containing cells originating from multiple individuals, infer the set of mitochondrial haplotypes in the mixture, as well as the number of individuals. Assign each cell an identity based on its likeliest mitochondrial haplotype. These assignments can then be used to label individuals of origin in the BAM, and a variant caller can then identify genomic SNPs and their genotypes in the inferred individuals.
+
 
