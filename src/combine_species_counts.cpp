@@ -210,6 +210,20 @@ conversions from previous batches.\n", idx);
         }
         else{
             has_idx = false;
+            // Check ahead to see if future files exist - this would be evidence that some
+            // runs failed
+            for (int idx2 = idx + 1; idx2 <= idx + 10; ++idx2){
+                sprintf(&buf[0], "%d", idx);
+                string bufstr2 = buf;
+                string countsfn_future = outdir + "species_counts." + bufstr + ".txt";
+                if (file_exists(countsfn_future)){
+                    fprintf(stderr, "ERROR: there is no file %s, but the file %s exists.\n",
+                        countsfilename.c_str(), countsfn_future.c_str());
+                    fprintf(stderr, "This means it is likely that some runs failed.\n");
+                    fprintf(stderr, "You should re-run those jobs before concatenating files.\n");
+                    exit(1);
+                }
+            }
         }
         ++idx;
     } 
