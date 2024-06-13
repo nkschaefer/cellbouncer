@@ -53,6 +53,7 @@ To run, you must first build a set of reference k-mers. To accomplish this,
     * `species_names.txt` A file listing species names in the same order as k-mer counts are listed in `species_counts.txt`
     * `species.assignments` A file mapping cell barcodes to species (or inter-species doublets), along with log likelihood ratios/confidence of assignments
     * `species.filt.assignments` The same as above, but filtered to (hopefully) exclude many non-cell barcodes, in order to improve plotting and give a better idea of the proportions of each species in the pool
+    * `dists.txt` contains parameters from the fit multinomial mixture model used to assign cells to species.
     * Subdirectories for each species, containing the input read files (with the same names), subset to only reads from cells assigned to that species
     * Species-specific [10X Genomics-format library files](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/inputs/cr-libraries-csv), to aid in running [cellranger](https://www.10xgenomics.com/support/software/cell-ranger/latest) on data from each species separately
 ### Running in parallel
@@ -67,5 +68,6 @@ Unfortunately, matching cell barcodes to large whitelists and counting k-mers ca
 * Re-run `demux_species` with the same output directory you used for all runs, but now provide all reads you would like to separate by species.
 
 **NOTE**: k-mers are stored in a suffix tree, which can become very large. Because of this, only one species' k-mers are counted at a time. Small k-mer sizes can help curtail memory usage (but will also become more likely to become non-species-specific as sizes decrease), but you should expect k-mer counting runs to take a lot of memory (potentially 60-80 GB or more).
-
+### Plotting
+Run `plot/species.R [output_directory]` after a `demux_species` run to create a heatmap of species-specific k-mer counts in cells next to teh species assignments those cells received, as well as bar plots of the number of cells assigned each identity, both in the full set and the filtered set of cell barcodes.
 
