@@ -31,6 +31,10 @@ In this case, you can use `demux_mt` again, but set `--vars/-v` to `[output_pref
 
 ## Plotting to check output
 
+Successful clustering (ATAC)| Successful clustering (RNA, whole cell) | Unsuccessful clustering (RNA, multiome)|
+:--------------------------:|:---------------------------------------:|:-------------------------:
+![](../img/mito_clust_good1.png)  |  ![](../img/mito_clust_good2.png) | ![](../img/mito_clust_bad.png) |
+
 The program `/plot/demux_mt_clust.R` is a good way to visually inspect the results of a `demux_mt` run. It only requires the output prefix given to demux_mt as an argument, and will attempt to hierarchically cluster all cells with at least 50% of inferred variable sites covered. In addition to plotting each cell's mitochondrial variants and clustering cells by similarity, it will show the inferred individual from `demux_mt` next to the cluster heatmap. If the number of inferred individuals is clearly discernable in the heatmap, and the color bars showing inferred individuals line up well with these inferred clusters. this is good evidence that everything worked.
 
 The program `/plot/demux_mt_unclust.R` is a way to visualize the results of `demux_mt` without hierarchical clustering. It will sort cells by their assigned individual, rather than cell-cell similarity and thus is more of a way to visualize the data than to validate results.
