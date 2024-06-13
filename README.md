@@ -1,5 +1,5 @@
 # CellBouncer
-Tools for keeping the riffraff out of pooled single cell sequencing experiments. 
+Tools for demultiplexing and keeping the riffraff out of pooled single cell sequencing experiments. 
 <p>
 <img src="logo.png", width=300, alt="CellBouncer" />
 </p>
@@ -14,16 +14,5 @@ Tools for keeping the riffraff out of pooled single cell sequencing experiments.
 |Quantify ambient RNA per cell and infer its origins|VCF of known variants|`quant_contam`|
 |Infer global doublet rate|Output from a `CellBouncer` program|`doublet_dragon`|
 
-CellBouncer can:
-* Demultiplex cells 
-  * by species
-  * by mitochondrial haplotype
-  * by individual of origin
-  * by cell hashing identity
-  * using sgRNA capture data
-* Quantify ambient RNA
-  * Infers proportion per cell
-  * Infers the fraction of ambient RNA originating from each individual
-* Infer a global doublet rate
-  * Use results from one or more demultiplexing types
+
 
