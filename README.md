@@ -8,7 +8,7 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |------------|---------|-----------|
 |Demultiplex cells by **species**|A transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species|[`demux_species`](#demux_species)|
 |Demultiplex cells by **individual of origin**, and I hope individuals are unrelated enough to have different mitochondrial haplotypes|Nothing|[`demux_mt`](#demux_mt)|
-|Demultiplex cells by **individual of origin**|VCF of known variants|`demux_vcf`|
+|Demultiplex cells by **individual of origin**|VCF of known variants|[`demux_vcf`](#demux_vcf)|
 |Demultiplex individuals by **individual of origin** or **treatment**|MULTIseq/HTO/CITE-seq data|`demux_tags`|
 |Assign **sgRNAs** to cells|sgRNA capture data|`demux_tags`|
 |Quantify **ambient RNA** per cell and infer its origins|VCF of known variants|`quant_contam`|
@@ -42,14 +42,21 @@ In the `plot` directory, there are R scripts to plot output from some of the pro
 <img src="img/demux_species.png", width=200, alt="demux_species" />
 </p>
 
-### [demux_species](docs/demux_species.md)
+## [demux_species](docs/demux_species.md)
 Before mapping data, infer the species of origin of each cell barcode by counting k-mers unique to each species' transcriptome. Separate FASTQ files by species and optionally plot species abundances.
 
 <p>
 <img src="img/mito.png", width=200, alt="demux_mt" />
 </p>
 
-### [demux_mt](docs/demux_mt.md)
+## [demux_mt](docs/demux_mt.md)
 Using a BAM file of aligned scATAC-seq (ideally) or whole-cell scRNA-seq data containing cells originating from multiple individuals, infer the set of mitochondrial haplotypes in the mixture, as well as the number of individuals. Assign each cell an identity based on its likeliest mitochondrial haplotype. These assignments can then be used to label individuals of origin in the BAM, and a variant caller can then identify genomic SNPs and their genotypes in the inferred individuals.
+
+<p>
+<img src="img/demux_vcf.png" width=150, alt="demux_vcf />
+</p>
+
+## demux_vcf
+Given genotype data for the individuals in a pool and a BAM file of aligned single cell sequencing data, quickly infer the individual (or doublet) of origin of each cell in the pool. Confidently identifies specific doublets of origin where they occur and has been shown to be accurate even in identifying the correct contributor cell lines in the case of composite cell lines formed through inter-species cell fusions.
 
 
