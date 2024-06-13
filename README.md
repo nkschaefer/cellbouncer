@@ -12,5 +12,5 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |Infer global doublet rate|Output from a `CellBouncer` program|`doublet_dragon`|
 
 <p>
-<img src="logo.png", width=300, alt="CellBouncer" />
+<img align="center" src="logo.png", width=300, alt="CellBouncer" />
 </p>
