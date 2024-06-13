@@ -112,6 +112,9 @@ void help(int code){
     fprintf(stderr, "       provide both the ATAC-seq barcode whitelist (-w) and the RNA-seq\n");
     fprintf(stderr, "       barcode whitelist (here) (REQUIRED). If not multiome or RNA-seq only,\n");
     fprintf(stderr, "       these are not required.\n");
+    fprintf(stderr, "   --exact -e By default, up to one mismatch to the cell barcode list is allowed.\n");
+    fprintf(stderr, "       This option requires exact matches instead; this will speed up analysis at\n");
+    fprintf(stderr, "       the cost of identifying fewer reads per cell.\n");
     fprintf(stderr, "\n   ===== OTHER INPUT OPTIONS =====\n");
     fprintf(stderr, "   --k -k Base file name for species-specific k-mers. This should be created\n");
     fprintf(stderr, "       by get_unique_kmers, and there should be files with the ending .names,\n");
@@ -147,25 +150,24 @@ map<int, pair<int, int> > dist2doublet_comb;
 // What are the identities of component distributions representing singlets?
 map<int, int> dist2singlet;
 
-void mm_callback(const vector<mixtureDist*>& dists,
-    const vector<double>& dist_weights,
+void mm_callback(mixtureModel& mod,
     vector<double>& shared_params){
     
     // Ensure each parameter for each doublet model is an average
     // of those of its two parent species
-    for (int i = 0; i < dists.size(); ++i){
+    for (int i = 0; i < mod.dists.size(); ++i){
         if (dist_doublet[i]){
             double paramsum = 0.0;
-            for (int dim_idx = 0; dim_idx < dists[i]->params[0].size(); ++dim_idx){
-                double parent1 = dists[dist2doublet_comb[i].first]->params[0][dim_idx];
-                double parent2 = dists[dist2doublet_comb[i].second]->params[0][dim_idx];
+            for (int dim_idx = 0; dim_idx < mod.dists[i].params[0].size(); ++dim_idx){
+                double parent1 = mod.dists[dist2doublet_comb[i].first].params[0][dim_idx];
+                double parent2 = mod.dists[dist2doublet_comb[i].second].params[0][dim_idx];
                 double pmean = (parent1 + parent2)/2.0;
-                dists[i]->params[0][dim_idx] = pmean;
+                mod.dists[i].params[0][dim_idx] = pmean;
                 paramsum += pmean;
             }
             if (paramsum != 1.0){
-                for (int dim_idx = 0; dim_idx < dists[i]->params[0].size(); ++dim_idx){
-                    dists[i]->params[0][dim_idx] /= paramsum;
+                for (int dim_idx = 0; dim_idx < mod.dists[i].params[0].size(); ++dim_idx){
+                    mod.dists[i].params[0][dim_idx] /= paramsum;
                 }
             }
         }
@@ -192,6 +194,76 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
     double doublet_rate,
     string& model_out_name){
     
+    // First, attempt to sort out true from background cell barcodes
+    map<double, double> counthist;
+
+    // Prepare input data
+    vector<vector<double> > obs;
+    vector<unsigned long> bcs;
+    // Create alternate data set that only consists of total counts
+    vector<vector<double> > obs_tot;
+    vector<double> totvec;
+    for (robin_hood::unordered_map<unsigned long, map<short, int> >::iterator x = 
+        bc_species_counts.begin(); x != bc_species_counts.end(); ++x){
+        bcs.push_back(x->first);
+        vector<double> row;
+        double tot = 0.0;
+        for (short i = 0; i < idx2species.size(); ++i){
+            row.push_back((double)x->second[i]);
+            tot += (double)x->second[i];
+        }
+        
+        for (double i = 0; i < tot-1; ++i){
+            if (counthist.count(i) == 0){
+                counthist.insert(make_pair(i, 0.0));
+            }
+            counthist[i]++;
+        }
+
+        obs.push_back(row);
+        vector<double> rowtot{ tot + 1 };
+        obs_tot.push_back(rowtot);
+        totvec.push_back(tot);
+    }
+    
+    double knee = find_knee(counthist, 0.1);
+    fprintf(stderr, "cutoff %f\n", knee);
+    
+    vector<vector<double> > obs_init_filt;
+    vector<unsigned long> bc_init_filt;
+    vector<double> weights_init_filt;
+    for (int i = 0; i < obs.size(); ++i){
+        if (totvec[i] > knee){
+            obs_init_filt.push_back(obs[i]);
+            bc_init_filt.push_back(bcs[i]);
+            weights_init_filt.push_back(totvec[i]);
+        }
+    }
+
+    /*
+    sort(totvec.begin(), totvec.end());
+    
+    vector<mixtureDist> dists_tot;
+    //mixtureDist dist_tot_low("negative_binomial", vector<double>{ totvec[0], 1.0 });
+    mixtureDist dist_tot_low("poisson", vector<double>{ totvec[0] });
+    mixtureDist dist_tot_high("negative_binomial", vector<double>{ percentile(totvec, 0.999), 1.0 });
+    //mixtureDist dist_tot_high("exponential", vector<double>{ 1.0 / percentile(totvec, 0.999) });
+    dists_tot.push_back(dist_tot_low);
+    dists_tot.push_back(dist_tot_high);
+    mixtureModel mod_tot(dists_tot);
+    mod_tot.fit(obs_tot);
+    mod_tot.print();
+    fprintf(stderr, "%f %f\n", mod_tot.dists[0].params[0][0], 1.0/mod_tot.dists[1].params[0][0]);
+    exit(0);
+    */
+    
+    
+    // Next, fit model to learn multinomial dists for each species
+
+    // Make an assignment for every cell barcode (including those filtered out in step 1)
+
+    // Attempt to filter down assignments to confident set
+
     fprintf(stderr, "Fitting model to counts...\n");
 
     int n_species = idx2species.size();
@@ -273,18 +345,7 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
         }
     } 
 
-    // Prepare input data
-    vector<vector<double> > obs;
-    vector<unsigned long> bcs;
-    for (robin_hood::unordered_map<unsigned long, map<short, int> >::iterator x = 
-        bc_species_counts.begin(); x != bc_species_counts.end(); ++x){
-        bcs.push_back(x->first);
-        vector<double> row;
-        for (short i = 0; i < idx2species.size(); ++i){
-            row.push_back((double)x->second[i]);
-        }
-        obs.push_back(row);
-    }
+    
 
     vector<double> dist_weights;
     for (map<int, bool>::iterator dd = dist_doublet.begin(); dd != dist_doublet.end();
@@ -302,7 +363,7 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
     // Create and fit mixture model 
     mixtureModel mod(dists, dist_weights); 
     mod.set_callback(mm_callback);
-    mod.fit(obs);
+    mod.fit(obs_init_filt, weights_init_filt);
     
     for (int i = 0; i < mod.n_components; ++i){
         fprintf(outf, "%s\t%f", mod.dists[i].name.c_str(), mod.weights[i]);
@@ -407,6 +468,7 @@ int main(int argc, char *argv[]) {
        {"k", required_argument, 0, 'k'},
        {"num_threads", required_argument, 0, 't'},
        {"batch_num", required_argument, 0, 'b'},
+       {"exact", no_argument, 0, 'e'},
        {0, 0, 0, 0} 
     };
     
@@ -429,6 +491,7 @@ int main(int argc, char *argv[]) {
     vector<string> speciesnames;
     bool dump = false;
     int batch_num = -1;
+    bool exact_matches = false;
 
     int option_index = 0;
     int ch;
@@ -436,7 +499,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "t:o:1:2:3:r:R:x:X:n:k:w:W:D:b:dh", 
+    while((ch = getopt_long(argc, argv, "t:o:1:2:3:r:R:x:X:n:k:w:W:D:b:e:dh", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -492,6 +555,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'b':
                 batch_num = atoi(optarg);
+                break;
+            case 'e':
+                exact_matches = true;
                 break;
             default:
                 help(0);
@@ -735,6 +801,10 @@ data for %s with more species.\n", kmerbase.c_str());
             multiome = false;
         }
         
+        if (exact_matches){
+            wl.exact_matches_only();
+        } 
+
         // Init species k-mer counter 
         species_kmer_counter counter(num_threads, k, kmerfiles.size(), &wl, &bc_species_counts);
 
@@ -853,6 +923,10 @@ data for %s with more species.\n", kmerbase.c_str());
     }
     
     bc_whitelist wl_out;
+    
+    // Note: do not set exact matches here, even if exact matches are set earlier. This is because we are
+    // already limited to a shorter list of barcodes that were assigned a given species, so matching should
+    // be relatively quick.
 
     // Now we're on to the demultiplexing part.
     // See if we need to load barcode conversions.
