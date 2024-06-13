@@ -53,7 +53,7 @@ Before mapping data, infer the species of origin of each cell barcode by countin
 Using a BAM file of aligned scATAC-seq (ideally) or whole-cell scRNA-seq data containing cells originating from multiple individuals, infer the set of mitochondrial haplotypes in the mixture, as well as the number of individuals. Assign each cell an identity based on its likeliest mitochondrial haplotype. These assignments can then be used to label individuals of origin in the BAM, and a variant caller can then identify genomic SNPs and their genotypes in the inferred individuals.
 
 <p>
-<img src="img/demux_vcf.png" width=150, alt="demux_vcf />
+<img src="img/demux_vcf.png" width=150, alt="demux_vcf" />
 </p>
 
 ## demux_vcf
