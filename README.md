@@ -15,7 +15,7 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |Infer global doublet rate|Output from a `CellBouncer` program|`doublet_dragon`|
 
 ## Installation
-The non-plotting programs in `CellBouncer` require only [HTSLib](https://github.com/samtools/htslib) and [zlib](https://www.zlib.net/). You can install these dependencies yourself, or to make it easier, get these and plotting-related dependencies by creating a [conda](https://github.com/conda-forge/miniforge/releases) environment from the included `cellbouncer.yml` file. Then all that's left to do is `make`:
+The non-plotting programs in `cellbouncer` require only [HTSLib](https://github.com/samtools/htslib) and [zlib](https://www.zlib.net/). You can install these dependencies yourself, or to make it easier, get these and plotting-related dependencies by creating a [conda](https://github.com/conda-forge/miniforge/releases) environment from the included `cellbouncer.yml` file. Then all that's left to do is `make`:
 
 ```
 git clone --recurse-submodules https://github.com/nkschaefer/cellbouncer.git
@@ -25,4 +25,12 @@ conda activate cellbouncer
 make
 ```
 You've now got all the programs compiled, and you can run them as long as you remember to `conda activate cellbouncer` first.
+
+## The main I/O idea
+The programs in `cellbouncer` are standalone command line tools. If you run one of them with no arguments or with `-h`, it will give you detailed information about how to run it. In general, though, each program writes output files that start with a name you give via `--output_prefix` or `-o`. Demultiplexing tools all write a file called `[output_prefix].assignments`, which tells you information about each cell's identity. These files are 4 columns, tab separated: cell barcode, most likely identity, droplet type: S (for singlet), D (for doublet), or in some cases M (for multiplet, 3+ individuals, but not all programs look for these), and a ratio of the log likelihood of the best to the second best assignment. 
+
+In the `plot` directory, there are R scripts to plot output from some of the programs. If you run one with no arguments, it will tell you how to run it.
+
+## Programs
+
 
