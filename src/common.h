@@ -59,4 +59,10 @@ double logbinom(double n, double k, double p);
 
 bool file_exists(std::string name);
 
+// Approximate derivative using slope of neighboring points
+void derivative(std::map<double, double>& hist, std::map<double, double>& result, int smooth);
+
+// Find inflection point in a histogram
+double find_knee(std::map<double, double>& hist, double min_frac_to_allow);
+
 #endif
