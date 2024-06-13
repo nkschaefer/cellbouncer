@@ -10,7 +10,21 @@
 
 void help(int code){
     fprintf(stderr, "USAGE: get_unique_kmers\n");
-    fprintf(stderr, "After running FASTK to count k-mers on different species' transcriptomes,\n");
+    fprintf(stderr, "First, use a utility like gffread (https://github.com/gpertea/gffread)\n");
+    fprintf(stderr, "   to extract FASTA sequences of all transcripts in each transcriptome\n");
+    fprintf(stderr, "   of interest, if you do not already have transcript FASTAs. To do this,\n");
+    fprintf(stderr, "   run gffread -F -w {output_tx.fa} -g {genome_fasta.fa} {unzipped_gtf.gtf}\n");
+    fprintf(stderr, "   where items in braces should be changed to your files.\n");
+    fprintf(stderr, "   Now, {output_tx.fa} contains FASTA sequences of transcripts.\n");  
+    fprintf(stderr, "Next, run the FastK program in the FASTK package (https://github.com/thegenemyers/FASTK)\n");
+    fprintf(stderr, "   to count k-mers in each transcriptome. To do this, run:\n");
+    fprintf(stderr, "   FastK -N{output_prefix} -k{kmer_size} -t1 {output_tx.fa}\n");
+    fprintf(stderr, "   Note that there should be no space between argument names and argument values.\n");
+    fprintf(stderr, "   {kmer_size} should be a value long enough to be unique, but short enough to allow\n");
+    fprintf(stderr, "   for some errors in reads and to fit into memory. A value between 25-45 should be\n");
+    fprintf(stderr, "   reasonable.\n");
+    fprintf(stderr, "   After running this program, there should be a file called {output_prefix}.ktab.\n");
+    fprintf(stderr, "After running FASTK to count k-mers on all of your species' transcriptomes,\n");
     fprintf(stderr, "   run this prgram to read FASTK's k-mer table files and output lists of\n");
     fprintf(stderr, "   k-mers unique to each species. These can then be used to demultiplex\n");
     fprintf(stderr, "   reads from multiple species without mapping to a reference genome.\n");
