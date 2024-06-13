@@ -14,3 +14,16 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 <p align="center">
 <img src="logo.png", width=300, alt="CellBouncer" />
 </p>
+
+## Installation
+The non-plotting programs in `CellBouncer` require only [HTSLib](https://github.com/samtools/htslib) and [zlib](https://www.zlib.net/). You can install these dependencies yourself, or to make it easier, get these and plotting-related dependencies by creating a [conda](https://github.com/conda-forge/miniforge/releases) environment from the included `cellbouncer.yml` file. Then all that's left to do is `make`:
+
+```
+git clone --recurse-submodules https://github.com/nkschaefer/cellbouncer.git
+cd cellbouncer
+conda env create --file=cellbouncer.yml
+conda activate cellbouncer
+make
+```
+You've now got all the programs compiled, and you can run them as long as you remember to `conda activate cellbouncer` first.
+
