@@ -6,11 +6,11 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
-|Demultiplex species|A transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species|`demux_species`|
-|Demultiplex individuals with different mitochondrial haplotypes|Nothing|`demux_mt`|
-|Demultiplex individuals|VCF of known variants|`demux_vcf`|
-|Demultiplex individuals|MULTIseq/HTO/CITE-seq data|`demux_tags`|
-|Assign sgRNAs|sgRNA capture data|`demux_tags`|
+|Demultiplex cells by species|A transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species|`demux_species`|
+|Demultiplex cells by individual of origin, where individuals have different mitochondrial haplotypes|Nothing|`demux_mt`|
+|Demultiplex cells by individual of origin|VCF of known variants|`demux_vcf`|
+|Demultiplex individuals by individual of origin or treatment|MULTIseq/HTO/CITE-seq data|`demux_tags`|
+|Assign sgRNAs to cells|sgRNA capture data|`demux_tags`|
 |Quantify ambient RNA per cell and infer its origins|VCF of known variants|`quant_contam`|
 |Infer global doublet rate|Output from a `CellBouncer` program|`doublet_dragon`|
 
