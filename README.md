@@ -1,4 +1,7 @@
-# CellBouncer
+<p align="center">
+<img src="logo.png", width=300, alt="CellBouncer" />
+</p>
+
 Tools for demultiplexing and keeping the riffraff out of pooled single cell sequencing experiments. 
 
 |I want to...|I have...|Tool to use|
@@ -10,10 +13,6 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |Assign sgRNAs|sgRNA capture data|`demux_tags`|
 |Quantify ambient RNA per cell and infer its origins|VCF of known variants|`quant_contam`|
 |Infer global doublet rate|Output from a `CellBouncer` program|`doublet_dragon`|
-
-<p align="center">
-<img src="logo.png", width=300, alt="CellBouncer" />
-</p>
 
 ## Installation
 The non-plotting programs in `CellBouncer` require only [HTSLib](https://github.com/samtools/htslib) and [zlib](https://www.zlib.net/). You can install these dependencies yourself, or to make it easier, get these and plotting-related dependencies by creating a [conda](https://github.com/conda-forge/miniforge/releases) environment from the included `cellbouncer.yml` file. Then all that's left to do is `make`:
