@@ -11,6 +11,6 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |Quantify ambient RNA per cell and infer its origins|VCF of known variants|`quant_contam`|
 |Infer global doublet rate|Output from a `CellBouncer` program|`doublet_dragon`|
 
-<p>
-<img style="align: center;" src="logo.png", width=300, alt="CellBouncer" />
+<p align="center">
+<img src="logo.png", width=300, alt="CellBouncer" />
 </p>
