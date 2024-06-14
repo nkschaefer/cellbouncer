@@ -41,11 +41,19 @@ plot/assignment_llr.R| plot/compare_assignments.R |
 :--------------------------:|:---------------------------------------:
 ![](img/assn_llr.png)  |  ![](img/vcf_vs_mito.png)
 
-<p>
-<img src="img/assn_llr.png" width=400 alt="Assignment log likelihood ratio cutoff plot" />
-</p>
+Two plotting programs are useful across multiple `cellbouncer` programs, however.
 
-One plotting program, `plot/assignment_llr.R`, can create a generic plot useful for all programs that assign cells to identities. It plots candidate (log-scaled) log likelihood ratio cutoffs on the X-axis and stacked bar plots of cell counts for each identity passing those cutoffs on the Y-axis. These plots can help visualize the proportion of each individual in the pool, determine whether these proportions change dramatically after applying a particular cutoff, and get an idea of how many cells would be lost at each cutoff value. To run, just run `plot/assignment_llr.R [output_prefix]`, where `[output_prefix]` is the `--output_prefix` argument given to the tool you just ran.
+`plot/assignment_llr.R` plots a set of cell-to-identity assignments as stacked bars, to show the proportion of the pool made up of cells of each assigned identity. Along the X-axis, the heights of these bars change to show how many cells of each category would remain if the user filtered the data using the log likelihood ratio cutoff on the X-axis. This is useful for visualizing the total number of cells, pool composition, and feasibility of different filtering thresholds. To generate this plot, simply run 
+```
+plot/assignment_llr.R [output_prefix]
+```
+where `[output_prefix]` is the output prefix given to the `cellbouncer` program you just ran.
+
+`plot/compare_assignments.R` compares two sets of assignments on the same cells. A typical use case for this program might be to compare the results of `demux_vcf` and `demux_mt` run on the same data set, to see whether the programs worked, and potentially to assign an individual of origin (from the VCF) to each mitochondrial haplotype. To generate this plot, run 
+```
+plot/compare_assignments.R [output_prefix1.assignments] [output_prefix2.assignments] [plot_out] (S)
+```
+where `[output_prefix1.assignments]` is the assignments file from the first program run, `[output_prefix2.assignments]` is the assignments file from the other program run, `[plot_out]` is the base output name for plots (both `.pdf` and `.png` format plots will be created), and `S` is an optional final argument that, if present, will limit the plot to show singlet identifications only.
 
 # Programs
 
