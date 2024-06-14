@@ -38,7 +38,7 @@ There are two ways to plot the mitochondrial haplotypes inferred by `demux_mt` i
 
 In our experience, ATAC-seq data clusters well and has fairly even coverage of mitochondrial sequences. RNA-seq from whole cells works less well due to uneven coverage and missing sites, but still often finds the correct haplotypes. Single nucleus RNA-seq data (including the RNA-seq data from 10X Genomics Multiome kits) often has coverage that is too sparse to find the correct mitochondrial haplotypes.
 
-Successful clustering (ATAC, 8 individuals)| Successful clustering (RNA, whole cell, 7 individuals) | Unsuccessful clustering (RNA, multiome, 8 individuals)|
+Successful clustering (ATAC, 8 individuals)| Successful clustering (RNA, whole cell, 7 individuals) | Unsuccessful clustering (RNA, nucleus only, 8 individuals)|
 :--------------------------:|:---------------------------------------:|:-------------------------:
 ![](../img/mt_clust_good1.png)  |  ![](../img/mt_clust_good2.png) | ![](../img/mt_clust_bad.png) |
 
