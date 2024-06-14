@@ -25,7 +25,7 @@ To run, you must first build a set of reference k-mers. To accomplish this,
 ### Running in parallel
 Unfortunately, matching cell barcodes to large whitelists and counting k-mers can be slow. To speed up this process, `cellbouncer` has a way to split up data, run in parallel on a cluster, and join results.
 * Chop up the input read files using `utils/split_read_files`
-  * Usage: `utils/split_read_files -1 [MyLibrary_S1_L001_R1_001.fastq.gz] -2 [MyLibrary_S1_L001_R2_001.fastq.gz] -o [output_directory] -n [number of chunks]`
+  * Usage: `utils/split_read_files -1 MyLibrary_S1_L001_R1_001.fastq.gz -2 MyLibrary_S1_L001_R2_001.fastq.gz -o [output_directory] -n [number of chunks]`
   * This will create files in `[output_directory]` with the same names as the input read files, but with a 1-based numeric index appended to the end.
 * Run `demux_species` on each chunk in batch mode, using the same output directory for all runs
   * Pass one forward/reverse read pair file chunk in: i.e. `-r MyLibrary_S1_L001_R1_001.1.fastq.gz -R MyLibrary_S1_L001_R2_001.1.fastq.gz` and add the chunk number, so it can be appended to output files: i.e. `--batch_num 1`
@@ -33,8 +33,8 @@ Unfortunately, matching cell barcodes to large whitelists and counting k-mers ca
 * Join all runs together using `utils/combine_species_counts` with `-o` set to the output directory you used
 * Re-run `demux_species` with the same output directory you used for all runs, but now provide all reads you would like to separate by species.
 
-**NOTE**: k-mers are stored in a suffix tree, which can become very large. Because of this, only one species' k-mers are counted at a time. Small k-mer sizes can help curtail memory usage (but will also become more likely to become non-species-specific as sizes decrease), but you should expect k-mer counting runs to take a lot of memory (potentially 60-80 GB or more).
+**NOTE**: k-mers are stored in a suffix tree, which can become very large. Because of this, only one species' k-mers are counted at a time. Small k-mer sizes can help curtail memory usage (but will also become more likely to become non-species-specific as sizes decrease), but you should expect k-mer counting runs to take a lot of RAM (potentially 60-80 GB or more).
 ### Plotting
-Run `plot/species.R [output_directory]` after a `demux_species` run to create a heatmap of species-specific k-mer counts in cells next to teh species assignments those cells received, as well as bar plots of the number of cells assigned each identity, both in the full set and the filtered set of cell barcodes.
+Run `plot/species.R [output_directory]` after a `demux_species` run to create a heatmap of species-specific k-mer counts in cells next to the species assignments those cells received, as well as bar plots of the number of cells assigned each identity, both in the full set and the filtered set of cell barcodes.
 
 [Back to main README](../README.md)
