@@ -37,7 +37,7 @@ In output files, cell barcodes will by default be printed without any additional
 ## Plotting
 In the `plot` directory, there are R scripts to plot output from some of the programs. If you run one with no arguments, it will tell you how to run it. Plotting programs are described in more detail on the README pages for specific tools.
 
-plot/assignment_llr.R| plot/compare_assignments.R | 
+`plot/assignment_llr.R`| `plot/compare_assignments.R` | 
 :--------------------------:|:---------------------------------------:
 ![](img/assn_llr.png)  |  ![](img/vcf_vs_mito.png)
 
