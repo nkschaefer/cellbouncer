@@ -32,11 +32,14 @@ In this case, you can use `demux_mt` again, but set `--vars/-v` to `[output_pref
 
 ## Plotting to check output
 
+There are two ways to plot the mitochondrial haplotypes inferred by `demux_mt` in individual cells. These plots contain a heatmap in which cells are rows and variant sites are columns. Variant sites are colored blue when they match the major allele, yellow when they match the minor allele, or not colored (white) when they are missing in a cell. Well-defined haplotypes should be easy to identify as vertical lines in the heatmap showing many cells with the same alleles at variant sites.
+
 Successful clustering (ATAC)| Successful clustering (RNA, whole cell) | Unsuccessful clustering (RNA, multiome)|
 :--------------------------:|:---------------------------------------:|:-------------------------:
 ![](../img/mt_clust_good1.png)  |  ![](../img/mt_clust_good2.png) | ![](../img/mt_clust_bad.png) |
 
 The program `/plot/demux_mt_clust.R` is a good way to visually inspect the results of a `demux_mt` run. It only requires the output prefix given to demux_mt as an argument, and will attempt to hierarchically cluster all cells with at least 50% of inferred variable sites covered. In addition to plotting each cell's mitochondrial variants and clustering cells by similarity, it will show the inferred individual from `demux_mt` next to the cluster heatmap. If the number of inferred individuals is clearly discernable in the heatmap, and the color bars showing inferred individuals line up well with these inferred clusters. this is good evidence that everything worked.
+* You can change the cutoff for including a cell in the plot by providing a second argument, which is a decimal between 0 and 1 representing the maximum allowable percent of variant sites that can be missing in a cell for the cell to be included. If you include too many cells with low coverage, however, you risk encountering two cells that can't be compared because they do not share any covered variant sites. If this is the case, the clustering step will fail with an error message.
 
 The program `/plot/demux_mt_unclust.R` is a way to visualize the results of `demux_mt` without hierarchical clustering. It will sort cells by their assigned individual, rather than cell-cell similarity and thus is more of a way to visualize the data than to validate results.
 
