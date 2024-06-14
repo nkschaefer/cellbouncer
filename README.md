@@ -64,7 +64,7 @@ Given genotype data for the individuals in a pool and a BAM file of aligned sing
 
 ## [demux_tags](docs/demux_tags.md)
 <p>
-<img src="img/demux_tags.png" width=200, alt="demux_tags" />
+<img src="img/demux_tags.png" width=150, alt="demux_tags" />
 </p>
 
 If you have collected [MULTIseq](https://www.nature.com/articles/s41592-019-0433-8), [cell hashing](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-018-1603-1), [CITE-seq](https://emea.illumina.com/techniques/sequencing/rna-sequencing/cite-seq.html), or sgRNA capture data, this program can count occurrences of tag/sgRNA sequences in your reads. It can then assign cells to identities from these counts, as well as inferring the proportion of counts per cell consisting of ambient tag counts. This algorithm considers combinations of multiple assignments, making it suitable for assigning guides in a high-MOI CRISPR experiment.
