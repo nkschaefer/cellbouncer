@@ -41,7 +41,7 @@ In the `plot` directory, there are R scripts to plot output from some of the pro
 <img src="img/assn_llr.png" width=400 alt="Assignment log likelihood ratio cutoff plot" />
 </p>
 
-One plotting program, `plot/assignment_llr.R`, can create a generic plot useful for all programs that assign cells to identities. It plots candidate (log-scaled) log likelihood ratio cutoffs on the X-axis and (log scaled) cell counts for each identity on the Y-axis, which can help identify whether any particular identities tend to consist mostly of low-confidence assignments. It can also help users see how much data would be lost by applying a particular cutoff. To run, just run `plot/assignment_llr.R [output_prefix]`, where `[output_prefix]` is the `--output_prefix` argument given to the tool you just ran.
+One plotting program, `plot/assignment_llr.R`, can create a generic plot useful for all programs that assign cells to identities. It plots candidate (log-scaled) log likelihood ratio cutoffs on the X-axis and stacked bar plots of cell counts for each identity passing those cutoffs on the Y-axis. These plots can help visualize the proportion of each individual in the pool, determine whether these proportions change dramatically after applying a particular cutoff, and get an idea of how many cells would be lost at each cutoff value. To run, just run `plot/assignment_llr.R [output_prefix]`, where `[output_prefix]` is the `--output_prefix` argument given to the tool you just ran.
 
 # Programs
 
