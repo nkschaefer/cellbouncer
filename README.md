@@ -42,7 +42,7 @@ In output files, cell barcodes will by default be printed without any additional
 </p>
 Before mapping data, infer the species of origin of each cell barcode by counting k-mers unique to each species' transcriptome. Separate FASTQ files by species and optionally plot species abundances.
 
-[[more]](docs/demux_species.md)
+[more](docs/demux_species.md)
 
 
 ## [demux_mt](docs/demux_mt.md)
@@ -51,7 +51,7 @@ Before mapping data, infer the species of origin of each cell barcode by countin
 </p>
 Using a BAM file of aligned scATAC-seq (ideally) or whole-cell scRNA-seq data containing cells originating from multiple individuals, infer the set of mitochondrial haplotypes in the mixture, as well as the number of individuals. Assign each cell an identity based on its likeliest mitochondrial haplotype. These assignments can then be used to label individuals of origin in the BAM, and a variant caller can then identify genomic SNPs and their genotypes in the inferred individuals.
 
-[[more]](docs/demux_mt.md)
+[more](docs/demux_mt.md)
 
 
 ## [demux_vcf](docs/demux_vcf.md)
@@ -60,9 +60,10 @@ Using a BAM file of aligned scATAC-seq (ideally) or whole-cell scRNA-seq data co
 </p>
 Given genotype data for the individuals in a pool and a BAM file of aligned single cell sequencing data, quickly infer the individual (or doublet) of origin of each cell in the pool. Confidently identifies specific doublets of origin where they occur and has been shown to be accurate even in identifying the correct contributor cell lines in the case of composite cell lines formed through inter-species cell fusions.
 
-[[more]](docs/demux_vcf.md)
+[more](docs/demux_vcf.md)
 
 ## [demux_tags](docs/demux_tags.md)
+
 
 [more](docs/demux_tags.md)
 
