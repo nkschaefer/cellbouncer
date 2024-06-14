@@ -213,6 +213,9 @@ void help(int code){
     fprintf(stderr, "       run's [output_prefix].haps. (REQUIRED)\n");
     fprintf(stderr, "   --vars -v Variants used to build cluster haplotypes in previous \n");
     fprintf(stderr, "       run. Should be that run's [output_prefix].vars. (REQUIRED)\n");
+    fprintf(stderr, "   --ids -i (OPTIONAL). A file listing names of IDs to assign, one per line, in the\n");
+    fprintf(stderr, "       same order as the haplotypes in the --haps file. If you do not provide this\n");
+    fprintf(stderr, "       file, individual names will be 0-based numeric IDs.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "   ===== Run mode 3: Inferring mixing proportions in cells with multiple haplotypes =====\n");
     fprintf(stderr, "   This is a special use case: mitochondrial haplotypes are already known, some\n");
