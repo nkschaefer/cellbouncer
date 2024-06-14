@@ -34,15 +34,6 @@ Demultiplexing tools all write a file called `[output_prefix].assignments`, whic
 
 In output files, cell barcodes will by default be printed without any additional text (they will consist only of DNA sequences). When there are multiple data sets to be analyzed together, additional text must be appended to barcodes from each data set to prevent barcode collisions. Different programs have different conventions for handling this, such as [CellRanger](https://www.10xgenomics.com/support/software/cell-ranger/latest) appending "-" and a numeric ID (starting from 1) to cell barcodes. In [scanpy](https://scanpy.readthedocs.io/en/stable/), the [anndata.concatenate](https://anndata.readthedocs.io/en/latest/generated/anndata.AnnData.concatenate.html) command also follows this convention, unless the `batch_categories` argument is used. Some `CellBouncer` programs have a `--batch_id` argument that allows users to append unique identifiers in the same format (separated from the barcode sequence with `-`).
 
-## Plotting
-In the `plot` directory, there are R scripts to plot output from some of the programs. If you run one with no arguments, it will tell you how to run it. Plotting programs are described in more detail on the README pages for specific tools.
-
-<p>
-<img src="img/assn_llr.png" width=400 alt="Assignment log likelihood ratio cutoff plot" />
-</p>
-
-One plotting program, `plot/assignment_llr.R`, can create a generic plot useful for all programs that assign cells to identities. It plots candidate (log-scaled) log likelihood ratio cutoffs on the X-axis and stacked bar plots of cell counts for each identity passing those cutoffs on the Y-axis. These plots can help visualize the proportion of each individual in the pool, determine whether these proportions change dramatically after applying a particular cutoff, and get an idea of how many cells would be lost at each cutoff value. To run, just run `plot/assignment_llr.R [output_prefix]`, where `[output_prefix]` is the `--output_prefix` argument given to the tool you just ran.
-
 # Programs
 
 ## [demux_species](docs/demux_species.md)
@@ -51,7 +42,7 @@ One plotting program, `plot/assignment_llr.R`, can create a generic plot useful 
 </p>
 Before mapping data, infer the species of origin of each cell barcode by counting k-mers unique to each species' transcriptome. Separate FASTQ files by species and optionally plot species abundances.
 
-[[more]](docs/demux_species.md)
+[more](docs/demux_species.md)
 
 
 ## [demux_mt](docs/demux_mt.md)
@@ -60,7 +51,7 @@ Before mapping data, infer the species of origin of each cell barcode by countin
 </p>
 Using a BAM file of aligned scATAC-seq (ideally) or whole-cell scRNA-seq data containing cells originating from multiple individuals, infer the set of mitochondrial haplotypes in the mixture, as well as the number of individuals. Assign each cell an identity based on its likeliest mitochondrial haplotype. These assignments can then be used to label individuals of origin in the BAM, and a variant caller can then identify genomic SNPs and their genotypes in the inferred individuals.
 
-[[more]](docs/demux_mt.md)
+[more](docs/demux_mt.md)
 
 
 ## [demux_vcf](docs/demux_vcf.md)
@@ -69,8 +60,37 @@ Using a BAM file of aligned scATAC-seq (ideally) or whole-cell scRNA-seq data co
 </p>
 Given genotype data for the individuals in a pool and a BAM file of aligned single cell sequencing data, quickly infer the individual (or doublet) of origin of each cell in the pool. Confidently identifies specific doublets of origin where they occur and has been shown to be accurate even in identifying the correct contributor cell lines in the case of composite cell lines formed through inter-species cell fusions.
 
-[[more]](docs/demux_vcf.md)
+[more](docs/demux_vcf.md)
 
+## [demux_tags](docs/demux_tags.md)
+<p>
+<img src="img/demux_tags.png" width=150, alt="demux_tags" />
+</p>
+
+If you have collected [MULTIseq](https://www.nature.com/articles/s41592-019-0433-8), [cell hashing](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-018-1603-1), [CITE-seq](https://emea.illumina.com/techniques/sequencing/rna-sequencing/cite-seq.html), or sgRNA capture data, this program can count occurrences of tag/sgRNA sequences in your reads. It can then assign cells to identities from these counts, as well as inferring the proportion of counts per cell consisting of ambient tag counts. This algorithm considers combinations of multiple assignments, making it suitable for assigning guides in a high-MOI CRISPR experiment.
+
+[more](docs/demux_tags.md)
+
+## Plotting
+In the `plot` directory, there are R scripts to plot output from some of the programs. If you run one with no arguments, it will tell you how to run it. Plotting programs are described in more detail on the README pages for specific tools.
+
+`plot/assignment_llr.R`| `plot/compare_assignments.R` | 
+:--------------------------:|:---------------------------------------:
+![](img/assn_llr.png)  |  ![](img/vcf_vs_mito.png)
+
+Two plotting programs are useful across multiple `cellbouncer` programs, however.
+
+`plot/assignment_llr.R` plots a set of cell-to-identity assignments as stacked bars, to show the proportion of the pool made up of cells of each assigned identity. Along the X-axis, the heights of these bars change to show how many cells of each category would remain if the user filtered the data using the log likelihood ratio cutoff on the X-axis. This is useful for visualizing the total number of cells, pool composition, and feasibility of different filtering thresholds. To generate this plot, simply run 
+```
+plot/assignment_llr.R [output_prefix]
+```
+where `[output_prefix]` is the output prefix given to the `cellbouncer` program you just ran.
+
+`plot/compare_assignments.R` compares two sets of assignments on the same cells. A typical use case for this program might be to compare the results of `demux_vcf` and `demux_mt` run on the same data set, to see whether the programs worked, and potentially to assign an individual of origin (from the VCF) to each mitochondrial haplotype. To generate this plot, run 
+```
+plot/compare_assignments.R [output_prefix1.assignments] [output_prefix2.assignments] [plot_out] (S)
+```
+where `[output_prefix1.assignments]` is the assignments file from the first program run, `[output_prefix2.assignments]` is the assignments file from the other program run, `[plot_out]` is the base output name for plots (both `.pdf` and `.png` format plots will be created), and `S` is an optional final argument that, if present, will limit the plot to show singlet identifications only.
 
 ## Other tools
 The `utils` directory is the junk drawer of `cellbouncer`. It contains several programs meant for specific tasks, which can aid the above programs.
