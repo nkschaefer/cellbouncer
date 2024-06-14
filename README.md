@@ -38,25 +38,23 @@ In output files, cell barcodes will by default be printed without any additional
 In the `plot` directory, there are R scripts to plot output from some of the programs. If you run one with no arguments, it will tell you how to run it.
 
 # Programs
+
+## [demux_species](docs/demux_species.md)
 <p>
 <img src="img/demux_species.png", width=200, alt="demux_species" />
 </p>
-
-## [demux_species](docs/demux_species.md)
 Before mapping data, infer the species of origin of each cell barcode by counting k-mers unique to each species' transcriptome. Separate FASTQ files by species and optionally plot species abundances.
 
+## [demux_mt](docs/demux_mt.md)
 <p>
 <img src="img/mito.png", width=200, alt="demux_mt" />
 </p>
-
-## [demux_mt](docs/demux_mt.md)
 Using a BAM file of aligned scATAC-seq (ideally) or whole-cell scRNA-seq data containing cells originating from multiple individuals, infer the set of mitochondrial haplotypes in the mixture, as well as the number of individuals. Assign each cell an identity based on its likeliest mitochondrial haplotype. These assignments can then be used to label individuals of origin in the BAM, and a variant caller can then identify genomic SNPs and their genotypes in the inferred individuals.
 
+## [demux_vcf](docs/demux_vcf.md)
 <p>
 <img src="img/demux_vcf.png" width=250, alt="demux_vcf" />
 </p>
-
-## [demux_vcf](docs/demux_vcf.md)
 Given genotype data for the individuals in a pool and a BAM file of aligned single cell sequencing data, quickly infer the individual (or doublet) of origin of each cell in the pool. Confidently identifies specific doublets of origin where they occur and has been shown to be accurate even in identifying the correct contributor cell lines in the case of composite cell lines formed through inter-species cell fusions.
 
 
