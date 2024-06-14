@@ -18,12 +18,12 @@ This program attempts to identify the individual of origin of each cell in a poo
 
 ## Running the program
 
-* Run `demux_mt` with the BAM file provided as `-b`, the output prefix as `-o`, and if the mitochondrial sequence has a name other than chrM, specify `-m seqname`, where `seqname` is the name of the mitochondrial sequence in the reference genome.
-  * This will create the following output files:
-    * `[output_prefix].vars` lists variable sites on the mitochondrial genome that compose the mitochondrial haplotypes
-    * `[output_prefix].haps` lists the inferred mitochondrial haplotypes, one per line, where each character is 0 (for major allele) or 1 (for minor allele), and each corresponds to a variant site in the `.vars` file.
-    * `[output_prefix].cellhaps` contains information used to plot mitochondrial haplotypes in individual cells. Each row represents a cell, the first column lists cell barcode, and all subsequent columns (tab separated) contain the most common allele at each variant site (or NA in the case of low coverage/missing data).
-    * `[output_prefix].assignments` contains the likeliest individual of origin assigned to each cell. Columns are cell barcode, individual (given as a 0-based numeric ID), droplet type (S = singlet; D = doublet), and the ratio of the log likelihood of the best to second best choice.
+Run `demux_mt` with the BAM file provided as `-b`, the output prefix as `-o`, and if the mitochondrial sequence has a name other than chrM, specify `-m seqname`, where `seqname` is the name of the mitochondrial sequence in the reference genome.
+This will create the following output files:
+* `[output_prefix].vars` lists variable sites on the mitochondrial genome that compose the mitochondrial haplotypes
+* `[output_prefix].haps` lists the inferred mitochondrial haplotypes, one per line, where each character is 0 (for major allele) or 1 (for minor allele), and each corresponds to a variant site in the `.vars` file.
+* `[output_prefix].cellhaps` contains information used to plot mitochondrial haplotypes in individual cells. Each row represents a cell, the first column lists cell barcode, and all subsequent columns (tab separated) contain the most common allele at each variant site (or NA in the case of low coverage/missing data).
+* `[output_prefix].assignments` contains the likeliest individual of origin assigned to each cell. Columns are cell barcode, individual (given as a 0-based numeric ID), droplet type (S = singlet; D = doublet), and the ratio of the log likelihood of the best to second best choice.
 
 ### Identifying cells using mitochondrial haplotypes inferred on a prior run
 
