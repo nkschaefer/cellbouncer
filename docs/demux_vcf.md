@@ -1,4 +1,4 @@
-# demux_vcf.md
+# demux_vcf
 <p>
 <img src="../img/demux_vcf.png" width=250 alt="demux_vcf" />
 </p>
