@@ -12,7 +12,11 @@ A common task in pooled culture experiments is to identify every cell's individu
 ### Converting from PLINK
 Sometimes, genotyping data is provided in [PLINK](https://zzz.bwh.harvard.edu/plink/) format (`.map` and `.ped` files). To convert these files to VCF, first download and install `plink`. 
 
-Then, run `plink --file [base] --recode vcf --out [out_base] --real-ref-alleles`, where `[base]` is the beginning of your `.map` and `.ped` file names, and `[out_base]` will be the beginning of the output file (before the `.vcf` extension).
+Then, run 
+```
+plink --file [base] --recode vcf --out [out_base] --real-ref-alleles
+```
+where `[base]` is the beginning of your `.map` and `.ped` file names, and `[out_base]` will be the beginning of the output file (before the `.vcf` extension).
 
 The output file may contain some weird/phony variants (sequence name and position 0). To get around that, do this: 
 ```
