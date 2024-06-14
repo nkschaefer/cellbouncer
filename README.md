@@ -61,6 +61,7 @@ Given genotype data for the individuals in a pool and a BAM file of aligned sing
 
 
 ## Other tools
+The `utils` directory is the junk drawer of `cellbouncer`. It contains several programs meant for specific tasks, which can aid the above programs.
 |Name|Purpose|
 |----|-------|
 |[`utils/get_unique_kmers`](docs/demux_species.md#preparing-data)|For use in demultiplexing reads using species-specific k-mers. Takes lists of k-mers in different species' transcriptomes from [FASTK](https://github.com/thegenemyers/FASTK) and outputs lists of high-complexity k-mers unique to each species.|
