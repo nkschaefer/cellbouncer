@@ -425,7 +425,6 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
     vector<vector<double> > params_low;
     pair<double, double> gammalow = gamma_moments(1, 1);
     pair<double, double> gammahigh = gamma_moments(100, 100);
-    fprintf(stderr, "gamma %f %f | %f %f\n", gammalow.first, gammalow.second, gammahigh.first, gammahigh.second);
     params_low.push_back(vector<double>{ 1 });
     params_low.push_back(vector<double>{ gammalow.first, gammalow.second });
     vector<vector<double> > params_high;
@@ -762,10 +761,6 @@ data for %s with more species.\n", kmerbase.c_str());
     // Declare barcode whitelist
     bc_whitelist wl;
 
-    // True if both ATAC and RNA-seq data provided
-    // (requires two whitelists)
-    bool multiome = false;
-
     // Map each species name to a numeric index
     map<short, string> idx2species;
     map<string, short> species2idx;
@@ -790,15 +785,12 @@ data for %s with more species.\n", kmerbase.c_str());
         // Read barcode whitelist(s)
         if (whitelist_rna_filename != "" && whitelist_atac_filename != ""){
             wl.init(whitelist_rna_filename, whitelist_atac_filename);
-            multiome = true;
         }
         else if (whitelist_rna_filename != ""){
             wl.init(whitelist_rna_filename);
-            multiome = false;
         }
         else{
             wl.init(whitelist_atac_filename);
-            multiome = false;
         }
         
         if (exact_matches){
@@ -849,7 +841,7 @@ data for %s with more species.\n", kmerbase.c_str());
         print_bc_species_counts(bc_species_counts, idx2species, countsfile); 
         fclose(countsfile);
     
-        if (multiome){
+        if (whitelist_rna_filename != "" && whitelist_atac_filename != ""){
             // Also dump a mapping of RNA -> ATAC barcodes
             FILE* mapfile = fopen(convfilename.c_str(), "w");
             for (robin_hood::unordered_map<unsigned long, map<short, int> >::iterator x = 
@@ -921,7 +913,6 @@ data for %s with more species.\n", kmerbase.c_str());
         // Our job is done here
         return 0;
     }
-    
     bc_whitelist wl_out;
     
     // Note: do not set exact matches here, even if exact matches are set earlier. This is because we are
@@ -930,8 +921,10 @@ data for %s with more species.\n", kmerbase.c_str());
 
     // Now we're on to the demultiplexing part.
     // See if we need to load barcode conversions.
-    if (multiome){
+    if (atac_r1files.size() > 0){
         if (convfile_given){
+            fprintf(stderr, "Loading barcode conversion file...\n");
+
             ifstream inf(convfilename.c_str());
             unsigned long bc_rna;
             unsigned long bc_atac;
