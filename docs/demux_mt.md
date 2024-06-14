@@ -69,4 +69,6 @@ If working with compressed VCF files, `bcftools` (and other programs) will often
 ### Demultiplexing using variants
 If you are left with at least several hundred thousand variants (although fewer is still possible), you should now be able to run [`demux_vcf`](demux_vcf.md) with your BAM file and these variants to more confidently identify a higher number of cells than using the mitochondrial identifications alone. 
 
+If you really wanted to get wild, you could even run `utils/bam_indiv_rg` with the `.assignments` file from this run of `demux_vcf` to make a new BAM with read groups from these latest assignments, then repeat variant calling to potentially find more variants and run `demux_vcf` again. Each time you do this, you need to be careful to omit incorrectly-assigned cells, and we expect there to be diminishing returns in repeating this process.
+
 [Back to main README](../README.md)
