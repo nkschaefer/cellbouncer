@@ -23,7 +23,7 @@ The output file may contain some weird/phony variants (sequence name and positio
 cat [out_base].vcf | awk '{if (substr($1, 1, 1) == "#"){ print $line; } else if ( $2 != 0 && $3 != 0){ print $line; }}' > [out_base].filt.vcf
 ```
 
-Next, compress with [`bgzip`](http://www.htslib.org/doc/bgzip.html) and index with [`tabix`](http://www.htslib.org/doc/tabix.html): 
+Next, if you plan on filtering with a tool like [`bcftools`](https://samtools.github.io/bcftools/) (see below), compress with [`bgzip`](http://www.htslib.org/doc/bgzip.html) and index with [`tabix`](http://www.htslib.org/doc/tabix.html): 
 ```
 bgzip [out_base].filt.vcf
 tabix -p vcf filt.vcf.gz
