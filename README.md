@@ -2,7 +2,7 @@
 <img src="img/logo.png", width=300, alt="CellBouncer" />
 </p>
 
-Tools for demultiplexing and keeping the riffraff out of pooled single cell sequencing experiments. 
+Tools for demultiplexing and keeping the riffraff out of pooled single cell sequencing data sets. 
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
@@ -35,7 +35,13 @@ Demultiplexing tools all write a file called `[output_prefix].assignments`, whic
 In output files, cell barcodes will by default be printed without any additional text (they will consist only of DNA sequences). When there are multiple data sets to be analyzed together, additional text must be appended to barcodes from each data set to prevent barcode collisions. Different programs have different conventions for handling this, such as [CellRanger](https://www.10xgenomics.com/support/software/cell-ranger/latest) appending "-" and a numeric ID (starting from 1) to cell barcodes. In [scanpy](https://scanpy.readthedocs.io/en/stable/), the [anndata.concatenate](https://anndata.readthedocs.io/en/latest/generated/anndata.AnnData.concatenate.html) command also follows this convention, unless the `batch_categories` argument is used. Some `CellBouncer` programs have a `--batch_id` argument that allows users to append unique identifiers in the same format (separated from the barcode sequence with `-`).
 
 ## Plotting
-In the `plot` directory, there are R scripts to plot output from some of the programs. If you run one with no arguments, it will tell you how to run it.
+In the `plot` directory, there are R scripts to plot output from some of the programs. If you run one with no arguments, it will tell you how to run it. Plotting programs are described in more detail on the README pages for specific tools.
+
+<p>
+<img src="img/assn_llr.png" width=400 alt="Assignment log likelihood ratio cutoff plot" />
+</p>
+
+One plotting program, `plot/assignment_llr.R`, can create a generic plot useful for all programs that assign cells to identities. It plots candidate (log-scaled) log likelihood ratio cutoffs on the X-axis and stacked bar plots of cell counts for each identity passing those cutoffs on the Y-axis. These plots can help visualize the proportion of each individual in the pool, determine whether these proportions change dramatically after applying a particular cutoff, and get an idea of how many cells would be lost at each cutoff value. To run, just run `plot/assignment_llr.R [output_prefix]`, where `[output_prefix]` is the `--output_prefix` argument given to the tool you just ran.
 
 # Programs
 
@@ -45,17 +51,25 @@ In the `plot` directory, there are R scripts to plot output from some of the pro
 </p>
 Before mapping data, infer the species of origin of each cell barcode by counting k-mers unique to each species' transcriptome. Separate FASTQ files by species and optionally plot species abundances.
 
+[[more]](docs/demux_species.md)
+
+
 ## [demux_mt](docs/demux_mt.md)
 <p>
 <img src="img/mito.png", width=200, alt="demux_mt" />
 </p>
 Using a BAM file of aligned scATAC-seq (ideally) or whole-cell scRNA-seq data containing cells originating from multiple individuals, infer the set of mitochondrial haplotypes in the mixture, as well as the number of individuals. Assign each cell an identity based on its likeliest mitochondrial haplotype. These assignments can then be used to label individuals of origin in the BAM, and a variant caller can then identify genomic SNPs and their genotypes in the inferred individuals.
 
+[[more]](docs/demux_mt.md)
+
+
 ## [demux_vcf](docs/demux_vcf.md)
 <p>
 <img src="img/demux_vcf.png" width=250, alt="demux_vcf" />
 </p>
 Given genotype data for the individuals in a pool and a BAM file of aligned single cell sequencing data, quickly infer the individual (or doublet) of origin of each cell in the pool. Confidently identifies specific doublets of origin where they occur and has been shown to be accurate even in identifying the correct contributor cell lines in the case of composite cell lines formed through inter-species cell fusions.
+
+[[more]](docs/demux_vcf.md)
 
 
 ## Other tools
