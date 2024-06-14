@@ -14,7 +14,10 @@ Sometimes, genotyping data is provided in [PLINK](https://zzz.bwh.harvard.edu/pl
 
 Then, run `plink --file [base] --recode vcf --out [out_base] --real-ref-alleles`, where `[base]` is the beginning of your `.map` and `.ped` file names, and `[out_base]` will be the beginning of the output file (before the `.vcf` extension).
 
-The output file may contain some weird/phony variants (sequence name and position 0). To get around that, do this: `cat [out_base].vcf | awk '{if (substr($1, 1, 1) == "#"){ print $line; } else if ( $2 != 0 && $3 != 0){ print $line; }}' > [out_base].filt.vcf`
+The output file may contain some weird/phony variants (sequence name and position 0). To get around that, do this: 
+```
+cat [out_base].vcf | awk '{if (substr($1, 1, 1) == "#"){ print $line; } else if ( $2 != 0 && $3 != 0){ print $line; }}' > [out_base].filt.vcf
+```
 
 Next, compress with [`bgzip`](http://www.htslib.org/doc/bgzip.html) and index with [`tabix`](http://www.htslib.org/doc/tabix.html): 
 ```
