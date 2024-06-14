@@ -48,7 +48,7 @@ The program `/plot/demux_mt_clust.R` is a good way to visually inspect the resul
 The program `/plot/demux_mt_unclust.R` is a way to visualize the results of `demux_mt` without hierarchical clustering. It will sort cells by their assigned individual, rather than cell-cell similarity and thus is more of a way to visualize the data than to validate results.
 
 ### Other plots
-Two other plot programs can be used to plot `demux_mt` assignments from this program; see [here](../README.md#plotting).
+Two other plot programs can be used to plot `demux_mt` assignments from this program; see [here](../README.md#Plotting).
 
 ## Subclustering
 
