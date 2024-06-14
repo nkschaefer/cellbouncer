@@ -34,7 +34,7 @@ In this case, you can use `demux_mt` again, but set `--vars/-v` to `[output_pref
 
 There are two ways to plot the mitochondrial haplotypes inferred by `demux_mt` in individual cells. These plots contain a heatmap in which cells are rows and variant sites are columns. Variant sites are colored blue when they match the major allele, yellow when they match the minor allele, or not colored (white) when they are missing in a cell. Well-defined haplotypes should be easy to identify as vertical lines in the heatmap showing many cells with the same alleles at variant sites.
 
-Successful clustering (ATAC)| Successful clustering (RNA, whole cell) | Unsuccessful clustering (RNA, multiome)|
+Successful clustering (ATAC, 8 individuals)| Successful clustering (RNA, whole cell, 7 individuals) | Unsuccessful clustering (RNA, multiome, 8 individuals)|
 :--------------------------:|:---------------------------------------:|:-------------------------:
 ![](../img/mt_clust_good1.png)  |  ![](../img/mt_clust_good2.png) | ![](../img/mt_clust_bad.png) |
 
