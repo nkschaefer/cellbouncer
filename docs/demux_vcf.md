@@ -43,3 +43,29 @@ Sometimes (especially when working with SNP chip genotyping data), relatively fe
 
 In the case of non-human data, imputation is generally impossible due to the lack of phased genomes. 
 
+## Running the program
+Simply run as follows:
+```
+demux_vcf -b [input.bam] -v [input.vcf] -B [filtered_barcodes.tsv] -o [output_base]
+```
+Where `[input.bam]` is the aligned BAM file of single cell sequence data, `[input.vcf]` is the VCF format data of variants segregating among the individuals used in the experiment, `[output_base]` is the base name to use for output files, and `[filtered_barcodes.tsv]` is an optional but recommended argument: the filtered list of barcodes determined by the alignment program to represent true cells (i.e. usually located in the `filtered_feature_bc_matrix` directory within [CellRanger](https://www.10xgenomics.com/support/software/cell-ranger/latest) output. This file can be gzipped.
+
+This process can take several hours, depending on how deeply sequenced the single-cell data is and how many variants are in the VCF.
+
+This will create the following output files:
+* `[output_base].assignments` contains the most likely identity assigned to each cell.
+* `[output_base].counts` is gzipped data containing the counts of each type of allele in each cell used to make the assignments. If you run `demux_vcf` again with the same `[output_base]`, this file will be loaded instead of going through the expensive step of computing these counts again.
+* `[output_base].samples` contains the names of the samples in the VCF, in the same order, for use by the `quant_contam` program, if you choose to run it.
+* `[output_base].summary` contains some summary information about the run:
+  * Where the second column is `param`, the third and fourth columns list parameters used by `demux_vcf` on this run.
+  * Where the second column is `result`, the third and fourth columns list inferred parameters/results computed in this run.
+    * `error_ref_posterior` gives the inferred rate at which reference alleles were misread as alt alleles in this data set. Rates much higher than 1-5% are indicative of high ambient RNA contamination.
+    * `error_alt_posterior` gives the inferred rate at which alternate alleles were misread as ref alleles in this data set. Rates much higher than 1-5% are indicative of high ambient RNA contamination.
+    * `tot_cells` gives the total number of cells assigned identites.
+    * `frac_doublets` tells how many cell barcodes were inferred to be droplets containing two different individuals (note that this is lower than the actual doublet rate, which includes self-self doublets.
+    * `doublet.chisq.p` gives the p value of a chi-squared test: given the prevalence of each individual in the pool (computed from singlet identifications) and the doublet rate (approximated as the number of inter-individual doublets divided by the number of singlets), it computes the expected number of doublets of each type and compares to the identified number of doublets of each type. A high p-value means that the results agreed well with expectation.
+  * Where the second column is `perc_doublets_include`, the fourth column gives the percent of inter-individual doublets that include the individual in the third column. 
+  * Where the second column is `p_fewer_cells`, the third and fourth columns give the p-value that the ID in the third column has a significantly lower cell count than the average ID across the data set. This is computed using the Poisson CDF.
+  * Where the second column is `p_lower_LLRs`, the third and fourth columns give the p-value that the ID in the third column has a significantly lower distribution of log likelihood ratios of assignments (a measure of confidence) than the rest of the data set as a whole. This is computed using a Mann-Whitney U-test of the distribution of LLRs for the individual against the distribution of all other LLRs.
+  * Where the second column is `num_cells`, the fourth column gives the total number of cells assigned to the individual in the third column.
+    
