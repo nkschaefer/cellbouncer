@@ -53,12 +53,20 @@ Sometimes, if there are very uneven numbers of cells from different individuals,
 
 ## Finding genomic variants
 
-If you want to use this tool to confidently identify the individual of origin of most of your cells but do not have genotyping data from the individuals that were pooled together, you can use `demux_mt` to get a foothold. 
+If you want to use this tool to identify the individual of origin of most of your cells but do not have genotyping data from the individuals that were pooled together, you can use `demux_mt` to get a foothold. 
 
-After running `demux_mt` and validating the results, run the program `utils/bam_indiv_rg` with the same BAM file (as `-b`), the output `.assignments` file (as `-a`), and the name of a new BAM file to create (as `-o`). You may also filter the assignments by confidence using the `-l` parameter with a log likelihood ratio cutoff. The resulting BAM file will be a copy of the original, limited to cell barcocdes that appeared in the `.assignments` file and containing read group tags identifying each read as originating from one of the inferred individuals (a "sample" in the read group). After indexing the new BAM file with `[samtools](https://github.com/samtools/samtools) index`, you can run a variant caller such as [FreeBayes](https://github.com/freebayes/freebayes) or [GATK](https://gatk.broadinstitute.org/hc/en-us) on this file. 
+### utils/bam_indiv_rg
+After running `demux_mt` and validating the results, run the program `utils/bam_indiv_rg` to add [read group](https://gatk.broadinstitute.org/hc/en-us/articles/360035890671-Read-groups) tags to the BAM file indicating which individual each read belongs to (via the SM field). You should run `utils/bam_indiv_rg` with the same BAM file (as `-b`), the output `.assignments` file (as `-a`), and the name of a new BAM file to create (as `-o`). You may also filter the assignments by confidence using the `-l` parameter with a log likelihood ratio cutoff. The resulting BAM file will be a copy of the original, limited to cell barcodes that appeared in the `.assignments` file and read group information. 
 
-You should clean up the resulting VCF to discard low-quality variants, indels, fixed alleles, and sites where genotypes are missing in most individuals. This can be accomplished with [bcftools](https://samtools.github.io/bcftools/).
+### Creating and filtering VCF
+After indexing the new BAM file with [`samtools index`](https://github.com/samtools/samtools), you can run a variant caller such as [FreeBayes](https://github.com/freebayes/freebayes) or [GATK](https://gatk.broadinstitute.org/hc/en-us) on this file. This will create a [VCF](https://samtools.github.io/hts-specs/VCFv4.2.pdf) file of genomic variants that segregate among the individuals inferred by `demux_mt`.
 
-If you are left with at least several hundred thousand variants (although fewer is still possible), you should now be able to run `demux_vcf` with your BAM file and these variants to more confidently identify a higher number of cells than using the mitochondrial identifications alone. 
+You should clean up the resulting VCF to discard low-quality variants, indels, fixed alleles, and sites where genotypes are missing in most individuals. This can be accomplished with [bcftools](https://samtools.github.io/bcftools/). An example command might be `bcftools view -O z -v snps -m 2 -M 2 -i "QUAL >= 100" -i "F_MISSING < 0.5" [input.vcf.gz] > [output.vcf.gz]`. This command filters to only biallelic SNP sites with a minimum variant quality of 100, where fewer than 50% of individuals have missing genotypes. Another good strategy might be to filter out genotypes called from low coverage, and then drop sites with few called genotypes or where the allele is no longer polymorphic in the filtered set.
+
+If working with compressed VCF files, `bcftools` (and other programs) will often require these files to be indexed for quick retrieval of variants from specific genomic regions. This requires that you use [`bgzip`](http://www.htslib.org/doc/bgzip.html)
+ to compress your VCF file (instead of `gzip`) and that you then index using [`tabix`](http://www.htslib.org/doc/tabix.html). This can be accomplished with the command `tabix -p vcf [filename.vcf.gz]`.
+ 
+### Demultiplexing using variants
+If you are left with at least several hundred thousand variants (although fewer is still possible), you should now be able to run [`demux_vcf`](demux_vcf.md) with your BAM file and these variants to more confidently identify a higher number of cells than using the mitochondrial identifications alone. 
 
 [Back to main README](../README.md)
