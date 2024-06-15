@@ -15,12 +15,14 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |Infer global **doublet rate**|Output from a `CellBouncer` program|`doublet_dragon`|
 
 # Installation
-The non-plotting programs in `cellbouncer` require only [HTSLib](https://github.com/samtools/htslib) and [zlib](https://www.zlib.net/). You can install these dependencies yourself, or to make it easier, get these and plotting-related dependencies by creating a [conda](https://github.com/conda-forge/miniforge/releases) environment from the included `cellbouncer.yml` file. Then all that's left to do is `make`:
+The non-plotting programs in `cellbouncer` require only [HTSLib](https://github.com/samtools/htslib) and [zlib](https://www.zlib.net/). You can install these dependencies yourself, or to make it easier, get these and plotting-related dependencies by creating a [conda](https://github.com/conda-forge/miniforge/releases) environment from one of the included `cellbouncer.yml` files. 
+
+The file `cellbouncer_minimum.yml` contains all dependencies you need to run `cellbouncer` programs and make plots. The file `cellbouncer_extra.yml` also includes other programs useful for processing/analyzing data outside of `cellbouncer` that are mentioned in these help pages. First, clone this github repository and its submodules. Then, choose which of the two environment files to use and create a `conda` environment. Then all that's left to do is `make`:
 
 ```
 git clone --recurse-submodules https://github.com/nkschaefer/cellbouncer.git
 cd cellbouncer
-conda env create --file=cellbouncer.yml
+conda env create --file=[environment].yml
 conda activate cellbouncer
 make
 ```
