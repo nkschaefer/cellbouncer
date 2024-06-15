@@ -85,14 +85,14 @@ In the `plot` directory, there are R scripts to plot output from some of the pro
 
 Two plotting programs are useful across multiple `cellbouncer` programs, however.
 
-### Individual composition and log likelihood ratios
+#### Individual composition and log likelihood ratios
 `plot/assignment_llr.R` plots a set of cell-to-identity assignments as stacked bars, to show the proportion of the pool made up of cells of each assigned identity. Along the X-axis, the heights of these bars change to show how many cells of each category would remain if the user filtered the data using the log likelihood ratio cutoff on the X-axis. This is useful for visualizing the total number of cells, pool composition, and feasibility of different filtering thresholds. To generate this plot, simply run 
 ```
 plot/assignment_llr.R [output_prefix]
 ```
 where `[output_prefix]` is the output prefix given to the `cellbouncer` program you just ran.
 
-### Comparing assignments from two methods
+#### Comparing assignments from two methods
 `plot/compare_assignments.R` compares two sets of assignments on the same cells. A typical use case for this program might be to compare the results of `demux_vcf` and `demux_mt` run on the same data set, to see whether the programs worked, and potentially to assign an individual of origin (from the VCF) to each mitochondrial haplotype. To generate this plot, run 
 ```
 plot/compare_assignments.R [output_prefix1.assignments] [output_prefix2.assignments] [plot_out] (S)
