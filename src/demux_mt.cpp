@@ -152,12 +152,7 @@ void help(int code){
     fprintf(stderr, "       barcodes.tsv.gz. NOTE: all barcodes in the BAM will still be used\n");
     fprintf(stderr, "       in clustering. To limit which barcodes are used to find variants\n");
     fprintf(stderr, "       and cluster, use the -f option.\n");
-    fprintf(stderr, "   --barcode_group -g A string to append to each barcode in the \n");
-    fprintf(stderr, "       output files. This is equivalent to the batch ID appended to \n");
-    fprintf(stderr, "       cell barcodes by scanpy when concatenating multiple data sets.\n");
-    fprintf(stderr, "       Cell Ranger software automatically appends \"1\" here, so specify\n");
-    fprintf(stderr, "       1 as an argument if you desire default, single-data set Cell\n");
-    fprintf(stderr, "       -like output.\n");
+    print_libname_help();
     fprintf(stderr, "\n");
     fprintf(stderr, "   ===== Options for run modes 1 and 2 (clustering & identifying haploytpes) =====\n");
     fprintf(stderr, "   ---------- I/O Options ----------\n");
@@ -199,7 +194,7 @@ void help(int code){
     fprintf(stderr, "   --mapq -q The minimum map quality filter (OPTIONAL; default 20)\n");
     fprintf(stderr, "   --baseq -Q The minimum base quality filter (OPTIONAL; default 20)\n");
     fprintf(stderr, "   ---------- General options ----------\n"); 
-    fprintf(stderr, "   --nclustmax -n (OPTIONAL) If you know how many individuals should\n");
+    fprintf(stderr, "   --nclustmax -N (OPTIONAL) If you know how many individuals should\n");
     fprintf(stderr, "       be in the mixture, you can specify that number here, and only\n");
     fprintf(stderr, "       up to that many haplotypes will be inferred. It's possible that\n");
     fprintf(stderr, "       fewer than that number of haplotypes will be found, however.\n");
@@ -2336,10 +2331,10 @@ int main(int argc, char *argv[]) {
        {"output_prefix", required_argument, 0, 'o'},
        {"barcodes", required_argument, 0, 'B'},
        {"barcodes_filter", required_argument, 0, 'f'},
-       {"barcode_group", required_argument, 0, 'g'},
+       {"libname", required_argument, 0, 'n'},
        {"mapq", required_argument, 0, 'q'},
        {"baseq", required_argument, 0, 'Q'},
-       {"nclust_max", required_argument, 0, 'n'},
+       {"nclust_max", required_argument, 0, 'N'},
        {"mito", required_argument, 0, 'm'},
        {"dump", no_argument, 0, 'd'},
        {"vars", required_argument, 0, 'v'},
@@ -2379,7 +2374,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:o:B:f:g:q:Q:n:m:v:H:i:D:a:cdh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:o:n:B:f:g:q:Q:N:m:v:H:i:D:a:cdh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -2390,7 +2385,7 @@ int main(int argc, char *argv[]) {
             case 'D':
                 doublet_rate = atof(optarg);
                 break;
-            case 'g':
+            case 'n':
                 barcode_group = optarg;
                 break;
             case 'H':
@@ -2436,6 +2431,9 @@ int main(int argc, char *argv[]) {
                 mixing_proportions = true;
                 assnfile = optarg;
                 break;
+            case 'N':
+                nclust = atoi(optarg);
+                break;
             default:
                 help(0);
                 break;
@@ -2467,7 +2465,11 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: cannot infer mixing proportions and also dump counts\n");
         exit(1);
     }
-
+    if (nclust == 0 || (nclust < 0 && nclust != -1)){
+        fprintf(stderr, "ERROR: maximum number of clusters must either be a positive number or\n");
+        fprintf(stderr, "-1 (for no limit)\n");
+        exit(1);
+    }
     // If haplotypes are already constructed, we can treat a barcode list as a filter.
     // This is because we don't need to cluster/toss out variants anyway, so no need
     // loading the full set of barcodes.

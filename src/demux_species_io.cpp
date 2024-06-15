@@ -219,7 +219,8 @@ void load_from_files(string& countsfilename,
  * After assigning barcodes to species, print assignments to an output file that
  * can be reviewed.
  */
-void print_assignments(FILE* outf, 
+void print_assignments(FILE* outf,
+    const string& libname, 
     robin_hood::unordered_map<unsigned long, short>& bc2species,
     robin_hood::unordered_map<unsigned long, pair<unsigned int, unsigned int> >& bc2doublet,
     robin_hood::unordered_map<unsigned long, double>& bc2llr,
@@ -252,6 +253,9 @@ void print_assignments(FILE* outf,
             name = idx2species[bc2species[b2llr->first]];
         }
         string bc_str = bc2str(b2llr->first);
+        if (libname != ""){
+            bc_str += "-" + libname;
+        }
         fprintf(outf, "%s\t%s\t%c\t%f\n", bc_str.c_str(), name.c_str(), type,
             b2llr->second);
     }

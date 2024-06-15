@@ -33,6 +33,7 @@ void load_from_files(std::string& countsfilename,
     std::map<std::string, short>& species2idx,
     robin_hood::unordered_map<unsigned long, std::map<short, int> >& bc_species_counts);
 void print_assignments(FILE* outf, 
+    const std::string& libname,
     robin_hood::unordered_map<unsigned long, short>& bc2species,
     robin_hood::unordered_map<unsigned long, std::pair<unsigned int, unsigned int> >& bc2doublet,
     robin_hood::unordered_map<unsigned long, double>& bc2llr,

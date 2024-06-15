@@ -112,17 +112,7 @@ void help(int code){
     fprintf(stderr, "       identities separated by + in the .assignments and .ids files. If\n");
     fprintf(stderr, "       identities contain + within them, though, this option switches to a\n");
     fprintf(stderr, "       comma separator.\n");
-    fprintf(stderr, "   --batch_id -i Optional string to append to cell barcodes (with - separator).\n");
-    fprintf(stderr, "       Default = no batch ID. Use this if you plan to combine multiple data sets\n");
-    fprintf(stderr, "       together for analysis. You should process each separately here, but the\n");
-    fprintf(stderr, "       batch_id appended here will need to match those you use in your analysis\n");
-    fprintf(stderr, "       program (i.e. scanpy).\n\n");
-    fprintf(stderr, "       If you want this program to be compatible with 10X Genomics Cellranger output,\n");
-    fprintf(stderr, "       this should begin with -1 (or - followed by the 1-based index of this data set\n");
-    fprintf(stderr, "       among all your data sets, if you plan to combine with cellranger aggr).\n\n");
-    fprintf(stderr, "       If combining with scanpy, this should match the identifier you plan to pass\n");
-    fprintf(stderr, "       for this data set to the batch_categories parameter of anndata.concatenate().\n");
-    fprintf(stderr, "       If it's also from 10X Cellranger, prepend -1 to this string.\n");
+    print_libname_help(); 
     exit(code);
 }
 
@@ -1092,7 +1082,7 @@ int main(int argc, char *argv[]) {
        {"mismatches", required_argument, 0, 'M'},
        {"filt", no_argument, 0, 'f'},
        {"comma", no_argument, 0, 'c'},
-       {"batch_id", required_argument, 0, 'i'},
+       {"libname", required_argument, 0, 'n'},
        {"exact", no_argument, 0, 'e'},
        {"umi_len", required_argument, 0, 'u'},
        {"sgRNA", no_argument, 0, 'g'},
@@ -1127,7 +1117,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:i:1:2:m:M:w:u:B:s:egfch", 
+    while((ch = getopt_long(argc, argv, "o:n:1:2:m:M:w:u:B:s:egfch", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -1142,7 +1132,7 @@ int main(int argc, char *argv[]) {
             case 's':
                 barcodesfn = optarg;
                 break;
-            case 'i':
+            case 'n':
                 batch_id = optarg;
                 break;
             case '1':

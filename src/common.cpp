@@ -27,6 +27,30 @@ using std::endl;
 using namespace std;
 
 /**
+ * Print data to help screens describing the --libname argument.
+ */
+void print_libname_help(){
+    fprintf(stderr, "   --libname -n By default, cell barcodes will be printed in output files\n");
+    fprintf(stderr, "       as DNA sequences only. If you plan to combine multiple data sets for\n");
+    fprintf(stderr, "       analysis, this can lead to barcode collisions, where the same barcode sequence\n");
+    fprintf(stderr, "       appears by chance in multiple data sets, but representing different cells.\n");
+    fprintf(stderr, "       To account for this, a unique name must be appended to barcode sequences.\n");
+    fprintf(stderr, "       If you provide a unique name here, it will be appended to cell barcode\n");
+    fprintf(stderr, "       sequences, separated by a hyphen (-).\n");
+    fprintf(stderr, "       If you are using 10X Genomics CellRanger output, you should begin this with\n");
+    fprintf(stderr, "       the number 1 (automatically appended to output data from single libraries).\n");
+    fprintf(stderr, "       If you are combining multiple runs using cellranger aggr, you should set this\n");
+    fprintf(stderr, "       to the 1-based numeric index of this data set among all data sets you will\n");
+    fprintf(stderr, "       combine.\n");
+    fprintf(stderr, "       If you are combining multiple data sets using anndata.concatenate(), this should\n");
+    fprintf(stderr, "       also be a numeric index (like cellranger aggr), or should match the name for\n");
+    fprintf(stderr, "       this library that you pass via the batch_categories parameter.\n");
+    fprintf(stderr, "       If you are combining multiple data sets using anndata.concatenate(), and the data\n");
+    fprintf(stderr, "       was processed by CellRanger, you should set this to 1- followed by the (above)\n");
+    fprintf(stderr, "       unique name for the library.\n");
+}
+
+/**
  * Parse a file output by demux_mt or demux_vcf, and store barcodes mapped
  * to individual IDs.
  */

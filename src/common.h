@@ -24,6 +24,11 @@ using std::cout;
 using std::endl;
 using namespace std;
 
+// Print help screen information about the parameter for
+// library names that will be appended to cell barcodes
+// (used by multiple programs)
+void print_libname_help();
+
 // Parse a file mapping cell barcodes to identities
 void parse_barcode_map(std::string& fn, 
     std::map<unsigned long, std::string>& bc2hap,

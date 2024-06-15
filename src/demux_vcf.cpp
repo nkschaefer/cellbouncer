@@ -1339,15 +1339,7 @@ void help(int code){
     fprintf(stderr, "       of two individuals can be specified by giving both individual names\n");
     fprintf(stderr, "       separated by \"+\", with names in either order.\n");
     fprintf(stderr, "----- I/O options -----\n");
-    fprintf(stderr, "    --barcode_group -g If you plan to combine cells from multiple runs\n");
-    fprintf(stderr, "       together, and there might be cell barcode collisions (i.e. the \n");
-    fprintf(stderr, "       same cell barcode could appear twice in the data set but represent\n");
-    fprintf(stderr, "       distinct cells, specify a unique string here to append to every\n");
-    fprintf(stderr, "       cell barcode in the data set. This is analysis to the batch names\n");
-    fprintf(stderr, "       passed to anndata.concatenate in scanpy -- it will be appended to\n");
-    fprintf(stderr, "       cell barcodes in the output assignment file, separated by a dash (-).\n");
-    fprintf(stderr, "       If you specify the same groups here as in scanpy, it will make it easy\n");
-    fprintf(stderr, "       to integrate assignments with the other data.\n"); 
+    print_libname_help();
     fprintf(stderr, "    --index_jump -j Instead of reading through the entire BAM file \n");
     fprintf(stderr, "       to count reads at variant positions, use the BAM index to \n");
     fprintf(stderr, "       jump to each variant position. This will be faster if you \n");
@@ -1370,7 +1362,7 @@ int main(int argc, char *argv[]) {
        {"ids", required_argument, 0, 'i'},
        {"ids_doublet", required_argument, 0, 'I'},
        {"qual", required_argument, 0, 'q'},
-       {"barcode_group", required_argument, 0, 'g'},
+       {"libname", required_argument, 0, 'n'},
        {"error_ref", required_argument, 0, 'e'},
        {"error_alt", no_argument, 0, 'E'},
        {"error_sigma", required_argument, 0, 's'},
@@ -1401,7 +1393,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:g:e:E:p:jh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:n:e:E:p:jh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -1418,7 +1410,7 @@ int main(int argc, char *argv[]) {
             case 'o':
                 output_prefix = optarg;
                 break;
-            case 'g':
+            case 'n':
                 barcode_group = optarg;
                 break;
             case 'B':

@@ -79,6 +79,7 @@ void help(int code){
     fprintf(stderr, "       from all batches. Then proceed again with this program (it will automatically\n");
     fprintf(stderr, "       load the combined counts and demultiplex the given reads, which can be the\n");
     fprintf(stderr, "       split read files or the original onesi).\n");
+    print_libname_help();
     fprintf(stderr, "\n   ===== READ FILE INPUT OPTIONS =====\n");
     fprintf(stderr, "   --atac_r1 -1 ATAC R1 reads to demultiplex (can specify multiple times)\n");
     fprintf(stderr, "   --atac_r2 -2 ATAC R2 reads to demultiplex (can specify multiple times)\n");
@@ -93,7 +94,7 @@ void help(int code){
     fprintf(stderr, "   --custom_r2 -X Reverse other (i.e. sgRNA or antibody capture) reads\n");
     fprintf(stderr, "       to demultiplex (can specify multiple times). Assumes barcodes are\n");
     fprintf(stderr, "       at the beginning of R1.\n");
-    fprintf(stderr, "   --names_custom -n Name of data type in custom reads file, in same\n");
+    fprintf(stderr, "   --names_custom -N Name of data type in custom reads file, in same\n");
     fprintf(stderr, "       number and order as read files. Presets: CRISPR = CRISPR sgRNA\n");
     fprintf(stderr, "       capture, Ab = antibody capture. Names will be appended to the\n");
     fprintf(stderr, "       beginning of demultiplexed FASTQ files and inserted into 10X\n");
@@ -459,7 +460,7 @@ int main(int argc, char *argv[]) {
        {"rna_r2", required_argument, 0, 'R'},
        {"custom_r1", required_argument, 0, 'x'},
        {"custom_r2", required_argument, 0, 'X'},
-       {"names_custom", required_argument, 0, 'n'},
+       {"names_custom", required_argument, 0, 'N'},
        {"whitelist_atac", required_argument, 0, 'w'},
        {"whitelist_rna", required_argument, 0, 'W'},
        {"dump", no_argument, 0, 'd'},
@@ -468,6 +469,7 @@ int main(int argc, char *argv[]) {
        {"num_threads", required_argument, 0, 't'},
        {"batch_num", required_argument, 0, 'b'},
        {"exact", no_argument, 0, 'e'},
+       {"libname", required_argument, 0, 'n'},
        {0, 0, 0, 0} 
     };
     
@@ -491,6 +493,7 @@ int main(int argc, char *argv[]) {
     bool dump = false;
     int batch_num = -1;
     bool exact_matches = false;
+    string libname = "";
 
     int option_index = 0;
     int ch;
@@ -498,7 +501,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "t:o:1:2:3:r:R:x:X:n:k:w:W:D:b:e:dh", 
+    while((ch = getopt_long(argc, argv, "t:o:n:1:2:3:r:R:x:X:N:k:w:W:D:b:e:dh", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -512,7 +515,10 @@ int main(int argc, char *argv[]) {
                 break;
             case 'o':
                 outdir = optarg;
-                break;           
+                break;
+            case 'n':
+                libname = optarg;
+                break;
             case 'k':
                 kmerbase = optarg;
                 break;
@@ -537,7 +543,7 @@ int main(int argc, char *argv[]) {
             case 'X':
                 custom_r2files.push_back(optarg);
                 break;
-            case 'n':
+            case 'N':
                 custom_names.push_back(optarg);
                 break;
             case 'w':
@@ -900,12 +906,12 @@ data for %s with more species.\n", kmerbase.c_str());
             idx2species, doublet_rate, model_out_name);
         
         FILE* bc_out = fopen(assnfilename.c_str(), "w");
-        print_assignments(bc_out, bc2species, bc2doublet, bc2llr, idx2species, false, bcs_pass);
+        print_assignments(bc_out, libname, bc2species, bc2doublet, bc2llr, idx2species, false, bcs_pass);
         fclose(bc_out);
 
         // Create filtered version
         bc_out = fopen(assnfilename_filt.c_str(), "w");
-        print_assignments(bc_out, bc2species, bc2doublet, bc2llr, idx2species, true, bcs_pass);
+        print_assignments(bc_out, libname, bc2species, bc2doublet, bc2llr, idx2species, true, bcs_pass);
         fclose(bc_out);
     }
     
