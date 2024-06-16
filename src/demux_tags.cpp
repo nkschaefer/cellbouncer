@@ -937,7 +937,6 @@ void write_assignments(string filename,
     FILE* f_out = fopen(filename.c_str(), "w");
     for (robin_hood::unordered_map<unsigned long, set<int> >::iterator a = assn.begin(); 
         a != assn.end(); ++a){
-
         if (a->second.size() == 0){
             // Filtered/background. Omit.
             continue;
@@ -1545,17 +1544,13 @@ next time)...\n");
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     robin_hood::unordered_map<unsigned long, double> cell_bg; 
     assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, filt);
-
     string assnfilename = output_prefix + ".assignments";
     write_assignments(assnfilename, assn, labels, assn_llr, sep, batch_id, sgrna);
-    
     if (sgrna){
         string tablefilename = output_prefix + ".table";
         write_assignments_table(tablefilename, assn, labels, batch_id);
     }
-
     string bgfilename = output_prefix + ".bg";
     write_bg(bgfilename, cell_bg, batch_id);
-
     return 0;  
 }
