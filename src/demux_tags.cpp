@@ -30,7 +30,7 @@
 #include <optimML/multivar_sys.h>
 #include <optimML/brent.h>
 #include "common.h"
-
+#include <htswrapper/gzreader.h>
 
 using std::cout;
 using std::endl;
@@ -71,7 +71,7 @@ void help(int code){
     fprintf(stderr, "\n   ===== REQUIRED =====\n");
     fprintf(stderr, "   --output_prefix -o The prefix for output file names. Will create\n");
     fprintf(stderr, "       a file ending in .counts and another ending in .assignments.\n");
-    fprintf(stderr, "\n   ===== REQUIRED UNLESS LOADING COUNTS FROM A PREVIOUS RUN =====\n");
+    fprintf(stderr, "\n   ===== REQUIRED UNLESS LOADING COUNTS FROM A PREVIOUS RUN OR MATRIX FILES =====\n");
     fprintf(stderr, "   --read1 -1 Forward read file for cell hashing/MULTIseq/sgRNA capture data. Can\n");
     fprintf(stderr, "       specify multiple times.\n");
     fprintf(stderr, "   --read2 -2 Reverse read file for cell hashing/MULTIseq/sgRNA capture data. Can\n");
@@ -86,6 +86,17 @@ void help(int code){
     fprintf(stderr, "       file for each experiment that assigns a name/identity to each well. If you do\n");
     fprintf(stderr, "       not provide a --mapping file, names in the --seqs file will be in final output.\n");
     fprintf(stderr, "       File should be tab-separated, with one sequence and one name per line.\n");
+    fprintf(stderr, "     ===== ALTERNATIVE INPUT OPTION =====\n");
+    fprintf(stderr, "   --input_mtx -i If you have already counted tag barcodes using another program (i.e.\n");
+    fprintf(stderr, "       10X Genomics CellRanger), you can provide a path to the output data in MEX format\n");
+    fprintf(stderr, "       here. For 10X, this would be the filtered_feature_bc_matrix directory. If you have\n");
+    fprintf(stderr, "       processed multiple data types, then you need to also provide the name of the data\n");
+    fprintf(stderr, "       type here so it can be extracted from the MEX-format files (--feature_type/-F argument).\n");
+    fprintf(stderr, "   --feature_type -F If loading data from a matrix file (--input_mtx/-i), and if the files\n");
+    fprintf(stderr, "       contain multiple data types (i.e. if you processed RNA-seq and sgRNA capture data in\n");
+    fprintf(stderr, "       the same CellRanger run, then specify the feature type for tag data to extract. For\n");
+    fprintf(stderr, "       10X cell hashing, for example, specify \"Multiplexing\\ Capture\", for antibody capture\n");
+    fprintf(stderr, "       specify \"Antibody\\ Capture\", and for sgRNA capture specify \"CRISPR\\ Guide\\ Capture\".\n");
     fprintf(stderr, "\n   ===== STRONGLY RECOMMENDED =====\n");
     fprintf(stderr, "   --mapping -m 2-column tab separated file mapping string interpretation of\n");
     fprintf(stderr, "       MULTIseq label (i.e. unique identifier, or treatment name) to MULTIseq\n");
@@ -154,16 +165,21 @@ void load_well_mapping(string& filename, map<string, string>& well2id){
 
 /**
  * Write counts to disk for future inspection / loading on a subsequent run
+ *
+ * Populates bc_tag_counts (data structure used by other functions to represent
+ * final counts) from bc_ms_umis (data structure used by counting function to 
+ * deduplicate UMIs)
  */
 void dump_counts(string& filename, 
     robin_hood::unordered_map<unsigned long, vector<umi_set*> >& bc_ms_umis,
     vector<string>& ms_names,
-    robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >& bc_ms_counts){
+    robin_hood::unordered_map<unsigned long, map<int, long int> >& bc_tag_counts,
+    string& libname){
 
     FILE* f = fopen(filename.c_str(), "w");
     
     // Print header line
-    fprintf(f, "bc");
+    fprintf(f, "barcode");
     for (vector<string>::iterator n = ms_names.begin(); n != ms_names.end(); ++n){
         if (n->length() > 0){
             fprintf(f, "\t%s", n->c_str());
@@ -174,22 +190,22 @@ void dump_counts(string& filename,
     for (robin_hood::unordered_map<unsigned long, vector<umi_set*> >::iterator x =
         bc_ms_umis.begin(); x != bc_ms_umis.end(); ++x){
 
-        vector<pair<int, string> > v;
-        bc_ms_counts.emplace(x->first, v);
+        map<int, long int> m;
+        bc_tag_counts.emplace(x->first, m);
 
         string bc_str = bc2str(x->first);
+        if (libname != ""){
+            bc_str += "-" + libname;
+        }
         fprintf(f, "%s", bc_str.c_str());
         for (int i = 0; i < x->second.size(); ++i){
             if (ms_names[i].length() > 0){
                 // This MULTIseq barcode was intended to be present in the data set
                 if (x->second[i] == NULL){
                     fprintf(f, "\t0");
-                    bc_ms_counts[x->first].push_back(make_pair(0,
-                        ms_names[i]));
                 }
                 else{
-                    bc_ms_counts[x->first].push_back(make_pair(-x->second[i]->count(),
-                        ms_names[i]));
+                    bc_tag_counts[x->first].insert(make_pair(i, x->second[i]->count()));
                     fprintf(f, "\t%d", x->second[i]->count());
                 }
             }
@@ -204,13 +220,12 @@ void dump_counts(string& filename,
  * retrieve counts from the output file using this function.
  */
 int load_counts(string& filename,
-    robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >& bc_ms_counts,
+    robin_hood::unordered_map<unsigned long, map<int, long int> >& bc_tag_counts,
     vector<string>& labels){
     
     string line;
     ifstream inf(filename);
     bool first = true;
-    bc cur_bc;
 
     vector<string> header;
 
@@ -218,20 +233,22 @@ int load_counts(string& filename,
         istringstream splitter(line);
         string field;
         int idx = 0;
+        unsigned long cur_bc;
         while(getline(splitter, field, '\t')){
             if (first){
                 header.push_back(field);
             }
             else{
                 if (idx == 0){
-                    str2bc(field.c_str(), cur_bc);
-                    vector<pair<int, string> > v;
-                    bc_ms_counts.emplace(cur_bc.to_ulong(), v);      
+                    // Trim off any extra text from the end of the barcode sequence
+                    cur_bc = bc_ul(field);
+                    map<int, long int> m;
+                    bc_tag_counts.emplace(cur_bc, m);      
                 }
                 else{
-                    int val = atoi(field.c_str());
+                    long int val = atol(field.c_str());
                     if (val > 0){
-                        bc_ms_counts[cur_bc.to_ulong()].push_back(make_pair(-val, header[idx]));
+                        bc_tag_counts[cur_bc].insert(make_pair(idx-1, val));
                     }
                 }
             }
@@ -738,7 +755,7 @@ pair<double, double> assign_init(vector<vector<double> >& obs,
 /**
  * Main function for assigning cell identities from data.
  */
-void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >& bc_ms_counts,
+void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& bc_tag_counts,
     robin_hood::unordered_map<unsigned long, set<int> >& assn,
     robin_hood::unordered_map<unsigned long, double>& assn_llr,
     robin_hood::unordered_map<unsigned long, double>& cell_bg,
@@ -748,11 +765,9 @@ void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string
     // For initial fitting: let counts for each label be a vector 
     vector<vector<double> > obscol;
 
-    map<string, int> label2idx;
     vector<double> meanscol;
 
     for (int i = 0; i < labels.size(); ++i){
-        label2idx.insert(make_pair(labels[i], i));
         vector<double> v;
         obscol.push_back(v);
         meanscol.push_back(0.0);
@@ -763,22 +778,21 @@ void assign_ids(robin_hood::unordered_map<unsigned long, vector<pair<int, string
     vector<unsigned long> bcs;
     vector<double> tots;
     
-    for (robin_hood::unordered_map<unsigned long, vector<pair<int, string> > >::iterator x = 
-        bc_ms_counts.begin(); x != bc_ms_counts.end(); ++x){
+    for (robin_hood::unordered_map<unsigned long, map<int, long int> >::iterator x = 
+        bc_tag_counts.begin(); x != bc_tag_counts.end(); ++x){    
         
         vector<double> row;
         for (int i = 0; i < labels.size(); ++i){
             row.push_back(0.0);
         }
         double tot = 0.0;
-        for (vector<pair<int, string> >::iterator y = x->second.begin(); 
-            y != x->second.end(); ++y){
-            
-            row[label2idx[y->second]] += (double)-y->first;
-            tot += (double)-y->first;
-            double val = (double)-y->first + 1;
-            obscol[label2idx[y->second]].push_back(val);
-            meanscol[label2idx[y->second]] += val;
+        for (map<int, long int>::iterator y = x->second.begin(); y != x->second.end(); 
+            ++y){
+            row[y->first] += (double)y->second;
+            tot += (double)y->second;
+            double val = (double)y->second + 1;
+            obscol[y->first].push_back(val);
+            meanscol[y->first] += val;
         }
         
         // Skip rows with 0 counts
@@ -1068,6 +1082,153 @@ metadata. Please see the output well counts file to evaluate.\n");
 
 }
 
+void count_tags_in_reads(vector<string>& read1fn,
+    vector<string>& read2fn,
+    vector<string>& seqlist,
+    int mismatches,
+    string& wlfn,
+    int umi_len,
+    bool sgrna,
+    bool exact_cell_barcodes,
+    int seq_len,
+    bool has_cell_barcodes,
+    set<unsigned long>& cell_barcodes,
+    map<string, int>& seq2idx,
+    robin_hood::unordered_map<unsigned long, vector<umi_set*> >& bc_tag_umis){
+    
+    // Initiate tag barcode whitelist
+    seq_fuzzy_match tagmatch(seqlist, mismatches, true, true);
+
+    map<int, int> matchpos_found;
+    int matchcount = 0;
+    int matchpos_global = -1;
+
+    // How many matches do we need to find before we stop searching through reads?
+    int init_searches = 100;
+
+    if (sgrna){
+        tagmatch.set_reverse();
+    }
+    
+    // Set up object that will scan each pair of read files
+    bc_scanner scanner;
+
+    // Arguments: 
+    // whitelist file
+    // whitelist file 2 (for ATAC)
+    // file index of cell barcode
+    // cell barcode at end of sequence?
+    // cell barcode reverse complemented?
+    // is there a second whitelist?
+    // file index of UMI
+    // start index of UMI
+    // UMI length
+    // cell barcode length
+    int bclen = (int)round((double)BC_LENX2/2.0);
+    scanner.init(wlfn, "", 0, false, false, false, 0, bclen, umi_len, bclen);  
+    //scanner.init_multiseq_v3(wlfn);
+    
+    if (exact_cell_barcodes){
+        scanner.exact_matches_only();
+    }
+
+    char seq_buf[seq_len+1];
+
+    for (int i = 0; i < read1fn.size(); ++i){
+        
+        // Initiate object to read through FASTQs and find cell barcodes.
+        scanner.add_reads(read1fn[i], read2fn[i]);
+        
+        while (scanner.next()){
+            
+            // Skip reads if we have a cell barcode whitelist and the current
+            // barcode isn't in it
+            if (has_cell_barcodes && 
+                cell_barcodes.find(scanner.barcode) == cell_barcodes.end()){
+                continue;
+            }
+            
+            // At this point, there's a valid cell barcode.
+            // scanner.barcode_read holds R1
+            // scanner.read_f holds R2
+            // scanner.umi holds UMI 
+            
+            if (scanner.has_umi){
+                int idx = -1;
+                if (sgrna){
+                    
+                    if (matchpos_global == -1){
+                        // Search entire read for sequence.
+                        // Sequences are assumed to appear in forward orientation
+                        idx = tagmatch.match(scanner.read_f);
+                        if (idx != -1){
+                            if (matchpos_found.count(tagmatch.match_pos) == 0){
+                                matchpos_found.insert(make_pair(tagmatch.match_pos, 0));
+                            }
+                            matchpos_found[tagmatch.match_pos]++;
+                            matchcount++;
+
+                            if (matchcount >= init_searches){
+                                int matchmax = -1;
+                                int posmax = -1;
+                                bool tie = false;
+                                for (map<int, int>::iterator m = matchpos_found.begin();
+                                    m != matchpos_found.end(); ++m){
+                                    if (matchmax == -1 || m->second > matchmax){
+                                        matchmax = m->second;
+                                        posmax = m->first;
+                                        tie = false;
+                                    }
+                                    else if (matchmax != -1 && m->second == matchmax){
+                                        tie = true;
+                                    }
+                                }
+                                if (posmax != -1 && !tie){
+                                    // Set this position to the place to look for future matches.
+                                    matchpos_global = posmax;
+                                    tagmatch.set_global();
+                                }
+                            }
+                        }
+                    }
+                    else{
+                        // We already know where to look in the read.
+                        strncpy(&seq_buf[0], scanner.read_f + matchpos_global, seq_len);
+                        seq_buf[seq_len] = '\0';
+                        idx = tagmatch.match(&seq_buf[0]);
+                    }
+                }
+                else{
+                    // Cell hashing barcodes are assumed to occur at teh beginning of R2, forward orientation
+                    strncpy(&seq_buf[0], scanner.read_f, seq_len);
+                    seq_buf[seq_len] = '\0';
+                    idx = tagmatch.match(&seq_buf[0]);
+                }
+                
+                if (idx != -1){
+                    
+                    // A matching sequence was found.
+                    string seqmatch = seqlist[idx];
+                    
+                    // Store UMI
+                    umi this_umi(scanner.umi, scanner.umi_len);    
+                    if (bc_tag_umis.count(scanner.barcode) == 0){
+                        vector<umi_set*> v(seqlist.size(), NULL);
+                        bc_tag_umis.emplace(scanner.barcode, v);
+                    }
+                    umi_set* ptr = bc_tag_umis[scanner.barcode][seq2idx[seqmatch]];
+                    if (ptr == NULL){
+                        // Initialize.
+                        bc_tag_umis[scanner.barcode][seq2idx[seqmatch]] = new umi_set(scanner.umi_len);
+                        ptr = bc_tag_umis[scanner.barcode][seq2idx[seqmatch]];
+                    }
+                    ptr->add(this_umi); 
+                }
+            }
+        }
+    }
+}
+
 int main(int argc, char *argv[]) {    
 
     // Define long-form program options 
@@ -1086,6 +1247,8 @@ int main(int argc, char *argv[]) {
        {"exact", no_argument, 0, 'e'},
        {"umi_len", required_argument, 0, 'u'},
        {"sgRNA", no_argument, 0, 'g'},
+       {"input_mtx", required_argument, 0, 'i'},
+       {"feature_type", required_argument, 0, 'F'},
        {0, 0, 0, 0} 
     };
     
@@ -1103,6 +1266,8 @@ int main(int argc, char *argv[]) {
     bool sgrna = false;
     bool exact_cell_barcodes = false;
     int umi_len = 12;
+    string input_mtx = "";
+    string featuretype = "";
 
     fprintf(stderr, "%s\n", STRINGIZE(PROJ_ROOT));
     string pr = STRINGIZE(PROJ_ROOT);
@@ -1117,7 +1282,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:n:1:2:m:M:w:u:B:s:egfch", 
+    while((ch = getopt_long(argc, argv, "o:n:i:F:1:2:m:M:w:u:B:s:egfch", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -1128,6 +1293,12 @@ int main(int argc, char *argv[]) {
                 break;
             case 'o':
                 output_prefix = optarg;
+                break;
+            case 'i':
+                input_mtx = optarg;
+                break;
+            case 'F':
+                featuretype = optarg;
                 break;
             case 's':
                 barcodesfn = optarg;
@@ -1186,13 +1357,20 @@ int main(int argc, char *argv[]) {
     if (umi_len < 1 || umi_len > 16){
         fprintf(stderr, "ERROR: UMIs must be positive length, up to 16 bp\n");
     }
+    if (read1fn.size() > 0 && read2fn.size() > 0 && input_mtx != ""){
+        fprintf(stderr, "ERROR: reads provided along with data in MEX format.\n");
+        fprintf(stderr, "If loading MEX-format data (barcodes.tsv, features.tsv, and matrix.mtx),\n");
+        fprintf(stderr, "there is no need to count tags in reads.\n");
+        exit(1);
+    }
     if (sgrna && sep == "+"){
         sep = ",";
     }
-
-    // Data structure to store counts
-    robin_hood::unordered_map<unsigned long, vector<pair<int, string> > > bc_tag_counts;
     
+    // Data structure to store counts
+    //robin_hood::unordered_map<unsigned long, vector<pair<int, string> > > bc_tag_counts;
+    robin_hood::unordered_map<unsigned long, map<int, long int> > bc_tag_counts;
+
     // How many possible labels are there?
     int n_labels;
     vector<string> labels;
@@ -1201,248 +1379,168 @@ int main(int argc, char *argv[]) {
 
     string countsfilename = output_prefix + ".counts";
     if (file_exists(countsfilename)){
+        if (input_mtx != ""){
+            fprintf(stderr, "ERROR: %s already exists, but loading counts from %s.\n", 
+                countsfilename.c_str(), input_mtx.c_str());
+            fprintf(stderr, "Please run again with a different --output_prefix, or load these counts\n");
+            fprintf(stderr, "  instead of the MEX-format data.\n");
+            exit(1);
+        }
+
         fprintf(stderr, "Loading previously-computed counts (delete file to avoid this \
 next time)...\n");
         n_labels = load_counts(countsfilename, bc_tag_counts, labels);
     }
     else{
-        if (read1fn.size() == 0 || read2fn.size() == 0){    
-            fprintf(stderr, "ERROR: input FASTQs for reads (-1 and -2) are required.\n");
-            exit(1);
-        }
-        else if (read1fn.size() != read2fn.size()){
-            fprintf(stderr, "ERROR: unequal number of forward (-1) and reverse (-2) reads provided\n");
-            exit(1);
-        }
-        else if (wlfn == ""){
-            fprintf(stderr, "ERROR: cell barcode whitelist / -w is required\n");
-            exit(1);
-        }
-        
-        // Load barcode/sgRNA sequence -> well ID (or name) mapping
-        map<string, string> seq2well;
-        vector<string> seqlist;
-        int seq_len = load_seq2well(barcodesfn, seq2well, seqlist);
-        
-        // Load cell barcodes, if provided
-        set<unsigned long> cell_barcodes;
-        bool has_cell_barcodes;
-        if (cell_barcodesfn != ""){
-            has_cell_barcodes = true;
-            parse_barcode_file(cell_barcodesfn, cell_barcodes);
-        }    
 
-        // Load intermediate ID -> unique identifier mapping, if provided
-        map<string, string> well2id;
-        if (mapfn == ""){
-            for (map<string, string>::iterator sw = seq2well.begin(); 
-                sw != seq2well.end(); ++sw){
-                // If there is no intermediate ID -> final ID mapping for this intermediate ID,
-                // then the intermediate ID is the final ID.
-                if (well2id.count(sw->second) == 0){
-                    well2id.insert(make_pair(sw->second, sw->second));
-                }
+        if (input_mtx != ""){
+            
+            // Load MEX-format data
+            // Check that all files exist
+            if (input_mtx[input_mtx.length()-1] != '/'){
+                input_mtx += "/";
+            } 
+            string bcf = input_mtx + "barcodes.tsv";
+            if (!file_exists(bcf)){
+                bcf += ".gz";
             }
+            if (!file_exists(bcf)){
+                fprintf(stderr, "ERROR: %s not found.\n", bcf.c_str());
+                exit(1);
+            }
+            string ff = input_mtx + "features.tsv";
+            if (!file_exists(ff)){
+                ff += ".gz";
+            }
+            if (!file_exists(ff)){
+                fprintf(stderr, "ERROR: %s not found.\n", ff.c_str());
+                exit(1);
+            }
+            string mtxf = input_mtx + "matrix.mtx";
+            if (!file_exists(mtxf)){
+                mtxf += ".gz";
+            }
+            if (!file_exists(mtxf)){
+                fprintf(stderr, "ERROR: %s not found.\n", mtxf.c_str());
+                exit(1);
+            }
+
+            // Load data
+            parse_mex(bcf, ff, mtxf, bc_tag_counts, labels, featuretype); 
+
         }
         else{
-            has_mapfile = true;
-            load_well_mapping(mapfn, well2id);
-            // Make sure wells specified here have associated valid barcodes.
-            set<string> wellnames;
-            for (map<string, string>::iterator sw = seq2well.begin(); sw != 
-                seq2well.end(); ++sw){
-                wellnames.insert(sw->second);
+            if (read1fn.size() == 0 || read2fn.size() == 0){    
+                fprintf(stderr, "ERROR: input FASTQs for reads (-1 and -2) are required.\n");
+                exit(1);
             }
-            for (map<string, string>::iterator wi = well2id.begin(); wi != well2id.end();
-                ++wi){
-                if (wellnames.find(wi->first) == wellnames.end()){
-                    fprintf(stderr, "ERROR: well/intermediate ID -> final ID mapping file contains a well named %s\n",
-                        wi->first.c_str());
-                    fprintf(stderr, "This well ID is not present in the cell hashing/MULTIseq/sgRNA sequence -> \
-well/intermediate ID mappings\n");
-                    exit(1);
-                }
+            else if (read1fn.size() != read2fn.size()){
+                fprintf(stderr, "ERROR: unequal number of forward (-1) and reverse (-2) reads provided\n");
+                exit(1);
             }
-            // If the user has omitted one or more wells that turn up often in the data, we will
-            // alert the user about this later.
-        }
-        n_labels = well2id.size();
-        
-        // Initiate tag barcode whitelist
-        seq_fuzzy_match tagmatch(seqlist, mismatches, true, true);
-
-        map<int, int> matchpos_found;
-        int matchcount = 0;
-        int matchpos_global = -1;
-
-        // How many matches do we need to find before we stop searching through reads?
-        int init_searches = 100;
-
-        if (sgrna){
-            tagmatch.set_reverse();
-        }
-
-        map<string, int> seq2idx;
-        vector<string> seq_names;
-        vector<string> seq_wells;
-        int ix = 0;
-        for (map<string, string>::iterator sw = seq2well.begin(); 
-            sw != seq2well.end(); ++sw){
+            else if (wlfn == ""){
+                fprintf(stderr, "ERROR: cell barcode whitelist / -w is required\n");
+                exit(1);
+            }
             
-            seq2idx.insert(make_pair(sw->first, ix));
-            ++ix;
-            seq_wells.push_back(sw->second);
-            if (well2id.count(sw->second) > 0){
-                seq_names.push_back(well2id[sw->second]);
-                labels.push_back(well2id[sw->second]);
+            // Load barcode/sgRNA sequence -> well ID (or name) mapping
+            map<string, string> seq2well;
+            vector<string> seqlist;
+            int seq_len = load_seq2well(barcodesfn, seq2well, seqlist);
+            
+            // Load cell barcodes, if provided
+            set<unsigned long> cell_barcodes;
+            bool has_cell_barcodes;
+            if (cell_barcodesfn != ""){
+                has_cell_barcodes = true;
+                parse_barcode_file(cell_barcodesfn, cell_barcodes);
+            }    
+
+            // Load intermediate ID -> unique identifier mapping, if provided
+            map<string, string> well2id;
+            if (mapfn == ""){
+                for (map<string, string>::iterator sw = seq2well.begin(); 
+                    sw != seq2well.end(); ++sw){
+                    // If there is no intermediate ID -> final ID mapping for this intermediate ID,
+                    // then the intermediate ID is the final ID.
+                    if (well2id.count(sw->second) == 0){
+                        well2id.insert(make_pair(sw->second, sw->second));
+                    }
+                }
             }
             else{
-                seq_names.push_back("");
+                has_mapfile = true;
+                load_well_mapping(mapfn, well2id);
+                // Make sure wells specified here have associated valid barcodes.
+                set<string> wellnames;
+                for (map<string, string>::iterator sw = seq2well.begin(); sw != 
+                    seq2well.end(); ++sw){
+                    wellnames.insert(sw->second);
+                }
+                for (map<string, string>::iterator wi = well2id.begin(); wi != well2id.end();
+                    ++wi){
+                    if (wellnames.find(wi->first) == wellnames.end()){
+                        fprintf(stderr, "ERROR: well/intermediate ID -> final ID mapping file contains a well named %s\n",
+                            wi->first.c_str());
+                        fprintf(stderr, "This well ID is not present in the cell hashing/MULTIseq/sgRNA sequence -> \
+        well/intermediate ID mappings\n");
+                        exit(1);
+                    }
+                }
+                // If the user has omitted one or more wells that turn up often in the data, we will
+                // alert the user about this later.
             }
-        }
-        
-        // Data structure to store tag counts per cell barcode
-        // counts come from UMIs
-        robin_hood::unordered_map<unsigned long, vector<umi_set*> > bc_tag_umis;
-        
-        // Set up object that will scan each pair of read files
-        bc_scanner scanner;
-
-        // Arguments: 
-        // whitelist file
-        // whitelist file 2 (for ATAC)
-        // file index of cell barcode
-        // cell barcode at end of sequence?
-        // cell barcode reverse complemented?
-        // is there a second whitelist?
-        // file index of UMI
-        // start index of UMI
-        // UMI length
-        // cell barcode length
-        int bclen = (int)round((double)BC_LENX2/2.0);
-        scanner.init(wlfn, "", 0, false, false, false, 0, bclen, umi_len, bclen);  
-        //scanner.init_multiseq_v3(wlfn);
-        
-        if (exact_cell_barcodes){
-            scanner.exact_matches_only();
-        }
-
-        char seq_buf[seq_len+1];
-
-        for (int i = 0; i < read1fn.size(); ++i){
+            n_labels = well2id.size();    
             
-            // Initiate object to read through FASTQs and find cell barcodes.
-            scanner.add_reads(read1fn[i], read2fn[i]);
+            map<string, int> seq2idx;
+            vector<string> seq_names;
+            vector<string> seq_wells;
+            int ix = 0;
+            for (map<string, string>::iterator sw = seq2well.begin(); 
+                sw != seq2well.end(); ++sw){
             
-            while (scanner.next()){
-                
-                // Skip reads if we have a cell barcode whitelist and the current
-                // barcode isn't in it
-                if (has_cell_barcodes && 
-                    cell_barcodes.find(scanner.barcode) == cell_barcodes.end()){
-                    continue;
+                seq2idx.insert(make_pair(sw->first, ix));
+                ++ix;
+                seq_wells.push_back(sw->second);
+                if (well2id.count(sw->second) > 0){
+                    seq_names.push_back(well2id[sw->second]);
+                    labels.push_back(well2id[sw->second]);
                 }
-                
-                // At this point, there's a valid cell barcode.
-                // scanner.barcode_read holds R1
-                // scanner.read_f holds R2
-                // scanner.umi holds UMI 
-                
-                if (scanner.has_umi){
-                    int idx = -1;
-                    if (sgrna){
-                        
-                        if (matchpos_global == -1){
-                            // Search entire read for sequence.
-                            // Sequences are assumed to appear in forward orientation
-                            idx = tagmatch.match(scanner.read_f);
-                            if (idx != -1){
-                                if (matchpos_found.count(tagmatch.match_pos) == 0){
-                                    matchpos_found.insert(make_pair(tagmatch.match_pos, 0));
-                                }
-                                matchpos_found[tagmatch.match_pos]++;
-                                matchcount++;
-
-                                if (matchcount >= init_searches){
-                                    int matchmax = -1;
-                                    int posmax = -1;
-                                    bool tie = false;
-                                    for (map<int, int>::iterator m = matchpos_found.begin();
-                                        m != matchpos_found.end(); ++m){
-                                        if (matchmax == -1 || m->second > matchmax){
-                                            matchmax = m->second;
-                                            posmax = m->first;
-                                            tie = false;
-                                        }
-                                        else if (matchmax != -1 && m->second == matchmax){
-                                            tie = true;
-                                        }
-                                    }
-                                    if (posmax != -1 && !tie){
-                                        // Set this position to the place to look for future matches.
-                                        matchpos_global = posmax;
-                                        tagmatch.set_global();
-                                    }
-                                }
-                            }
-                        }
-                        else{
-                            // We already know where to look in the read.
-                            strncpy(&seq_buf[0], scanner.read_f + matchpos_global, seq_len);
-                            seq_buf[seq_len] = '\0';
-                            idx = tagmatch.match(&seq_buf[0]);
-                        }
-                    }
-                    else{
-                        // Cell hashing barcodes are assumed to occur at teh beginning of R2, forward orientation
-                        strncpy(&seq_buf[0], scanner.read_f, seq_len);
-                        seq_buf[seq_len] = '\0';
-                        idx = tagmatch.match(&seq_buf[0]);
-                    }
-                    
-                    if (idx != -1){
-                        
-                        // A matching sequence was found.
-                        string seqmatch = seqlist[idx];
-                        
-                        // Store UMI
-                        umi this_umi(scanner.umi, scanner.umi_len);    
-                        if (bc_tag_umis.count(scanner.barcode) == 0){
-                            vector<umi_set*> v(seqlist.size(), NULL);
-                            bc_tag_umis.emplace(scanner.barcode, v);
-                        }
-                        umi_set* ptr = bc_tag_umis[scanner.barcode][seq2idx[seqmatch]];
-                        if (ptr == NULL){
-                            // Initialize.
-                            bc_tag_umis[scanner.barcode][seq2idx[seqmatch]] = new umi_set(scanner.umi_len);
-                            ptr = bc_tag_umis[scanner.barcode][seq2idx[seqmatch]];
-                        }
-                        ptr->add(this_umi); 
-                    }
+                else{
+                    seq_names.push_back("");
                 }
             }
-        }
+            
+            // Data structure to store tag counts per cell barcode
+            // counts come from UMIs
+            robin_hood::unordered_map<unsigned long, vector<umi_set*> > bc_tag_umis;
+            
+            // Process reads and count tags in them
+            count_tags_in_reads(read1fn, read2fn, seqlist, mismatches, wlfn,
+                umi_len, sgrna, exact_cell_barcodes, seq_len, has_cell_barcodes,
+                cell_barcodes, seq2idx, bc_tag_umis);
 
-        // Write counts to disk
-        string countsfn = output_prefix + ".counts";
-        dump_counts(countsfn, bc_tag_umis, seq_names, bc_tag_counts);
-       
-        if (has_mapfile){
-            // Check to see that the desired MULTIseq barcodes are the most common ones.
-            // Warn the user if unexpected ones are more common. 
-            string wellcountsfn = output_prefix + ".wells";
-            check_missing_ms_wells(bc_tag_umis, seq_wells, well2id, wellcountsfn);        
-        }
-
-        // Free stuff
-        for (robin_hood::unordered_map<unsigned long, vector<umi_set*> >::iterator x = 
-            bc_tag_umis.begin(); x != bc_tag_umis.end(); ){
-            for (int i = 0; i < x->second.size(); ++i){
-                if (x->second[i] != NULL){
-                    delete x->second[i];
-                }
+            // Write counts to disk
+            string countsfn = output_prefix + ".counts";
+            dump_counts(countsfn, bc_tag_umis, seq_names, bc_tag_counts, batch_id);
+           
+            if (has_mapfile){
+                // Check to see that the desired MULTIseq barcodes are the most common ones.
+                // Warn the user if unexpected ones are more common. 
+                string wellcountsfn = output_prefix + ".wells";
+                check_missing_ms_wells(bc_tag_umis, seq_wells, well2id, wellcountsfn);        
             }
-            bc_tag_umis.erase(x++);
+
+            // Free stuff
+            for (robin_hood::unordered_map<unsigned long, vector<umi_set*> >::iterator x = 
+                bc_tag_umis.begin(); x != bc_tag_umis.end(); ){
+                for (int i = 0; i < x->second.size(); ++i){
+                    if (x->second[i] != NULL){
+                        delete x->second[i];
+                    }
+                }
+                bc_tag_umis.erase(x++);
+            }
         }
     }
     

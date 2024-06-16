@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <mixtureDist/functions.h>
 #include <htswrapper/bc.h>
+#include <htswrapper/gzreader.h>
 
 /**
  * Contains functions used by more than one program in this
@@ -549,3 +550,107 @@ double find_knee(map<double, double>& x, double min_frac_to_allow){
     return maxk_x;
 }
 
+/**
+ * Parses input files in Market exchange format (MEX),
+ * used to represent sparse matrices. Takes as input the three MEX files
+ * (gzipped or not), along with two data structures to store results.
+ * counts will store (hashed) cell barcodes mapped to counts of label indices,
+ * and labels will store the names of the labels (i.e. genes).
+ */
+void parse_mex(const string& barcodesfile,
+    const string& featuresfile,
+    const string& matrixfile, 
+    robin_hood::unordered_map<unsigned long, map<int, long int> >& counts,
+    vector<string>& labels,
+    const string& featuretype){
+     
+    // First, parse barcodes
+    vector<unsigned long> barcodes;
+    parse_barcode_file(barcodesfile, barcodes);
+    
+    set<string> unique_featuretype; 
+    set<int> feature_inds;
+    // Then, parse genes
+    int feature_idx = 0;
+    gzreader labelsreader(featuresfile);
+    while(labelsreader.next()){
+        istringstream splitter(labelsreader.line);
+        string field;
+        int idx = 0;
+        string id = "";
+        string name = "";
+        string type = "";
+        while(getline(splitter, field, '\t')){
+            if (idx == 0){
+                id = field;
+            }
+            else if (idx == 1){
+                name = field;
+            }
+            else if (idx == 2){
+                type = field;
+            }
+            idx++;
+        }
+        if (featuretype == "" || type == "" || featuretype == type){
+            if (name != ""){
+                labels.push_back(name);
+            }
+            else{
+                labels.push_back(id);
+            }
+            feature_inds.insert(feature_idx);
+        }
+        if (featuretype == "" && featuretype != ""){
+            unique_featuretype.insert(featuretype);
+        }
+        ++feature_idx;
+    }
+
+    // Then, populate data structure
+    gzreader mtxreader(matrixfile);
+    int mexline = 0;
+    while(mtxreader.next()){
+        if (mexline > 1){
+            istringstream splitter(mexline);
+            int idx = 0;
+            string token;
+            int bc_idx;
+            int feature_idx;
+            long int count;
+            while (getline(splitter, token, ' ')){
+                if (idx == 0){
+                    // feature index
+                    feature_idx = atoi(token.c_str());
+                    feature_idx--; // Make 0-based
+                }
+                else if (idx == 1){
+                    // barcode index
+                    bc_idx = atoi(token.c_str());
+                    bc_idx--; // Make 0-based
+                }
+                else if (idx == 2){
+                    // UMI count
+                    count = atol(token.c_str());
+                    if (feature_inds.find(feature_idx) != feature_inds.end()){
+                        // This feature is in the list
+                        unsigned long barcode = barcodes[bc_idx];
+                        if (counts.count(barcode) == 0){
+                            map<int, long int> m;
+                            counts.emplace(barcode, m);
+                        }
+                        counts[barcode].emplace(feature_idx, count);
+                    }
+                }
+                ++idx;
+            }
+            ++mexline;
+        }
+    }
+    if (featuretype == "" && unique_featuretype.size() > 1){
+        fprintf(stderr, "ERROR: no feature type filter provided, but %ld feature types\n", 
+            unique_featuretype.size());
+        fprintf(stderr, "encountered in MEX data\n");
+        exit(1);
+    }
+}

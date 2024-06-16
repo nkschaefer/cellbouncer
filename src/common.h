@@ -70,4 +70,12 @@ void derivative(std::map<double, double>& hist, std::map<double, double>& result
 // Find inflection point in a histogram
 double find_knee(std::map<double, double>& hist, double min_frac_to_allow);
 
+// Load a market exchange format (MEX) file
+void parse_mex(const std::string& barcodesfile,
+    const std::string& featuresfile,
+    const std::string& matrixfile, 
+    robin_hood::unordered_map<unsigned long, map<int, long int> >& counts,
+    std::vector<std::string>& labels,
+    const std::string& featuretype = "");
+ 
 #endif
