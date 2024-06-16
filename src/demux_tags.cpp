@@ -86,17 +86,20 @@ void help(int code){
     fprintf(stderr, "       file for each experiment that assigns a name/identity to each well. If you do\n");
     fprintf(stderr, "       not provide a --mapping file, names in the --seqs file will be in final output.\n");
     fprintf(stderr, "       File should be tab-separated, with one sequence and one name per line.\n");
-    fprintf(stderr, "     ===== ALTERNATIVE INPUT OPTION =====\n");
-    fprintf(stderr, "   --input_mtx -i If you have already counted tag barcodes using another program (i.e.\n");
-    fprintf(stderr, "       10X Genomics CellRanger), you can provide a path to the output data in MEX format\n");
-    fprintf(stderr, "       here. For 10X, this would be the filtered_feature_bc_matrix directory. If you have\n");
-    fprintf(stderr, "       processed multiple data types, then you need to also provide the name of the data\n");
-    fprintf(stderr, "       type here so it can be extracted from the MEX-format files (--feature_type/-F argument).\n");
-    fprintf(stderr, "   --feature_type -F If loading data from a matrix file (--input_mtx/-i), and if the files\n");
-    fprintf(stderr, "       contain multiple data types (i.e. if you processed RNA-seq and sgRNA capture data in\n");
-    fprintf(stderr, "       the same CellRanger run, then specify the feature type for tag data to extract. For\n");
-    fprintf(stderr, "       10X cell hashing, for example, specify \"Multiplexing\\ Capture\", for antibody capture\n");
-    fprintf(stderr, "       specify \"Antibody\\ Capture\", and for sgRNA capture specify \"CRISPR\\ Guide\\ Capture\".\n");
+    fprintf(stderr, "     ===== ALTERNATIVE INPUT OPTION: MEX format =====\n");
+    fprintf(stderr, "   If you have already counted tag barcodes using another program (i.e. 10X Genomics\n");
+    fprintf(stderr, "       CellRanger or kallisto/bustools kite), you can load market exchange (MEX) format\n");
+    fprintf(stderr, "       output via these options instead of using this program to count tags in reads.\n");
+    fprintf(stderr, "   MEX format consists of three files, to be provided below:\n");
+    fprintf(stderr, "   --mtx -X The matrix/.mtx file (optionally gzipped)\n");
+    fprintf(stderr, "   --features -F The features/\"genes\" file (optionally gzipped)\n");
+    fprintf(stderr, "   --cell_barcodes -B (same argument as below): the list of cell barcodes (optionally\n");
+    fprintf(stderr, "       gzipped)\n");
+    fprintf(stderr, "   --feature_type -t If the MEX-format files contain multiple data types (i.e. if you\n");
+    fprintf(stderr, "       processed RNA-seq and sgRNA capture data in the same CellRanger run, then specify\n");
+    fprintf(stderr, "       the feature type for tag data to extract. For 10X cell hashing, for example,\n");
+    fprintf(stderr, "       specify \"Multiplexing\\ Capture\", for antibody capture specify \"Antibody\\ Capture\",\n");
+    fprintf(stderr, "       and for sgRNA capture specify \"CRISPR\\ Guide\\ Capture\".\n");
     fprintf(stderr, "\n   ===== STRONGLY RECOMMENDED =====\n");
     fprintf(stderr, "   --mapping -m 2-column tab separated file mapping string interpretation of\n");
     fprintf(stderr, "       MULTIseq label (i.e. unique identifier, or treatment name) to MULTIseq\n");
@@ -1247,8 +1250,9 @@ int main(int argc, char *argv[]) {
        {"exact", no_argument, 0, 'e'},
        {"umi_len", required_argument, 0, 'u'},
        {"sgRNA", no_argument, 0, 'g'},
-       {"input_mtx", required_argument, 0, 'i'},
-       {"feature_type", required_argument, 0, 'F'},
+       {"mtx", required_argument, 0, 'X'},
+       {"features", required_argument, 0, 'F'},
+       {"feature_type", required_argument, 0, 't'},
        {0, 0, 0, 0} 
     };
     
@@ -1258,7 +1262,7 @@ int main(int argc, char *argv[]) {
     vector<string> read2fn;
     string mapfn = "";
     string wlfn = "";
-    string cell_barcodesfn;
+    string cell_barcodesfn = "";
     int mismatches = 2;
     bool filt = false;
     string sep = "+";
@@ -1267,6 +1271,7 @@ int main(int argc, char *argv[]) {
     bool exact_cell_barcodes = false;
     int umi_len = 12;
     string input_mtx = "";
+    string input_features = "";
     string featuretype = "";
 
     fprintf(stderr, "%s\n", STRINGIZE(PROJ_ROOT));
@@ -1282,7 +1287,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:n:i:F:1:2:m:M:w:u:B:s:egfch", 
+    while((ch = getopt_long(argc, argv, "o:n:i:X:F:t:1:2:m:M:w:u:B:s:egfch", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -1294,10 +1299,13 @@ int main(int argc, char *argv[]) {
             case 'o':
                 output_prefix = optarg;
                 break;
-            case 'i':
+            case 'X':
                 input_mtx = optarg;
                 break;
             case 'F':
+                input_features = optarg;
+                break;
+            case 't':
                 featuretype = optarg;
                 break;
             case 's':
@@ -1359,9 +1367,27 @@ int main(int argc, char *argv[]) {
     }
     if (read1fn.size() > 0 && read2fn.size() > 0 && input_mtx != ""){
         fprintf(stderr, "ERROR: reads provided along with data in MEX format.\n");
-        fprintf(stderr, "If loading MEX-format data (barcodes.tsv, features.tsv, and matrix.mtx),\n");
-        fprintf(stderr, "there is no need to count tags in reads.\n");
+        fprintf(stderr, "If loading MEX-format data there is no need to count tags in reads.\n");
         exit(1);
+    }
+    if (input_features != "" || input_mtx != ""){
+        if (input_features == "" || input_mtx == "" || cell_barcodesfn == ""){
+            fprintf(stderr, "ERROR: if loading counts from market exchange (MEX) format files,\n");
+            fprintf(stderr, "all three of --mtx/-X, --features/-F, and --cell_barcodes/-B are required.\n");
+            exit(1);
+        }
+        else if (!file_exists(input_mtx)){
+            fprintf(stderr, "ERROR: file %s does not exist.\n", input_mtx.c_str());
+            exit(1);
+        }
+        else if (!file_exists(input_features)){
+            fprintf(stderr, "ERROR: file %s does not exist.\n", input_features.c_str());
+            exit(1);
+        }
+        else if (!file_exists(cell_barcodesfn)){
+            fprintf(stderr, "ERROR: file %s does not exist.\n", cell_barcodesfn.c_str());
+            exit(1);
+        }
     }
     if (sgrna && sep == "+"){
         sep = ",";
@@ -1396,38 +1422,8 @@ next time)...\n");
         if (input_mtx != ""){
             
             // Load MEX-format data
-            // Check that all files exist
-            if (input_mtx[input_mtx.length()-1] != '/'){
-                input_mtx += "/";
-            } 
-            string bcf = input_mtx + "barcodes.tsv";
-            if (!file_exists(bcf)){
-                bcf += ".gz";
-            }
-            if (!file_exists(bcf)){
-                fprintf(stderr, "ERROR: %s not found.\n", bcf.c_str());
-                exit(1);
-            }
-            string ff = input_mtx + "features.tsv";
-            if (!file_exists(ff)){
-                ff += ".gz";
-            }
-            if (!file_exists(ff)){
-                fprintf(stderr, "ERROR: %s not found.\n", ff.c_str());
-                exit(1);
-            }
-            string mtxf = input_mtx + "matrix.mtx";
-            if (!file_exists(mtxf)){
-                mtxf += ".gz";
-            }
-            if (!file_exists(mtxf)){
-                fprintf(stderr, "ERROR: %s not found.\n", mtxf.c_str());
-                exit(1);
-            }
-
-            // Load data
-            parse_mex(bcf, ff, mtxf, bc_tag_counts, labels, featuretype); 
-
+            parse_mex(cell_barcodesfn, input_features, input_mtx, 
+                bc_tag_counts, labels, featuretype); 
         }
         else{
             if (read1fn.size() == 0 || read2fn.size() == 0){    
