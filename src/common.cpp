@@ -612,7 +612,7 @@ void parse_mex(const string& barcodesfile,
     int mexline = 0;
     while(mtxreader.next()){
         if (mexline > 1){
-            istringstream splitter(mexline);
+            istringstream splitter(mtxreader.line);
             int idx = 0;
             string token;
             int bc_idx;
