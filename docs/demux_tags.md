@@ -17,7 +17,10 @@ If you have FASTQs from one of the above data types, `demux_tags` can count the 
 --seqs -s File mapping sequences to identities
 ```
 **Notes**
-* The `--read1` and `--read2` argument names must be provided before each file. For example, to provide two read file pairs `Lib1_S1_L001_R1_001.fastq.gz / Lib1_S1_L001_R2_001.fastq.gz` and `Lib2_S2_L001_R1_001.fastq.gz / Lib2_S2_L001_R2_001.fastq.gz`, pass them like this: `--read1 Lib1_S1_L001_R1_001.fastq.gz --read2 Lib1_S1_L001_R2_001.fastq.gz --read1 Lib2_S2_L001_R1_001.fastq.gz --read2 Lib2_S2_L001_R2_001.fastq.gz`.
+* The `--read1` and `--read2` argument names must be provided before each file. For example, to provide two read file pairs `Lib1_S1_L001_R1_001.fastq.gz, Lib1_S1_L001_R2_001.fastq.gz` and `Lib2_S2_L001_R1_001.fastq.gz, Lib2_S2_L001_R2_001.fastq.gz`, pass them like this:
+  ```
+  --read1 Lib1_S1_L001_R1_001.fastq.gz --read2 Lib1_S1_L001_R2_001.fastq.gz --read1 Lib2_S2_L001_R1_001.fastq.gz --read2 Lib2_S2_L001_R2_001.fastq.gz
+  ```
 * The `--whitelist` argument is specific to the droplet-based sequencing technology used; for more information on the 10X Genomics barcode lists, see [here](https://kb.10xgenomics.com/hc/en-us/articles/115004506263-What-is-a-barcode-whitelist)
 * The `--seqs` file should be tab-separated, with one sequence and one identity per line, i.e.:
   ```
