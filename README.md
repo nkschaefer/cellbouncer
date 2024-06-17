@@ -87,7 +87,7 @@ Once you have run [`demux_vcf`](#demux_vcf), you can use the computed allele cou
 
 ## [doublet_dragon](docs/doublet_dragon.md)
 <p>
-<img src="img/doublet_dragon.png" width=250, alt="doublet_dragon" />
+<img src="img/doublet_dragon2.png" width=250, alt="doublet_dragon" />
 </p>
 
 [more](docs/doublet_dragon.md)
