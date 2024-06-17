@@ -91,6 +91,7 @@ Once you have run [`demux_vcf`](#demux_vcf), you can use the computed allele cou
 </p>
 
 After assigning cells to individuals using one or more data types, `doublet_dragon` can compile all `.assignments` files given and infer global proportions of all individual assignment types, as well as a global doublet rate, using maximum likelihood.
+
 [more](docs/doublet_dragon.md)
 
 ## Plotting
