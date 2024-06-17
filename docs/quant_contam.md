@@ -71,6 +71,10 @@ plot/contam.R [output_prefix]
 ```
 Two plots will be created: `[output_prefix].contam.pdf` (vector) and `[output_prefix].contam.png` (rasterized).
 
+Low contamination data set (10X 40k NSCLC)| High contamination data set (Tetraploid composite iPSCs)|
+:--------------------------:|:---------------------------------------:|
+![](../img/nsclc.contam.png)  |  ![](../img/tet_ipsc.contam.png) | 
+
 ### Information in the plots
 * The top left corner of the plot lists the mean and standard deviation of contamination rate per cell in the data set. 
 * The bar plot in the top left shows the fraction of ambient RNA inferred to have originated from each individual, in the form of stacked bars. If you have very many individuals, this information may overflow the space allocated in the plot; in that case, you will need to load `[output_prefix].contam_prof` and plot in your favorite plotting program.
