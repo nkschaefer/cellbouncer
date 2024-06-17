@@ -40,7 +40,15 @@ void help(int code){
     fprintf(stderr, "    --r3 -3 Read 3 FASTQ file (can be gzipped)\n");
     fprintf(stderr, "    --output_dir -o Directory in which to write output files. Files will have\n");
     fprintf(stderr, "      the same name as input files (R1 and R2), but in the output directory.\n");
-    fprintf(stderr, "    --whitelist -w Cellranger barcode whitelist\n");
+    fprintf(stderr, "    --whitelist -w cell barcode whitelist. In the case of 10X Genomics multiome\n");
+    fprintf(stderr, "      data, you must provide the multiome RNA-seq whitelist with this argument\n");
+    fprintf(stderr, "      and the multiome ATAC-seq whitelist with the --whitelist2/-W argument.\n");
+    fprintf(stderr, "    --whitelist2 -W cell barcode whitelist for ATAC, if 10X Genomics multiome\n");
+    fprintf(stderr, "      data. Multiome kits use separate barcodes for ATAC and RNA-seq, but each\n");
+    fprintf(stderr, "      ATAC barcode has a corresponding RNA-seq barcode that is reported in the\n");
+    fprintf(stderr, "      processed data set. Providing the RNA-seq barcodes with --whitelist/-w and\n");
+    fprintf(stderr, "      the ATAC-seq barcodes with --whitelist2/-W will result in ATAC barcodes being\n");
+    fprintf(stderr, "      searched for in the reads, but RNA-seq barcodes being reported in the output reads.\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
 }
@@ -53,6 +61,7 @@ int main(int argc, char *argv[]) {
        {"r3", required_argument, 0, '3'},
        {"output_dir", required_argument, 0, 'o'},
        {"whitelist", required_argument, 0, 'w'},
+       {"whitelist2", required_argument, 0, 'W'},
        {0, 0, 0, 0} 
     };
     
@@ -62,6 +71,7 @@ int main(int argc, char *argv[]) {
     string r3fn = "";
     string output_dir = "";
     string wlfn = "";
+    string wl2fn = "";
 
     int option_index = 0;
     int ch;
@@ -69,7 +79,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "1:2:3:o:w:h", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "1:2:3:o:w:W:h", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -91,6 +101,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'w':
                 wlfn = optarg;
+                break;
+            case 'W':
+                wl2fn = optarg;
                 break;
             default:
                 help(0);
@@ -138,7 +151,14 @@ int main(int argc, char *argv[]) {
     outs[1] = gzopen(r2out.c_str(), "w");
 
     bc_scanner scanner(r1fn, r2fn, r3fn);
-    scanner.init_10x_ATAC(wlfn);
+    if (wl2fn != ""){
+        // Assume multiome data if two whitelists given.
+        scanner.init_10x_multiome_ATAC(wlfn, wl2fn);
+    }
+    else{
+        // Assume 10X scATAC-seq
+        scanner.init_10x_ATAC(wlfn);
+    }
     scanner.trim_barcodes(true);
 
     char outbuf[1024];
