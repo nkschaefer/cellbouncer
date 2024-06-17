@@ -81,7 +81,7 @@ If you have collected [MULTIseq](https://www.nature.com/articles/s41592-019-0433
 <img src="img/quant_contam.png" width=225, alt="quant_contam" />
 </p>
 
-Once you have run `demux_vcf`, you can use the computed allele counts and cell identities to model the rate at which cells mismatch the expected alleles as the result of ambient RNA contamination. The program `quant_contam` models the ambient RNA in the pool as originating from a mixture of individuals in the pool and estimates the contribution of each individual to this mixture. It also estimates the percent of each cell's RNA originating from ambient RNA. 
+Once you have run [`demux_vcf`](#demux_vcf), you can use the computed allele counts and cell identities to model the rate at which cells mismatch the expected alleles as the result of ambient RNA contamination. The program `quant_contam` models the ambient RNA in the pool as originating from a mixture of individuals in the pool and estimates the contribution of each individual to this mixture. It also estimates the percent of each cell's RNA originating from ambient RNA. 
 
 [more](docs/quant_contam.md)
 
