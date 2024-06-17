@@ -22,6 +22,8 @@ To run, you must first build a set of reference k-mers. To accomplish this,
     * `dists.txt` contains parameters from the fit multinomial mixture model used to assign cells to species.
     * Subdirectories for each species, containing the input read files (with the same names), subset to only reads from cells assigned to that species
     * Species-specific [10X Genomics-format library files](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/inputs/cr-libraries-csv), to aid in running [cellranger](https://www.10xgenomics.com/support/software/cell-ranger/latest) on data from each species separately
+### Note about cell barcode lists
+`demux_species` needs to check for valid cell barcodes in reads. To do this, it requires one or more [cell barcode whitelists](https://kb.10xgenomics.com/hc/en-us/articles/115004506263-What-is-a-barcode-whitelist) for the FASTQ files you provide. If using RNA-seq data only, only one whitelist is required (`-w` option). If using 10X Genomics multiome data, however, two whitelists are required, one for RNA-seq (`-w` option) and one for ATAC-seq (`-W` option). This is because these kits use separate barcodes for ATAC-seq and RNA-seq, where each ATAC-seq barcode corresponds to an RNA-seq barcode and is converted to the matching RNA-seq barcode in output data. For help finding the multiome whitelist files, see [here](https://kb.10xgenomics.com/hc/en-us/articles/115004506263-What-is-a-barcode-whitelist).
 ### Running in parallel
 Unfortunately, matching cell barcodes to large whitelists and counting k-mers can be slow. To speed up this process, `cellbouncer` has a way to split up data, run in parallel on a cluster, and join results.
 * Chop up the input read files using `utils/split_read_files`
