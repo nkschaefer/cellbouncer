@@ -13,3 +13,29 @@ In addition to quantifying ambient RNA contamination, `quant_contam` models the 
 Rather than attempt to correct your count matrices, `quant_contam` reports the percent of each cell's RNA likely to have originated from ambient RNA contamination. With this information, you can filter individual cells, include the values as covariates in a single-cell level differential expression analysis, and/or test which genes have their expression most positively and negatively correlated with ambient RNA contamination rates in your data set.
 
 ## Running the program
+You can run `quant_contam` in the most basic way easily:
+```
+quant_contam -o [output_prefix]
+```
+Where `[output_prefix]` is the `--output_prefix/-o` argument you passed to `demux_vcf`.
+### Optional arguments
+Some useful optional arguments you can provide are:
+```
+--ids -i If you limited demux_vcf to specific IDs using the --ids/-i argument, provide the same value here.
+--ids_doublet -I If you limited demux_vcf to specific IDs using the --ids_doublet/-I argument, provide the same value here.
+--dump_freqs -d Dump the inferred frequencies of each type of allele in ambient RNA to a file called [output_prefix].contam.dat. You probably don't need to do this.
+--llr -l Filter the .assignments file to this minimum log likelihood ratio before inferring ambient RNA contamination
+--no_weights -w Do not weight assignments by log likelihood ratio (see below)
+--disable_profile -p If the program is taking too long to run, you can skip the (expensive) step of modeling the ambient RNA as a mixture of individuals, and only output estimates of percent ambient RNA per cell.
+--max_cells -c The (expensive) step of modeling ambient RNA as a mixture of individuals subsamples cells for calculating the expected allele frequencies per individual. This parameter sets how many cells are sampled (default 50)
+--n_mixprop_trials -n When modeling ambient RNA as a mixture of individuals, several trials of maximizing the likelihood function are done with different random starting values. This sets the number of random trials (default 10)
+--other_species -s If your pool contained members of another species that didn't make it into the data set analyzed here, attempt to model other species' contribution to ambient RNA (see below)
+--error_ref -e The underlying true error rate for misreading ref alleles as alt (default = 0.001, should be set to sequencer error rate)
+--error_alt -E The underlying true error rate for misreading alt alleles as ref (default = 0.001, should be set to sequencer error rate)
+```
+* The `--no_weights/-w` option disables weighting cell-individual assignments by log likelihood ratio (confidence of assignment). This default setting will allow more confident assignments to contribute more to inference of the ambient RNA profile. You might want to disable this if, for example, you have very different numbers of cells per different individuals in your assignments and you are worried that some individuals might mostly be noise. This would allow all cells to contribute equally to the solution.
+* The `--other_species/-s` argument is designed for cases in which you have pooled together cells from multiple species, but then separated those cells by species (for example, using [`demux_species`](demux_species.md)) and mapped each group to a different reference genome. In this case, ambient RNA in each data set could have originated from another species that is not present in the data being examined. In this case, this option can include a "fake" individual in the pool consisting of only reference alleles (an approximation for another species, which should generally match the most common allele, wherever applicable).
+
+### Output files
+
+### Plotting
