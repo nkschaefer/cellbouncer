@@ -26,16 +26,20 @@ using namespace std;
  */
 void help(int code){
     fprintf(stderr, "atac_fq_preprocess [OPTIONS]\n");
-    fprintf(stderr, "Given sc-ATAC-seq FASTQ files from 10X Genomics and a barcode whitelist,\n");
-    fprintf(stderr, "checks for whitelisted barcodes, trims them, and inserts them into sequence\n");
-    fprintf(stderr, "comments so they can be aligned with an aligner that is capable of inserting\n");
-    fprintf(stderr, "sequence comments as BAM tags.\n");
+    fprintf(stderr, "Given sc-ATAC-seq FASTQ files from 10X Genomics (or similar format) and an\n");
+    fprintf(stderr, "allowed barcode list, finds valid cell barcodes in reads (within edit distance\n");
+    fprintf(stderr, "1), trims barcodes from reads, and inserts barcodes into sequence comments.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Outputs two FASTQ files: forward and reverse reads, with barcodes inserted into\n");
+    fprintf(stderr, "both. Users can then map these to a reference genome using an aligner capable\n");
+    fprintf(stderr, "of creating BAM tags from sequence comments. For example, minimap2 with the -y\n");
+    fprintf(stderr, "flag will have this behavior, and the -a flag instructs it to output SAM.\n"); 
     fprintf(stderr, "[OPTIONS]:\n");
     fprintf(stderr, "    --r1 -1 Read 1 FASTQ file (can be gzipped)\n");
     fprintf(stderr, "    --r2 -2 Read 2 FASTQ file (can be gzipped)\n");
     fprintf(stderr, "    --r3 -3 Read 3 FASTQ file (can be gzipped)\n");
     fprintf(stderr, "    --output_dir -o Directory in which to write output files. Files will have\n");
-    fprintf(stderr, "      the same name as input files, but in the output directory.\n");
+    fprintf(stderr, "      the same name as input files (R1 and R2), but in the output directory.\n");
     fprintf(stderr, "    --whitelist -w Cellranger barcode whitelist\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
