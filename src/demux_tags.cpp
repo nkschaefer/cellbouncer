@@ -71,7 +71,8 @@ void help(int code){
     fprintf(stderr, "\n   ===== REQUIRED =====\n");
     fprintf(stderr, "   --output_prefix -o The prefix for output file names. Will create\n");
     fprintf(stderr, "       a file ending in .counts and another ending in .assignments.\n");
-    fprintf(stderr, "\n   ===== REQUIRED UNLESS LOADING COUNTS FROM A PREVIOUS RUN OR MATRIX FILES =====\n");
+    fprintf(stderr, "\n   ===== TO COUNT TAGS IN FASTQ FILES =====\n");
+    fprintf(stderr, "     ----- REQUIRED -----\n");
     fprintf(stderr, "   --read1 -1 Forward read file for cell hashing/MULTIseq/sgRNA capture data. Can\n");
     fprintf(stderr, "       specify multiple times.\n");
     fprintf(stderr, "   --read2 -2 Reverse read file for cell hashing/MULTIseq/sgRNA capture data. Can\n");
@@ -98,6 +99,16 @@ void help(int code){
     fprintf(stderr, "       One advantage of using this argument is that the program will check to see if any\n");
     fprintf(stderr, "       sequences in the --seqs/-s file not given names in this file are more highly represented\n");
     fprintf(stderr, "       in your data than expected. This can help identify when you have mixed up sample wells.\n");
+    fprintf(stderr, "       ----- OPTIONAL -----\n");
+    fprintf(stderr, "   --mismatches -m The number of allowable mismatches to a MULTIseq barcode/HTO/sgRNA\n");
+    fprintf(stderr, "       capture sequence to accept it. Default = 2; set to -1 to take best match overall,\n");
+    fprintf(stderr, "       if there are no ties.\n");
+    fprintf(stderr, "   --umi_len -u This program assumes that forward reads begin with a cell barcode followed\n");
+    fprintf(stderr, "       by a UMI. Cell barcode length is set during compilation with the -D BC_LENX2\n");
+    fprintf(stderr, "        argument (default = 32, meaning 16 bp barcodes). This sets the length of the UMI\n");
+    fprintf(stderr, "       (default = 12 bp; cannot exceed 16 bp). Some versions of 10X kits use 10 bp UMIs.\n");
+    fprintf(stderr, "   --exact -e Require cell barcodes to exactly match those in the whitelist. Default:\n");
+    fprintf(stderr, "       allow one mismatch. This will improve speed, especially for large whitelists.\n");
     fprintf(stderr, "\n     ===== ALTERNATIVE INPUT OPTION: MEX format =====\n");
     fprintf(stderr, "   If you have already counted tag barcodes using another program (i.e. 10X Genomics\n");
     fprintf(stderr, "       CellRanger or kallisto/bustools kite), you can load market exchange (MEX) format\n");
@@ -121,15 +132,7 @@ void help(int code){
     fprintf(stderr, "   --sgRNA -g Specifies that data is from sgRNA capture. This affects how sequence\n");
     fprintf(stderr, "       matching in reads is done and slightly changes the output files. Also makes\n");
     fprintf(stderr, "       the default separator for multiple IDs a comma instead of +.\n");
-    fprintf(stderr, "   --mismatches -m The number of allowable mismatches to a MULTIseq barcode/HTO/sgRNA\n");
-    fprintf(stderr, "       capture sequence to accept it. Default = 2; set to -1 to take best match overall,\n");
-    fprintf(stderr, "       if there are no ties.\n");
-    fprintf(stderr, "   --umi_len -u This program assumes that forward reads begin with a cell barcode followed\n");
-    fprintf(stderr, "       by a UMI. Cell barcode length is set during compilation with the -D BC_LENX2\n");
-    fprintf(stderr, "        argument (default = 32, meaning 16 bp barcodes). This sets the length of the UMI\n");
-    fprintf(stderr, "       (default = 12 bp; cannot exceed 16 bp). Some versions of 10X kits use 10 bp UMIs.\n");
-    fprintf(stderr, "   --exact -e Require cell barcodes to exactly match those in the whitelist. Default:\n");
-    fprintf(stderr, "       allow one mismatch. This will improve speed, especially for large whitelists.\n");
+    
     fprintf(stderr, "   --filt -f Perform a filtering step to remove cells that do not fit the model well\n");
     fprintf(stderr, "       (these may correspond to high-order multiplets). Default: no filter\n");
     fprintf(stderr, "   --comma -c By default, cells assigned multiple identities will have these\n");
@@ -1105,6 +1108,7 @@ void count_tags_in_reads(vector<string>& read1fn,
     int seq_len,
     bool has_cell_barcodes,
     set<unsigned long>& cell_barcodes,
+    string& cell_barcodesfn,
     map<string, int>& seq2idx,
     robin_hood::unordered_map<unsigned long, vector<umi_set*> >& bc_tag_umis){
     
@@ -1137,7 +1141,12 @@ void count_tags_in_reads(vector<string>& read1fn,
     // UMI length
     // cell barcode length
     int bclen = (int)round((double)BC_LENX2/2.0);
-    scanner.init(wlfn, "", 0, false, false, false, 0, bclen, umi_len, bclen);  
+    string wl_to_load = wlfn;
+    if (cell_barcodes.size() > 0 && cell_barcodesfn != ""){
+        // Load the filtered barcode list instead (much faster)
+        wl_to_load = cell_barcodesfn;
+    }
+    scanner.init(wl_to_load, "", 0, false, false, false, 0, bclen, umi_len, bclen);  
     //scanner.init_multiseq_v3(wlfn);
     
     if (exact_cell_barcodes){
@@ -1152,13 +1161,6 @@ void count_tags_in_reads(vector<string>& read1fn,
         scanner.add_reads(read1fn[i], read2fn[i]);
         
         while (scanner.next()){
-            
-            // Skip reads if we have a cell barcode whitelist and the current
-            // barcode isn't in it
-            if (has_cell_barcodes && 
-                cell_barcodes.find(scanner.barcode) == cell_barcodes.end()){
-                continue;
-            }
             
             // At this point, there's a valid cell barcode.
             // scanner.barcode_read holds R1
@@ -1523,7 +1525,7 @@ next time)...\n");
             // Process reads and count tags in them
             count_tags_in_reads(read1fn, read2fn, seqlist, mismatches, wlfn,
                 umi_len, sgrna, exact_cell_barcodes, seq_len, has_cell_barcodes,
-                cell_barcodes, seq2idx, bc_tag_umis);
+                cell_barcodes, cell_barcodesfn, seq2idx, bc_tag_umis);
 
             // Write counts to disk
             string countsfn = output_prefix + ".counts";
