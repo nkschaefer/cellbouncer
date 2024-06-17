@@ -16,4 +16,6 @@ The optional argument `-d` keeps doublets and will create a new BAM file for eac
 The optional argument `-l` sets a minimum log likelihood ratio of assignment (a measure of confidence) for a cell to be included in the BAM file created for its assigned individual.
 
 ## One more thing
-Don't forget to index the resulting BAM files after they're created, using `[samtools](https://github.com/samtools/samtools) index`. 
+Don't forget to index the resulting BAM files after they're created, using [`samtools index`](https://github.com/samtools/samtools).
+
+[Back to main README](../README.md)
