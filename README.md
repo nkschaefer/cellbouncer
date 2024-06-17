@@ -12,7 +12,7 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |Demultiplex individuals by **custom label** or **treatment**|MULTIseq/HTO/CITE-seq data|[`demux_tags`](#demux_tags)|
 |Assign **sgRNAs** to cells|sgRNA capture data|[`demux_tags`](#demux_tags)|
 |Quantify **ambient RNA** per cell and infer its origins|VCF of known variants|[`quant_contam`](#quant_contam)|
-|Infer global **doublet rate**|Output from a `CellBouncer` program|`doublet_dragon`|
+|Infer global **doublet rate**|Output from a `CellBouncer` program|[`doublet_dragon`](#doublet_dragon)|
 
 # Installation
 The non-plotting programs in `cellbouncer` require only [HTSLib](https://github.com/samtools/htslib) and [zlib](https://www.zlib.net/). You can install these dependencies yourself, or to make it easier, get these and plotting-related dependencies by creating a [conda](https://github.com/conda-forge/miniforge/releases) environment from one of the included `cellbouncer.yml` files. 
@@ -84,6 +84,13 @@ If you have collected [MULTIseq](https://www.nature.com/articles/s41592-019-0433
 Once you have run [`demux_vcf`](#demux_vcf), you can use the computed allele counts and cell identities to model the rate at which cells mismatch the expected alleles as the result of ambient RNA contamination. The program `quant_contam` models the ambient RNA in the pool as originating from a mixture of individuals in the pool and estimates the contribution of each individual to this mixture. It also estimates the percent of each cell's RNA originating from ambient RNA. 
 
 [more](docs/quant_contam.md)
+
+## [doublet_dragon](docs/doublet_dragon.md)
+<p>
+<img src="img/doublet_dragon.png" width=250, alt="doublet_dragon" />
+</p>
+
+[more](docs/doublet_dragon.md)
 
 ## Plotting
 In the `plot` directory, there are R scripts to plot output from some of the programs. If you run one with no arguments, it will tell you how to run it. Plotting programs are described in more detail on the README pages for specific tools.
