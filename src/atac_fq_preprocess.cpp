@@ -164,7 +164,6 @@ int main(int argc, char *argv[]) {
     char outbuf[1024];
 
     while(scanner.next()){
-        
         // Print seq ID line
         string bc_str = bc2str(scanner.barcode);
         sprintf(&outbuf[0], "@%s CB:Z:%s\n", scanner.seq_id, bc_str.c_str());
