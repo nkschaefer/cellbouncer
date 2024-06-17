@@ -34,3 +34,5 @@ where `[genome.fa|genome.idx]` is either a FASTA-format reference genome or a `m
 If you need to obtain a `fragments` file from your BAM (to use with single cell ATAC analysis software like [ArchR](https://www.archrproject.com/)), we recommend the program [`sinto`](https://timoast.github.io/sinto/basic_usage.html).
 
 If you plan on calling peaks from your BAM file, we recommend [Genrich](https://github.com/jsh58/Genrich), although this will require you to re-sort the BAM by name instead of coordinate, again using `samtools`.
+
+[Back to main README](../README.md)
