@@ -61,5 +61,20 @@ Some useful optional arguments you can provide are:
 * The `--other_species/-s` argument is designed for cases in which you have pooled together cells from multiple species, but then separated those cells by species (for example, using [`demux_species`](demux_species.md)) and mapped each group to a different reference genome. In this case, ambient RNA in each data set could have originated from another species that is not present in the data being examined. In this case, this option can include a "fake" individual in the pool consisting of only reference alleles (an approximation for another species, which should generally match the most common allele, wherever applicable).
 
 ### Output files
-
+This program (by default) outputs two files:
+* `[output_prefix].contam_prof` lists individuals (from the VCF) and the fraction of the ambient RNA pool made up of their RNA. Each line is one individual name followed by a decimal between 0 and 1 indicating their contribution to the pool, tab separated.
+* `[output_prefix].contam_rate` lists cell barcodes and the fraction of their RNA likely to have originated from ambient RNA contamination. Each line is one cell barcode followed by a decimal between 0 and 1 indicating the percent ambient RNA contamination in that cell, tab separated.
 ### Plotting
+The program `plot/contam.R` can create plots showing information about ambient RNA contamination in a data set. To run, just pass the `[output_prefix]`:
+```
+plot/contam.R [output_prefix]
+```
+Two plots will be created: `[output_prefix].contam.pdf` (vector) and `[output_prefix].contam.png` (rasterized).
+
+### Information in the plots
+* The top left corner of the plot lists the mean and standard deviation of contamination rate per cell in the data set. 
+* The bar plot in the top left shows the fraction of ambient RNA inferred to have originated from each individual, in the form of stacked bars. If you have very many individuals, this information may overflow the space allocated in the plot; in that case, you will need to load `[output_prefix].contam_prof` and plot in your favorite plotting program.
+* The top right corner is a kernel density curve showing the contamination rate per cell across the data set. `quant_contam` uses an Empirical Bayes prior to shrink per-cell estimates toward the mean; provided per-cell estimates are maximum *a posteriori* rather than maximum likelihood estimates.
+* The panel below the density curve shows the contamination rate in each cell (Y-axis) against the log likelihood ratio of the cell's identity (X-axis). Error bars show uncertainty in contamination rate estimates (using Fisher information). Low confidence assignments may have higher inferred contamination rates, reflecting some incorrectly-assigned cells.
+* The bottom left panel shows each cell's contamination rate as a horizontal bar, colored by the individual ID of each cell. Error bars show uncertainty in contamination rate estimates (using Fisher information).
+* The bottom right panel shows the distribution of contamination rate estimates for cells asssigned to each individual ID as box plots, colored the same way as the bottom left panel and top left panel. 
