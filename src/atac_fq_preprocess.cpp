@@ -128,30 +128,41 @@ int main(int argc, char *argv[]) {
 
     string r1out = output_dir + filename_nopath(r1fn);
     string r2out = output_dir + filename_nopath(r2fn);
-    string r3out = output_dir + filename_nopath(r3fn);
 
-    gzFile outs[3];
+    gzFile outs[2];
     outs[0] = gzopen(r1out.c_str(), "w");
     outs[1] = gzopen(r2out.c_str(), "w");
-    outs[2] = gzopen(r3out.c_str(), "w");
 
     bc_scanner scanner(r1fn, r2fn, r3fn);
     scanner.init_10x_ATAC(wlfn);
     scanner.trim_barcodes(true);
 
+    char outbuf[1024];
+
     while(scanner.next()){
-        fprintf(stderr, "%s\n", scanner.seq_id);
-        fprintf(stderr, "%s\n", scanner.read_f);
-        fprintf(stderr, "%s\n", scanner.read_r);
+        
+        // Print seq ID line
         string bc_str = bc2str(scanner.barcode);
-        fprintf(stderr, "%s\n", bc_str.c_str());
-        fprintf(stderr, "%s\n", scanner.barcode_read);
-        exit(0); 
+        sprintf(&outbuf[0], "@%s CB:Z:%s\n", scanner.seq_id, bc_str.c_str());
+        gzwrite(outs[0], &outbuf[0], 8+scanner.seq_id_len+BC_LENX2/2);
+        gzwrite(outs[1], &outbuf[0], 8+scanner.seq_id_len+BC_LENX2/2);
+        
+        // Print sequences
+        gzwrite(outs[0], scanner.read_f, scanner.read_f_len);
+        gzwrite(outs[0], "\n+\n", 3);
+        gzwrite(outs[1], scanner.read_r, scanner.read_r_len);
+        gzwrite(outs[1], "\n+\n", 3);
+        
+        // Print quality
+        gzwrite(outs[0], scanner.read_f_qual, scanner.read_f_len);
+        gzwrite(outs[0], "\n", 1);
+        gzwrite(outs[1], scanner.read_r_qual, scanner.read_r_len);
+        gzwrite(outs[1], "\n", 1);
+    
     }
 
     gzclose(outs[0]);
     gzclose(outs[1]);
-    gzclose(outs[2]);
 
     return 0;
 }
