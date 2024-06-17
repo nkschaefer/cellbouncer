@@ -57,8 +57,9 @@ If you have FASTQs from one of the above data types, `demux_tags` can count the 
   * In addition to the convenience of reusing one `--seqs` file for multiple experiments, this setup allows the user to detect mixups. In the above example, one well (`A4`) is not used in the experiment and has no identity in the `--names` file. When this is the case, `demux_tags` will automatically check to see whether the sequence tied to `A4` appears more often in the data than any of the named sequences and will alert the user when this is the case.
   * If the `--names` file is omitted, output files from `demux_tags` will use the second column of the `--seqs` file (in this case, well IDs) in output files.
   * In some cases, including sgRNA capture data, there is no intermediate identity: each sgRNA sequence has a unique name specific to the experiment. In those cases, users should omit the `--names/-N` argument.
-  * If you experience slowness counting data, the `--exact` argument can significantly speed up processing, especially if the list of barcodes in the `--whitelist` file is very long. This risks missing some legitimate counts, though.
-    
+* If you experience slowness counting data, the `--exact` argument can significantly speed up processing, especially if the list of barcodes in the `--whitelist` file is very long. This risks missing some legitimate counts, though.
+* `--umi_len/-u` is set to 12 by default. Older versions of kits often used 10 bp UMIs, however. Be careful when setting this parameter.
+     
 ### Starting from Market exchange format (MEX) output
 If users prefer to have another program, such as [10X Genomics CellRanger](https://www.10xgenomics.com/support/software/cell-ranger/latest) or [kallisto/bustools kite](https://github.com/pachterlab/kite) count tags in reads, such programs offer output in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices), among other options. This format usually involves a specific output directory that contains (at least) three files:
 * Cell barcodes file (file name should include `barcodes.tsv` or `barcodes.txt` and can end with/without `.gz`)
