@@ -86,12 +86,24 @@ void help(int code){
     fprintf(stderr, "       file for each experiment that assigns a name/identity to each well. If you do\n");
     fprintf(stderr, "       not provide a --mapping file, names in the --seqs file will be in final output.\n");
     fprintf(stderr, "       File should be tab-separated, with one sequence and one name per line.\n");
-    fprintf(stderr, "     ===== ALTERNATIVE INPUT OPTION: MEX format =====\n");
+    fprintf(stderr, "   --names -N (OPTIONAL) If you are using a technology where there is a consistent mapping\n");
+    fprintf(stderr, "       of sequences to intermediate names (i.e. MULTIseq barcodes to well names), but where\n");
+    fprintf(stderr, "       the meaning of each intermediate name changes in every experiment (i.e. the MULTIseq\n");
+    fprintf(stderr, "       well represents a different individual or treatment in every experiment), then provide\n");
+    fprintf(stderr, "       the sequence to intermediate name mapping via --seqs/-s and the intermediate to final\n");
+    fprintf(stderr, "       name mapping here. This should be a 2-column tab separated file with lines containin\n");
+    fprintf(stderr, "       the intermediate name followed by the final name.\n");
+    fprintf(stderr, "       If you do not provide an argument here, the names in the --seqs/-s file will be used\n");
+    fprintf(stderr, "       in output files.\n");
+    fprintf(stderr, "       One advantage of using this argument is that the program will check to see if any\n");
+    fprintf(stderr, "       sequences in the --seqs/-s file not given names in this file are more highly represented\n");
+    fprintf(stderr, "       in your data than expected. This can help identify when you have mixed up sample wells.\n");
+    fprintf(stderr, "\n     ===== ALTERNATIVE INPUT OPTION: MEX format =====\n");
     fprintf(stderr, "   If you have already counted tag barcodes using another program (i.e. 10X Genomics\n");
     fprintf(stderr, "       CellRanger or kallisto/bustools kite), you can load market exchange (MEX) format\n");
     fprintf(stderr, "       output via these options instead of using this program to count tags in reads.\n");
     fprintf(stderr, "   MEX format consists of three files, to be provided below:\n");
-    fprintf(stderr, "   --mtx -X The matrix/.mtx file (optionally gzipped)\n");
+    fprintf(stderr, "   --mtx -M The matrix/.mtx file (optionally gzipped)\n");
     fprintf(stderr, "   --features -F The features/\"genes\" file (optionally gzipped)\n");
     fprintf(stderr, "   --cell_barcodes -B (same argument as below): the list of cell barcodes (optionally\n");
     fprintf(stderr, "       gzipped)\n");
@@ -101,17 +113,15 @@ void help(int code){
     fprintf(stderr, "       specify \"Multiplexing\\ Capture\", for antibody capture specify \"Antibody\\ Capture\",\n");
     fprintf(stderr, "       and for sgRNA capture specify \"CRISPR\\ Guide\\ Capture\".\n");
     fprintf(stderr, "\n   ===== STRONGLY RECOMMENDED =====\n");
-    fprintf(stderr, "   --mapping -m 2-column tab separated file mapping string interpretation of\n");
-    fprintf(stderr, "       MULTIseq label (i.e. unique identifier, or treatment name) to MULTIseq\n");
-    fprintf(stderr, "       well identifier.\n");
     fprintf(stderr, "   --cell_barcodes -B The filtered list of valid cell barcodes, i.e. from cellranger or\n");
     fprintf(stderr, "       STARsolo. Only cells in this list will be processed.\n");
+    fprintf(stderr, "       NOTE: if using market exchange-format input (see above), this argument is required.\n");
     fprintf(stderr, "\n   ===== OPTIONAL =====\n");
     fprintf(stderr, "   --help -h Display this message and exit.\n");
     fprintf(stderr, "   --sgRNA -g Specifies that data is from sgRNA capture. This affects how sequence\n");
     fprintf(stderr, "       matching in reads is done and slightly changes the output files. Also makes\n");
     fprintf(stderr, "       the default separator for multiple IDs a comma instead of +.\n");
-    fprintf(stderr, "   --mismatches -M The number of allowable mismatches to a MULTIseq barcode/HTO/sgRNA\n");
+    fprintf(stderr, "   --mismatches -m The number of allowable mismatches to a MULTIseq barcode/HTO/sgRNA\n");
     fprintf(stderr, "       capture sequence to accept it. Default = 2; set to -1 to take best match overall,\n");
     fprintf(stderr, "       if there are no ties.\n");
     fprintf(stderr, "   --umi_len -u This program assumes that forward reads begin with a cell barcode followed\n");
@@ -1239,17 +1249,17 @@ int main(int argc, char *argv[]) {
        {"read1", required_argument, 0, '1'},
        {"read2", required_argument, 0, '2'},
        {"seqs", required_argument, 0, 's'},
-       {"mapping", required_argument, 0, 'm'},
+       {"names", required_argument, 0, 'N'},
        {"whitelist", required_argument, 0, 'w'},
        {"cell_barcodes", required_argument, 0, 'B'},
-       {"mismatches", required_argument, 0, 'M'},
+       {"mismatches", required_argument, 0, 'm'},
        {"filt", no_argument, 0, 'f'},
        {"comma", no_argument, 0, 'c'},
        {"libname", required_argument, 0, 'n'},
        {"exact", no_argument, 0, 'e'},
        {"umi_len", required_argument, 0, 'u'},
        {"sgRNA", no_argument, 0, 'g'},
-       {"mtx", required_argument, 0, 'X'},
+       {"mtx", required_argument, 0, 'M'},
        {"features", required_argument, 0, 'F'},
        {"feature_type", required_argument, 0, 't'},
        {0, 0, 0, 0} 
@@ -1286,7 +1296,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:n:i:X:F:t:1:2:m:M:w:u:B:s:egfch", 
+    while((ch = getopt_long(argc, argv, "o:n:i:M:F:t:1:2:m:N:w:u:B:s:egfch", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -1298,7 +1308,7 @@ int main(int argc, char *argv[]) {
             case 'o':
                 output_prefix = optarg;
                 break;
-            case 'X':
+            case 'M':
                 input_mtx = optarg;
                 break;
             case 'F':
@@ -1319,10 +1329,10 @@ int main(int argc, char *argv[]) {
             case '2':
                 read2fn.push_back(optarg);
                 break;
-            case 'm':
+            case 'N':
                 mapfn = optarg;
                 break;
-            case 'M':
+            case 'm':
                 mismatches = atoi(optarg);
                 break;
             case 'w':
