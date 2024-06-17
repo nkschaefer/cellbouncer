@@ -105,14 +105,14 @@ void help(int code){
     fprintf(stderr, "       -x anti_R1.fq.gz -X anti_R2.fq.gz\n");
     fprintf(stderr, "       -n CRISPR -n Antibody.\n");
     fprintf(stderr, "\n   ===== BARCODE WHITELIST OPTIONS =====\n");
-    fprintf(stderr, "   --whitelist_atac -w If multiome data and demultiplexing ATAC-seq\n");
-    fprintf(stderr, "       reads, provide both the ATAC-seq barcode whitelist (here) and the\n");
-    fprintf(stderr, "       RNA-seq barcode whitelist (-W) (REQUIRED). If not multiome or\n");
-    fprintf(stderr, "       RNA-seq only, this whitelist is not required.\n");
-    fprintf(stderr, "   --whitelist_rna -W If multiome data and demultiplexing ATAC-seq reads,\n");
+    fprintf(stderr, "   --whitelist_rna -w If multiome data and demultiplexing ATAC-seq reads,\n");
     fprintf(stderr, "       provide both the ATAC-seq barcode whitelist (-w) and the RNA-seq\n");
     fprintf(stderr, "       barcode whitelist (here) (REQUIRED). If not multiome or RNA-seq only,\n");
-    fprintf(stderr, "       these are not required.\n");
+    fprintf(stderr, "       provide the standalone RNA-seq whitelist here.\n");
+    fprintf(stderr, "   --whitelist_atac -W If multiome data and demultiplexing ATAC-seq\n");
+    fprintf(stderr, "       reads, provide both the ATAC-seq barcode whitelist (here) and the\n");
+    fprintf(stderr, "       RNA-seq barcode whitelist (-w) (REQUIRED). If not multiome or\n");
+    fprintf(stderr, "       RNA-seq only, this whitelist is not required.\n");
     fprintf(stderr, "   --exact -e By default, up to one mismatch to the cell barcode list is allowed.\n");
     fprintf(stderr, "       This option requires exact matches instead; this will speed up analysis at\n");
     fprintf(stderr, "       the cost of identifying fewer reads per cell.\n");
@@ -461,8 +461,8 @@ int main(int argc, char *argv[]) {
        {"custom_r1", required_argument, 0, 'x'},
        {"custom_r2", required_argument, 0, 'X'},
        {"names_custom", required_argument, 0, 'N'},
-       {"whitelist_atac", required_argument, 0, 'w'},
-       {"whitelist_rna", required_argument, 0, 'W'},
+       {"whitelist_atac", required_argument, 0, 'W'},
+       {"whitelist_rna", required_argument, 0, 'w'},
        {"dump", no_argument, 0, 'd'},
        {"doublet_rate", required_argument, 0, 'D'},
        {"k", required_argument, 0, 'k'},
@@ -547,10 +547,10 @@ int main(int argc, char *argv[]) {
                 custom_names.push_back(optarg);
                 break;
             case 'w':
-                whitelist_atac_filename = optarg;
+                whitelist_rna_filename = optarg;
                 break;
             case 'W':
-                whitelist_rna_filename = optarg;
+                whitelist_atac_filename = optarg;
                 break;
             case 'd':
                 dump = true;
