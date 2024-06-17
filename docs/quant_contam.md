@@ -23,27 +23,37 @@ Some useful optional arguments you can provide are:
 ```
 --ids -i If you limited demux_vcf to specific IDs using the --ids/-i argument, provide
   the same value here.
+
 --ids_doublet -I If you limited demux_vcf to specific IDs using the --ids_doublet/-I argument,
   provide the same value here.
+
 --dump_freqs -d Dump the inferred frequencies of each type of allele in ambient RNA to a file
   called [output_prefix].contam.dat. You probably don't need to do this.
+
 --llr -l Filter the .assignments file to this minimum log likelihood ratio before inferring
   ambient RNA contamination
+
 --no_weights -w Do not weight assignments by log likelihood ratio (see below)
+
 --disable_profile -p If the program is taking too long to run, you can skip the (expensive)
   step of modeling the ambient RNA as a mixture of individuals, and only output estimates of
   percent ambient RNA per cell.
+
 --max_cells -c The (expensive) step of modeling ambient RNA as a mixture of individuals
   subsamples cells for calculating the expected allele frequencies per individual. This
   parameter sets how many cells are sampled (default 50).
+
 --n_mixprop_trials -n When modeling ambient RNA as a mixture of individuals, several trials
   of maximizing the likelihood function are done with different random starting values. This
   sets the number of random trials (default 10)
+
 --other_species -s If your pool contained members of another species that didn't make it into
   the data set analyzed here, attempt to model other species' contribution to ambient RNA
   (see below)
+
 --error_ref -e The underlying true error rate for misreading ref alleles as alt (default = 0.001,
   should be set to sequencer error rate)
+
 --error_alt -E The underlying true error rate for misreading alt alleles as ref (default = 0.001,
   should be set to sequencer error rate)
 ```
