@@ -4,6 +4,7 @@ channels:
   - bioconda
   - jdblischak
 dependencies:
+  - python=3
   - htslib
   - libzlib
   - r-base
