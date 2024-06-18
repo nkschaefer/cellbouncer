@@ -48,4 +48,7 @@ Without D option enabled| With D option enabled |
 ![](../img/NSCLC_10X.dd.png)  |  ![](../img/NSCLC_10X.dd.doublet.png) |
 
 The above plots illustrate `doublet_dragon` run on three files for the same data: a public 10X Genomics data set containing 40,000 cells from seven donors and labeled using 10X CellPlex cell hashing oligos. The output from the 10X CellPlex deconvolution algorithm was transformed into a `cellbouncer`-format `.assignments` file (`CellPlex_10X` in the plot). Then, variants were called according to the assignments from the CellPlex data, and `demux_vcf` was used to assign cell to individual (`demux_vcf` in the plot). Finally, `demux_mt` was used to infer mitochondrial haplotypes in all cells and assign cells to individuals (`demux_mt` in the plot). The plot on the left was run without the `D` option and so excludes counts of specific types of doublets, whereas the plot on the right was run with `D` and includes specific doublet types.
+
+If you have multiple different types of assignments (i.e. MULTIseq tags labeling treatment, species assignments, and individual assignments), there will be multiple bar plots in the top right, one for each group of labels.
+
 [Back to main README](../README.md)
