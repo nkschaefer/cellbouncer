@@ -18,4 +18,11 @@ doublet_dragon [output_prefix1].assignments ([output_prefix2].assignments [outpu
 
 `doublet_dragon` will output a global doublet rate, as well as the probability of sampling each type of individual in the data set, to `stdout`.
 
+## Plotting
+
+Without D option enabled| With D option enabled |
+:--------------------------:|:---------------------------------------:
+![](../img/NSCLC_10X.dd.png)  |  ![](../img/NSCLC_10X.dd.doublet.png) |
+
+
 [Back to main README](../README.md)
