@@ -613,68 +613,74 @@ void parse_mex(const string& barcodesfile,
     gzreader mtxreader(matrixfile);
     int mexline = 0;
     while(mtxreader.next()){
-        if (mexline == 2){
-            istringstream splitter(mtxreader.line);
-            long int n1;
-            long int n2;
-            int idx = 0;
-            string token;
-            while(getline(splitter, token, ' ' )){
-                if (idx == 0){
-                    n1 = atol(token.c_str());
-                }
-                else if (idx == 1){
-                    n2 = atol(token.c_str());
-                }
-                ++idx;
-            }
-            if (n1 == barcodes.size()){
-                barcodes_first = true;
-            }
-            else if (n2 == barcodes.size()){
-                barcodes_first = false;
-            }
-            else{
-                fprintf(stderr, "ERROR: %ld barcodes; does not match MTX file: %ld or %ld\n",
-                    barcodes.size(), n1, n2);
-                exit(1);
-            }
+        if (mtxreader.line[0] == '%'){
+            continue;
         }
-        else if (mexline > 2){
-            istringstream splitter(mtxreader.line);
-            int idx = 0;
-            string token;
-            int bc_idx;
-            int feature_idx;
-            long int count;
-            while (getline(splitter, token, ' ')){
-                if ((!barcodes_first && idx == 0) || (barcodes_first && idx == 1)){
-                    // feature index
-                    feature_idx = atoi(token.c_str());
-                    feature_idx--; // Make 0-based
-                }
-                else if ((!barcodes_first && idx == 1) || (barcodes_first && idx == 0)){
-                    // barcode index
-                    bc_idx = atoi(token.c_str());
-                    bc_idx--; // Make 0-based
-                }
-                else if (idx == 2){
-                    // UMI count
-                    count = atol(token.c_str());
-                    if (feature_inds.find(feature_idx) != feature_inds.end()){
-                        // This feature is in the list
-                        unsigned long barcode = barcodes[bc_idx];
-                        if (counts.count(barcode) == 0){
-                            map<int, long int> m;
-                            counts.emplace(barcode, m);
-                        }
-                        counts[barcode].emplace(feature_idx, count);
+        else{
+            if (mexline == 0){
+                // Read header.
+                istringstream splitter(mtxreader.line);
+                long int n1;
+                long int n2;
+                int idx = 0;
+                string token;
+                while(getline(splitter, token, ' ' )){
+                    if (idx == 0){
+                        n1 = atol(token.c_str());
                     }
+                    else if (idx == 1){
+                        n2 = atol(token.c_str());
+                    }
+                    ++idx;
                 }
-                ++idx;
+                if (n1 == barcodes.size()){
+                    barcodes_first = true;
+                }
+                else if (n2 == barcodes.size()){
+                    barcodes_first = false;
+                }
+                else{
+                    fprintf(stderr, "ERROR: %ld barcodes; does not match MTX file: %ld or %ld\n",
+                        barcodes.size(), n1, n2);
+                    exit(1);
+                }
             }
+            else if (mexline > 0){
+                istringstream splitter(mtxreader.line);
+                int idx = 0;
+                string token;
+                int bc_idx;
+                int feature_idx;
+                long int count;
+                while (getline(splitter, token, ' ')){
+                    if ((!barcodes_first && idx == 0) || (barcodes_first && idx == 1)){
+                        // feature index
+                        feature_idx = atoi(token.c_str());
+                        feature_idx--; // Make 0-based
+                    }
+                    else if ((!barcodes_first && idx == 1) || (barcodes_first && idx == 0)){
+                        // barcode index
+                        bc_idx = atoi(token.c_str());
+                        bc_idx--; // Make 0-based
+                    }
+                    else if (idx == 2){
+                        // UMI count
+                        count = atol(token.c_str());
+                        if (feature_inds.find(feature_idx) != feature_inds.end()){
+                            // This feature is in the list
+                            unsigned long barcode = barcodes[bc_idx];
+                            if (counts.count(barcode) == 0){
+                                map<int, long int> m;
+                                counts.emplace(barcode, m);
+                            }
+                            counts[barcode].emplace(feature_idx, count);
+                        }
+                    }
+                    ++idx;
+                }
+            }
+            ++mexline;
         }
-        ++mexline;
     }
     if (featuretype == "" && unique_featuretype.size() > 1){
         fprintf(stderr, "ERROR: no feature type filter provided, but %ld feature types\n", 
