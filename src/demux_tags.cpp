@@ -617,24 +617,30 @@ void fit_dists_2way(vector<vector<double> >& obscol,
 
     fprintf(stderr, "===== Initial model means: =====\n");
     for (int i = 0; i < labels.size(); ++i){
-        sort(obscol[i].begin(), obscol[i].end());
-        
-        double lowval = obscol[i][0];
-        double highval = obscol[i][obscol[i].size()-1];
-        vector<mixtureDist> dists;
-        mixtureDist low("negative_binomial", vector<double>{ lowval, 1.0 });
-        mixtureDist high("exponential", 1.0/highval);
-        dists.push_back(low);
-        dists.push_back(high);
-        mixtureModel mod(dists);
-        mod.fit(obscol[i]);
-        fprintf(stderr, "%s:\t%f\t%f\n", labels[i].c_str(),
-            mod.dists[0].params[0][0], 1.0/mod.dists[1].params[0][0]);
-        lomeans.push_back(mod.dists[0].params[0][0]);
-        lophis.push_back(mod.dists[0].params[0][1]);
-        himeans.push_back(1.0/mod.dists[1].params[0][0]);
+        if (obscol[i].size() < 3){
+            lomeans.push_back(0);
+            lophis.push_back(0);
+            himeans.push_back(0);
+        }
+        else{
+            sort(obscol[i].begin(), obscol[i].end());
+            double lowval = obscol[i][0];
+            double highval = obscol[i][obscol[i].size()-1];
+            vector<mixtureDist> dists;
+            mixtureDist low("negative_binomial", vector<double>{ lowval, 1.0 });
+            mixtureDist high("exponential", 1.0/highval);
+            dists.push_back(low);
+            dists.push_back(high);
+            mixtureModel mod(dists);
+            mod.fit(obscol[i]);
+            fprintf(stderr, "%s:\t%f\t%f\n", labels[i].c_str(),
+                mod.dists[0].params[0][0], 1.0/mod.dists[1].params[0][0]);
+            lomeans.push_back(mod.dists[0].params[0][0]);
+            lophis.push_back(mod.dists[0].params[0][1]);
+            himeans.push_back(1.0/mod.dists[1].params[0][0]);
+        }
     }
-    
+
     // Check to see whether any label appears to have dropped out.
     // We fit normal distributions to the means of low and high count
     // distributions across the set of all labels. If any label's high
@@ -650,7 +656,7 @@ void fit_dists_2way(vector<vector<double> >& obscol,
         double d1 = dnorm(himeans[i], lomv.first, sqrt(lomv.second));
         double d2 = dnorm(himeans[i], himv.first, sqrt(himv.second));
         string filtstr = "";
-        if (d2 - d1 < 1){
+        if (lophis[i] == 0.0 || himeans[i] == 0.0 || d2 - d1 < 1){
             fprintf(stderr, "  Remove label %s, LLR(ambient-foreground) = %f\n", 
                 labels[i].c_str(),d1-d2);
             model_means.push_back(-1);
@@ -828,16 +834,13 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     vector<double> lomeans;
     vector<double> lophis;
     vector<double> himeans;
-    
     fit_dists_2way(obscol, labels, lomeans, lophis, himeans, model_means);
-    
     fprintf(stderr, "Making preliminary assignments...\n");
 
     // Now make preliminary assignments and learn background dists
     vector<double> bgmeans;
     pair<double, double> slope_int = assign_init(obs, labels, bgmeans,   
         lomeans, lophis, himeans, model_means);
-    
     // Make second-round assignments and store the maximum likelihood-inferred
     // background counts    
     vector<double> bgcount_all; 
