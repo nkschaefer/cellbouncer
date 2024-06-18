@@ -37,7 +37,7 @@ The programs in `cellbouncer` are standalone command line tools. If you run one 
 Demultiplexing tools all write a file called `[output_prefix].assignments`, which tells you information about each cell's identity. These files are 4 columns, tab separated: 
 * cell barcode (optionally with unique ID appended; see below)
 * most likely identity (doublets are two names in alphabetical order separated by `+`)
-* droplet type: S (for singlet), D (for doublet), or in some cases M (for multiplet, 3+ individuals, so far only considered by `demux_tags`)
+* droplet type: `S` (for singlet), `D` (for doublet), or in some cases `M` (for multiplet, 3+ individuals, so far only considered by `demux_tags`)
 * ratio of the log likelihood of the best to the second best assignment (a measure of confidence in the assignment)
 
 ### Cell barcode format
