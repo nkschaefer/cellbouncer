@@ -107,5 +107,14 @@ clean:
 	rm lib/*.a
 	rm utils/bam_indiv_rg
 	rm utils/bam_split_bcs
-	rm demux/demux_mt
-	rm demux/demux_vcf
+	rm utils/get_unique_kmers
+	rm utils/kmsuftree_test
+	rm utils/atac_fq_preprocess
+	rm utils/split_read_files
+	rm utils/combine_species_counts
+	rm demux_vcf
+	rm demux_mt
+	rm demux_species
+	rm demux_tags
+	rm quant_contam
+	rm doublet_dragon
