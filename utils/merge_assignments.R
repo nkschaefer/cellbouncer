@@ -3,7 +3,7 @@
 args <- commandArgs(trailingOnly=TRUE)
 
 if (length(args) < 2){
-    write("USAGE: merge_ids.R file1.assignments file2.assignments", stderr())
+    write("USAGE: merge_assignments.R file1.assignments file2.assignments", stderr())
     write("Reconciles cell-individual identifications from two sources, for example", stderr())
     write("    if you have run demux_mt using the same haplotypes on both ATAC-seq", stderr())
     write("    and RNA-seq from the same cells (i.e. multiome data). Alernatively, if", stderr())
