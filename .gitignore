@@ -6,3 +6,13 @@
 !cellbouncer_extra.yml
 !cellbouncer_extra_osx.yml
 !cellbouncer_minimum.yml
+!build/
+!data/
+!dependencies/
+!docs/
+!img/
+!include/
+!lib/
+!plot/
+!src/
+!utils/
