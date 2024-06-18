@@ -13,7 +13,7 @@ BC_LENX2=32
 KX2=16
 DEPS=lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
 
-all: demux_vcf demux_mt demux_tags demux_species quant_contam doublet_dragon utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/fastq_cell_bcs utils/split_read_files utils/atac_fq_preprocess
+all: demux_vcf demux_mt demux_tags demux_species quant_contam doublet_dragon utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/split_read_files utils/atac_fq_preprocess
 
 demux_vcf: src/demux_vcf.cpp build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -g src/demux_vcf.cpp -o demux_vcf build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o -lz -lhts lib/libmixturedist.a lib/liboptimml.a lib/libhtswrapper.a
