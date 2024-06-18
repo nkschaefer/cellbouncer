@@ -22,8 +22,12 @@ This program attempts to identify the individual of origin of each cell in a poo
   * Because of this, if you need to identify individuals of origin and do not have variant call data, we recommend using `demux_mt`, inserting read groups to mark these inferred individuals in the BAM file, running a variant caller to genotype these individuals at genomic variants, and then running `demux_vcf` to re-identify your cells using these genomic variants. For more information, see [Finding genomic variants](#finding-genomic-variants) below.
 
 ## Running the program
+To run `demux_mt` with most default settings:
+```
+demux_mt -b [input_file.bam] -o [output_prefix] (-m [chrM_seqname])
+```
+Where the `-m` argument (the name of the mitochondrial sequence in the reference genome) is required only if it is not `chrM`.
 
-Run `demux_mt` with the BAM file provided as `-b`, the output prefix as `-o`, and if the mitochondrial sequence has a name other than chrM, specify `-m seqname`, where `seqname` is the name of the mitochondrial sequence in the reference genome.
 This will create the following output files:
 * `[output_prefix].vars` lists variable sites on the mitochondrial genome that compose the mitochondrial haplotypes
 * `[output_prefix].haps` lists the inferred mitochondrial haplotypes, one per line, where each character is 0 (for major allele) or 1 (for minor allele), and each corresponds to a variant site in the `.vars` file.
@@ -31,8 +35,11 @@ This will create the following output files:
 * `[output_prefix].assignments` contains the likeliest individual of origin assigned to each cell. Columns are cell barcode, individual (given as a 0-based numeric ID), droplet type (S = singlet; D = doublet), and the ratio of the log likelihood of the best to second best choice.
 
 ### Identifying cells using mitochondrial haplotypes inferred on a prior run
-
-In this case, you can use `demux_mt` again, but set `--vars/-v` to `[output_prefix].vars` from the prior run and `--haps/-H` to `[output_prefix].haps` from the prior run and be sure to choose a new `--output_prefix/-o` for the new run. If you would like to change the names of the individuals from numeric IDs, create a text file with individual names, one per line, in the same order as the haplotypes in the `.haps` file, and provide this file with the `--ids/-i` option.
+```
+demux_mt -b [input_file.bam] -o [new_output_prefix] (-m [chrM_seqname]) \
+    -v [output_prefix].vars -H [output_prefix].haps (-i [ids.txt])
+```
+The parameters are the same as above, but you must provide a different `[output_prefix]` this time, and provide the `.haps` and `.vars` files from the first run. Additionally, if you want to name the haplotypes, you can create a file with the same number of lines as the `.haps` file, with one name per line. Otherwise, each will receive a numeric index starting from 0.
 
 ## Plotting to check output
 
