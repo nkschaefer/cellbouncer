@@ -45,9 +45,6 @@ utils/get_unique_kmers: src/get_unique_kmers.c src/FASTK/libfastk.c build/libfas
 utils/kmsuftree_test: src/kmsuftree_test.cpp src/kmsuftree.h build/kmsuftree.o
 	$(COMP) $(FLAGS) src/kmsuftree_test.cpp -o utils/kmsuftree_test build/kmsuftree.o
 
-utils/fastq_cell_bcs: src/fastq_cell_bcs.cpp build/common.o $(DEPS)
-	$(COMP) $(FLAGS) $(IFLAGS) $(LFLAGS) src/fastq_cell_bcs.cpp -o utils/fastq_cell_bcs build/common.o $(DEPS) -lz -lhts
-
 utils/atac_fq_preprocess: src/atac_fq_preprocess.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(FLAGS) $(IFLAGS) $(LFLAGS) src/atac_fq_preprocess.cpp -o utils/atac_fq_preprocess build/common.o $(DEPS) -lz -lhts
 
