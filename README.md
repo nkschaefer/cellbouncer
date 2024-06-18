@@ -12,7 +12,7 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |Demultiplex individuals by **custom label** or **treatment**|MULTIseq/HTO/CITE-seq data|[`demux_tags`](#demux_tags)|
 |Assign **sgRNAs** to cells|sgRNA capture data|[`demux_tags`](#demux_tags)|
 |Quantify **ambient RNA** per cell and infer its origins|VCF of known variants, and output from `demux_vcf`|[`quant_contam`](#quant_contam)|
-|Infer global **doublet rate**|Output from a `CellBouncer` program|[`doublet_dragon`](#doublet_dragon)|
+|Infer global **doublet rate**|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
 
 # Installation
 The non-plotting programs in `cellbouncer` require only [HTSLib](https://github.com/samtools/htslib) and [zlib](https://www.zlib.net/). You can install these dependencies yourself, or to make it easier, get these and plotting-related dependencies by creating a [conda](https://github.com/conda-forge/miniforge/releases) environment from one of the included `cellbouncer.yml` files. If you have [mamba](https://anaconda.org/conda-forge/mamba) installed, we recommend using `mamba` in place of `conda` in the `env create` command below, because it will be faster.
