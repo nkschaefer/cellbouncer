@@ -32,8 +32,16 @@ def main(args):
     options = parse_args()
     script_dir = '/'.join(os.path.abspath(__file__).split('/')[0:-1])
     
+    if not os.path.isfile(options.bam):
+        print("ERROR: BAM file {} does not exist".format(options.bam), file=sys.stderr)
+        exit(1)
+
     # Get chromosome name
     chrM = None
+    if not os.path.isfile('{}.vars'.format(options.inbase)):
+        print("ERROR: .vars file for {} does not exist".format(options.inbase), file=sys.stderr)
+        exit(1)
+
     f = open('{}.vars'.format(options.inbase), 'r')
     for line in f:
         line = line.rstrip()
@@ -54,6 +62,9 @@ def main(args):
                 clustname_sorted.append(line)
         f.close()
     else:
+        if not os.path.isfile('{}.haps'.format(options.inbase)):
+            print("ERROR: haps file does not exist for {}".format(options.inbase), file=sys.stderr)
+            exit(1)
         f = open('{}.haps'.format(options.inbase))
         for idx, line in enumerate(f):
             line = line.rstrip()
@@ -75,6 +86,9 @@ def main(args):
 
     print("Split barcodes by cluster...", file=sys.stderr)
     clust2bc = defaultdict(list)
+    if not os.path.isfile('{}.assignments'.format(options.inbase)):
+        print("ERROR: assignments file does not exist for {}".format(options.inbase), file=sys.stderr)
+        exit(1)
     f = open('{}.assignments'.format(options.inbase), 'r')
     for line in f:
         line = line.rstrip()
