@@ -115,7 +115,7 @@ def main(args):
         outs_cleanup.append('{}.{}'.format(options.out, clust))
 
     # Merge hierarchically
-    cmd = ['{}/mt_merge_hierarchical.py'.format(script_dir), '-b', options.bam, \
+    cmd = ['{}/utils/mt_merge_hierarchical.py'.format(script_dir), '-b', options.bam, \
         '-r', options.inbase, '-D', '{}'.format(options.doublet_rate), \
         '-o', options.out]
     cmd.append('-l')

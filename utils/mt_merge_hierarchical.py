@@ -116,19 +116,19 @@ def main(args):
 
     # Now, dump haplotypes using the chosen sites by re-running demux_mt with 
     # the dump option.
-    subprocess.call(['{}/demux_mt'.format(script_dir), '-b', options.bam, '-m', chrM, \
+    subprocess.call(['{}/../demux_mt'.format(script_dir), '-b', options.bam, '-m', chrM, \
         '-v', '{}.vars'.format(options.out), '-d', '-o', options.out])
     
     print("Create consensus haplotypes...", file=sys.stderr)
 
     # Next, create consensus haplotypes from what we just obtained
-    subprocess.call(['Rscript', '{}/../utils/mt_consensus_haps.R'.format(script_dir), \
+    subprocess.call(['Rscript', '{}/mt_consensus_haps.R'.format(script_dir), \
         options.out, '{}.bcmap'.format(options.out), options.out])
     
     print("Create final barcode -> identity assignments...", file=sys.stderr)
 
     # Finally, re-run demux_mt to get assignments
-    cmd = ['{}/demux_mt'.format(script_dir), \
+    cmd = ['{}/../demux_mt'.format(script_dir), \
         '-b', options.bam, \
         '-m', chrM, \
         '-v', '{}.vars'.format(options.out), \

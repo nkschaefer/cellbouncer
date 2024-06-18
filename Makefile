@@ -13,25 +13,25 @@ BC_LENX2=32
 KX2=16
 DEPS=lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
 
-all: demux/demux_vcf demux/demux_mt demux/demux_tags demux/demux_species analysis/quant_contam analysis/doublet_dragon utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/fastq_cell_bcs utils/split_read_files utils/atac_fq_preprocess
+all: demux_vcf demux_mt demux_tags demux_species quant_contam doublet_dragon utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/fastq_cell_bcs utils/split_read_files utils/atac_fq_preprocess
 
-demux/demux_vcf: src/demux_vcf.cpp build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -g src/demux_vcf.cpp -o demux/demux_vcf build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o -lz -lhts lib/libmixturedist.a lib/liboptimml.a lib/libhtswrapper.a
+demux_vcf: src/demux_vcf.cpp build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o $(DEPS)
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -g src/demux_vcf.cpp -o demux_vcf build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o -lz -lhts lib/libmixturedist.a lib/liboptimml.a lib/libhtswrapper.a
 
-demux/demux_mt: src/demux_mt.cpp src/common.h build/common.o $(DEPS)
-	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux/demux_mt build/common.o lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a -lhts -lz
+demux_mt: src/demux_mt.cpp src/common.h build/common.o $(DEPS)
+	$(COMP) -D MAX_SITES=$(MAX_SITES) $(IFLAGS) $(LFLAGS) $(FLAGS) src/demux_mt.cpp -o demux_mt build/common.o lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a -lhts -lz
 
-demux/demux_species: src/demux_species.cpp src/kmsuftree.h src/common.h build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -pthread src/demux_species.cpp -o demux/demux_species build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o lib/libhtswrapper.a lib/libmixturedist.a -lhts -lz
+demux_species: src/demux_species.cpp src/kmsuftree.h src/common.h build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -pthread src/demux_species.cpp -o demux_species build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o lib/libhtswrapper.a lib/libmixturedist.a -lhts -lz
 
-demux/demux_tags: src/demux_tags.cpp src/common.h build/common.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -D PROJ_ROOT=$(PROJROOT) src/demux_tags.cpp -o demux/demux_tags build/common.o lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a -lz
+demux_tags: src/demux_tags.cpp src/common.h build/common.o $(DEPS)
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -D PROJ_ROOT=$(PROJROOT) src/demux_tags.cpp -o demux_tags build/common.o lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a -lz
 
-analysis/quant_contam: src/common.h src/quant_contam.cpp src/ambient_rna.h build/common.o build/demux_vcf_io.o build/ambient_rna.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/quant_contam.cpp -o analysis/quant_contam build/common.o build/demux_vcf_io.o build/ambient_rna.o lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a -lz
+quant_contam: src/common.h src/quant_contam.cpp src/ambient_rna.h build/common.o build/demux_vcf_io.o build/ambient_rna.o $(DEPS)
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/quant_contam.cpp -o quant_contam build/common.o build/demux_vcf_io.o build/ambient_rna.o lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a -lz
 
-analysis/doublet_dragon: src/doublet_dragon.cpp src/common.h build/common.o $(DEPS)
-	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -g src/doublet_dragon.cpp -o analysis/doublet_dragon build/common.o lib/liboptimml.a lib/libmixturedist.a lib/libhtswrapper.a -lz
+doublet_dragon: src/doublet_dragon.cpp src/common.h build/common.o $(DEPS)
+	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) -g src/doublet_dragon.cpp -o doublet_dragon build/common.o lib/liboptimml.a lib/libmixturedist.a lib/libhtswrapper.a -lz
 
 utils/bam_indiv_rg: src/bam_indiv_rg.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(IFLAGS) $(LFLAGS) $(FLAGS) src/bam_indiv_rg.cpp -o utils/bam_indiv_rg build/common.o $(DEPS) -lz -lhts
