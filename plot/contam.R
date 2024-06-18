@@ -4,6 +4,18 @@ library(ggsci)
 library(cowplot)
 
 args <- commandArgs(trailingOnly=TRUE)
+checks <- c(length(args) < 1, !file.exists(paste(args[1], '.contam_rate', sep='')),
+    !file.exists(paste(args[1], '.contam_prof', sep='')))
+
+if (sum(checks) > 0){
+    write("USAGE:", stderr())
+    write("contam.R <output_prefix>", stderr())
+    write("After you have run quant_contam on a data set and have the files", stderr())
+    write("    [output_prefix].contam_rate and [output_prefix].contam_prof,", stderr())
+    write("    run this program to plot summary information about ambient RNA.", stderr())
+    write("It will create a plot in the file [output_prefix].contam.png.", stderr())
+    q()
+}
 basename <- args[1]
 
 cr <- read.table(paste(basename, '.contam_rate', sep=''))
@@ -122,7 +134,6 @@ mu_sd <- ggdraw() +
     draw_label(mu_sigma_text, size=10, lineheight=0.9, hjust=0.6)
 
 png(out_png, bg='white', width=6, height=9, units='in', res=150)
-
 cpfile <- paste(basename, '.contam_prof', sep='')
 if (file.exists(cpfile)){
     has_cp_file <- 1
@@ -159,6 +170,7 @@ if (file.exists(cpfile)){
     row3 <- plot_grid(bars, boxes, ncol=2, rel_widths=c(0.33, 0.66))
     plot_grid(row1, row2, row3, ncol=1, rel_heights=c(0.05, 0.275, 0.675))
 }
+
 
 dev.off()
 

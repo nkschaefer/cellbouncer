@@ -15,6 +15,7 @@
 #include <utility>
 #include <optimML/functions.h>
 #include <optimML/multivar_ml.h>
+#include <mixtureDist/functions.h>
 #include "common.h"
 
 using std::cout;
@@ -26,7 +27,11 @@ using namespace std;
  * Print a help message to the terminal and exit.
  */
 void help(int code){
-    fprintf(stderr, "doublet_dragon [FILES]\n");
+    fprintf(stderr, "doublet_dragon [OUTPUT_PREFIX] [FILES]\n");
+    fprintf(stderr, "[OUTPUT_PREFIX] is the base file name for output files.\n");
+    fprintf(stderr, "[OUTPUT_PREFIX].dd.all and [OUTPUT_PREFIX].dd.indv will be created.\n");
+    fprintf(stderr, "[FILES] is a list of one or more .assignments files corresponding to the same library.\n");
+    fprintf(stderr, "-----\n");
     fprintf(stderr, "Given one or more .assignments files from the same library, estimates\n");
     fprintf(stderr, "the likeliest underlying doublet rate (via maximum likelihood).\n");
     fprintf(stderr, "Also infers the frequency of each individual type in the data set.\n");
@@ -65,7 +70,7 @@ int parse_assignments(string filename,
     ifstream inf(filename.c_str());
     string bc_str;
     string id;
-    char type;
+    string type;
     double llr;
     
     map<string, int> id_count;
@@ -82,17 +87,26 @@ int parse_assignments(string filename,
         id_count[id]++;
         weights[id] += llr;
 
-        if (type == 'S'){
+        if (type == "S"){
             if (counts_singlet.count(id) == 0){
                 counts_singlet.insert(make_pair(id, 0));
             }
             counts_singlet[id]++;
         }
-        else{
+        else if (type == "D"){
             if (counts_doublet.count(id) == 0){
                 counts_doublet.insert(make_pair(id, 0));
             }
             counts_doublet[id]++;
+        }
+        else if (type == "M"){
+            // Skip these for now.
+        }
+        else{
+            fprintf(stderr, "ERROR: unexpected value encountered in type field: %s\n", type.c_str());
+            fprintf(stderr, "doublet_dragon cannot accept assignments files for sgRNA capture data.\n");
+            fprintf(stderr, "Allowed values for this field are S/D/M.\n");
+            exit(1);
         }
     }
 
@@ -134,7 +148,8 @@ double loglik(const vector<double>& params,
     else{
         // Doublet
         double p2 = expit(params[p_idx2]) / grptot;
-        p = d*p1*p2;
+        // Account for two ways of sampling this doublet
+        p = 2*d*p1*p2;
     }
     return logbinom(n, k, p);
 }
@@ -166,7 +181,7 @@ void dloglik_dx(const vector<double>& params,
     else{
         // Doublet
         double p2 = expit(params[p_idx2])/grptot;
-        p = d*p1*p2;
+        p = 2.0*d*p1*p2;
     }
 
     double dy_dp = (k - n*p)/(p - p*p);
@@ -186,24 +201,44 @@ void dloglik_dx(const vector<double>& params,
     else{
         double a = expit(params[p_idx])/grptot;
         double b = expit(params[p_idx2])/grptot;
-        results[0] += dy_dp * (a*b);
-        results[p_idx] += dy_dp * (d*b) * der_comp_1;
+        results[0] += 2.0 * dy_dp * (a*b);
+        results[p_idx] += 2.0 * dy_dp * (d*b) * der_comp_1;
 
         double e_negx2 = exp(-params[p_idx2]);
         double e_negx2_p1_2 = pow(e_negx2 + 1, 2);
         double e_negx2_p1_3 = e_negx2_p1_2 * (e_negx2 + 1);
         double der_comp_2 = e_negx2 / (e_negx2_p1_2 * grptot) - e_negx2/ ( e_negx2_p1_3 * grptot * grptot);
 
-        results[p_idx2] += dy_dp * (d*a) * der_comp_2;
+        results[p_idx2] += 2.0 * dy_dp * (d*a) * der_comp_2;
     }
 }
 
 int main(int argc, char *argv[]) {    
     
-    if (argc < 2){
+    if (argc < 3){
         help(1);
     } 
     
+    string outbase = argv[1];
+    
+    // Make sure the user didn't accidentally pass an output file as first argument
+    if (outbase.length() > 12 && outbase.substr(outbase.length()-12,12) == ".assignments"){
+        fprintf(stderr, "ERROR: first argument, [output_prefix], is an .assignments file.\n");
+        exit(1);
+    }
+    else if (file_exists(outbase)){
+        fprintf(stderr, "ERROR: first argument, [output_prefix], is a file that exists.\n");
+        exit(1);
+    }
+    else{
+        string out_test = outbase + ".assignments";
+        if (file_exists(out_test)){
+            fprintf(stderr, "ERROR: first argument, [output_prefix], is a preexisting output_prefix\n");
+            fprintf(stderr, "  (to be loaded?)\n");
+            exit(1);
+        }
+    }
+
     vector<int> n;
     vector<int> k;
     vector<int> p_idx;
@@ -228,13 +263,31 @@ int main(int argc, char *argv[]) {
 
     map<string, map<string, int> > file2singlets;
     map<string, map<string, int> > file2doublets;
+    map<string, int> file2grp;
+
     map<string, int> file_tot;
 
-    for (int i = 1; i < argc; ++i){
+    for (int i = 2; i < argc; ++i){
         map<string, int> counts_singlet;
         map<string, int> counts_doublet;
         map<string, double> weights_this;
-        int totcells = parse_assignments(argv[i], counts_singlet, counts_doublet, weights_this);
+        
+        // Ensure this is an .assignments file.
+        string fn = argv[i];
+        if (fn.length() <= 12 || fn.substr(fn.length()-12, 12) != ".assignments"){
+            // Assume it's a base file name instead
+            string fn2 = fn + ".assignments";
+            fprintf(stderr, "%s\n", fn.substr(fn.length()-12,12).c_str());
+            if (!file_exists(fn2)){
+                fprintf(stderr, "ERROR: file %s does not appear to be an .assignments file or\n", fn.c_str());
+                fprintf(stderr, "  an output_prefix with an assignments file.\n");
+                exit(1);
+            }
+            else{
+                fn = fn2;
+            }
+        }
+        int totcells = parse_assignments(fn, counts_singlet, counts_doublet, weights_this);
         if (counts_doublet.size() == 0){
             fprintf(stderr, "ERROR: no doublet identifications in %s\n", argv[i]);
             exit(1);
@@ -317,7 +370,9 @@ int main(int argc, char *argv[]) {
             p_idx2.push_back(name2idx[id2]);
             weights.push_back(weights_this[cd->first]);
         }
+        file2grp.insert(make_pair(argv[i], grp_idx_this));
     }
+
     // Use means of initial guesses for each singlet proportion that was 
     // present in multiple data sets.
     for (map<int, int>::iterator pd = params_div.begin(); pd != params_div.end(); ++pd){
@@ -370,27 +425,94 @@ int main(int argc, char *argv[]) {
     solver.add_weights(weights);
     solver.solve();
     
+    if (outbase[outbase.length()-1] == '.'){
+        outbase = outbase.substr(0, outbase.length()-1);
+    }
+    string fn_all = outbase + ".dd.all";
+    string fn_indv = outbase + ".dd.indv";
+    FILE* out_all = fopen(fn_all.c_str(), "w");
+    FILE* out_indv = fopen(fn_indv.c_str(), "w");
+
     double doublet_rate = solver.results[0];
     map<string, double> indv_freq;
+    double ifsum = 0.0;
     for (map<string, int>::iterator ni = name2idx.begin(); ni != name2idx.end(); ++ni){
         indv_freq.insert(make_pair(ni->first, expit(solver.results[ni->second])));
         fprintf(stderr, "%s\t%f\n", ni->first.c_str(), indv_freq[ni->first]);
     }
-    fprintf(stderr, "Global doublet rate: %f\n", doublet_rate);
-    
-    for (map<string, int>::iterator ft = file_tot.begin(); ft != file_tot.end(); ++ft){
-        for (map<string, int>::iterator d = file2doublets[ft->first].begin(); d != 
-            file2doublets[ft->first].end(); ++d){
-            size_t pos = d->first.find("+");
-            string id1 = d->first.substr(0, pos);
-            string id2 = d->first.substr(pos+1, d->first.length()-pos-1);
-            double p1 = indv_freq[id1];
-            double p2 = indv_freq[id2];
-            double expected = doublet_rate*p1*p2*(double)ft->second;
-            fprintf(stderr, "%s\t%s\t%d\t%f\n", ft->first.c_str(), d->first.c_str(),
-                d->second, expected);
+    for (int gi = 0; gi < groups.size(); ++gi){
+        for (set<string>::iterator member = groups[gi].begin(); member != groups[gi].end(); 
+            ++member){
+            fprintf(out_all, "group_%d\t%s\t%f\n", gi, member->c_str(),
+                indv_freq[*member]);  
         }
     }
+    fprintf(stderr, "Global doublet rate: %f\n", doublet_rate);
+    fprintf(out_all, "all\tdoublet_rate\t%f\n", doublet_rate);
+    fprintf(stderr, "Multinomial log likelihoods:\n");
+    //fprintf(stdout, "data_set\ttype\tindv\tcount\texpected\n");    
+    for (map<string, int>::iterator ft = file_tot.begin(); ft != file_tot.end(); ++ft){
+        string fntrunc = ft->first.substr(0, ft->first.length()-12);
+        double tot = ft->second;
+        vector<double> x_all;
+        vector<double> p_all;
+        double ptot = 0.0;
+        double chisq = 0.0;
+        int chisq_df = 0;
 
+        int grp_idx = file2grp[ft->first];
+        vector<string> singlets_vec;
+
+        // Go through singlets
+        for (set<string>::iterator s = groups[grp_idx].begin(); s != groups[grp_idx].end(); ++s){
+            singlets_vec.push_back(*s);
+            double p1 = indv_freq[*s];
+            double p = (1.0-doublet_rate)*p1 + doublet_rate*p1*p1;
+            double expec = p*tot;
+            p_all.push_back(p);
+            int num = 0;
+            if (file2singlets[ft->first].count(*s) > 0){
+                num = file2singlets[ft->first][*s];
+            }
+            x_all.push_back((double)num);
+            double p_indv = pbinom(tot, (double)num, p);
+            chisq += pow((double)num - expec, 2)/expec;
+            chisq_df++;
+            fprintf(out_indv, "%s\tS\t%s\t%d\t%f\t%f\n", fntrunc.c_str(), s->c_str(),
+                num, expec, p_indv);
+        }
+        
+        // Go through doublets
+        for (int i = 0; i < singlets_vec.size()-1; ++i){
+            double p1 = indv_freq[singlets_vec[i]];
+            for (int j = i +1; j < singlets_vec.size(); ++j){
+                double p2 = indv_freq[singlets_vec[j]];
+                double p = 2.0*doublet_rate*p1*p2;
+                double expected = p*tot;
+                p_all.push_back(p);
+                string dname = singlets_vec[i] + "+" + singlets_vec[j];
+                int num = 0;
+                if (file2doublets[ft->first].count(dname) > 0){
+                    num = file2doublets[ft->first][dname];
+                }
+                x_all.push_back((double)num);
+                double expec = p*tot;
+                double p_indv = pbinom(tot, (double)num, p);
+                chisq += pow((double)num - expec, 2)/expec;
+                chisq_df++;
+                fprintf(out_indv, "%s\tD\t%s\t%d\t%f\t%f\n", fntrunc.c_str(), dname.c_str(),
+                    num, expec, p_indv);
+            }
+        }
+        double loglik = dmultinom(x_all, p_all);
+        chisq_df--;
+        // With this many observations, chi-squared p values are often all significant - ignore
+        double chisq_p = pchisq(chisq, chisq_df);
+        fprintf(stderr, "%s\t%f\n", fntrunc.c_str(), loglik);
+        fprintf(out_all, "data_set\t%s\t%f\n", fntrunc.c_str(), loglik);
+    }
+    
+    fclose(out_all);
+    fclose(out_indv);
     return 0;
 }
