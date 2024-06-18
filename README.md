@@ -11,7 +11,7 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |Demultiplex cells by **individual of origin**|VCF of known variants|[`demux_vcf`](#demux_vcf)|
 |Demultiplex individuals by **custom label** or **treatment**|MULTIseq/HTO/CITE-seq data|[`demux_tags`](#demux_tags)|
 |Assign **sgRNAs** to cells|sgRNA capture data|[`demux_tags`](#demux_tags)|
-|Quantify **ambient RNA** per cell and infer its origins|VCF of known variants|[`quant_contam`](#quant_contam)|
+|Quantify **ambient RNA** per cell and infer its origins|VCF of known variants, and output from `demux_vcf`|[`quant_contam`](#quant_contam)|
 |Infer global **doublet rate**|Output from a `CellBouncer` program|[`doublet_dragon`](#doublet_dragon)|
 
 # Installation
