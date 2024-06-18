@@ -1,0 +1,21 @@
+name: cellbouncer
+channels:
+  - conda-forge
+  - bioconda
+  - jdblischak
+dependencies:
+  - python=3
+  - htslib
+  - libzlib
+  - r-base
+  - r-ggplot2
+  - r-cowplot
+  - r-ggsci
+  - r-pheatmap
+  - r-viridis
+  - gffread
+  - samtools
+  - bcftools
+  - tabix
+  - freebayes
+  - bedtools
