@@ -7,11 +7,11 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
 |Demultiplex cells by **species** before mapping to a reference genome|A transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species|[`demux_species`](#demux_species)|
-|Demultiplex cells by **individual of origin**, and I hope individuals are unrelated enough to have different mitochondrial haplotypes|Nothing|[`demux_mt`](#demux_mt)|
-|Demultiplex cells by **individual of origin**|VCF of known variants|[`demux_vcf`](#demux_vcf)|
-|Demultiplex individuals by **custom label** or **treatment**|MULTIseq/HTO/CITE-seq data|[`demux_tags`](#demux_tags)|
-|Assign **sgRNAs** to cells|sgRNA capture data|[`demux_tags`](#demux_tags)|
-|Quantify **ambient RNA** per cell and infer its origins|VCF of known variants, and output from `demux_vcf`|[`quant_contam`](#quant_contam)|
+|Demultiplex cells by **individual of origin**, and I hope individuals are unrelated enough to have different mitochondrial haplotypes|A BAM file of aligned scATAC-seq or whole cell scRNA-seq data|[`demux_mt`](#demux_mt)|
+|Demultiplex cells by **individual of origin**|VCF of known variants, plus a BAM file of aligned single cell sequencing data|[`demux_vcf`](#demux_vcf)|
+|Demultiplex individuals by **custom label** or **treatment**|FASTQs containing MULTIseq/HTO/CITE-seq data, or a table of pre-computed counts|[`demux_tags`](#demux_tags)|
+|Assign **sgRNAs** to cells|FASTQs containing sgRNA capture data, or a table or pre-computed counts in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices)|[`demux_tags`](#demux_tags)|
+|Quantify **ambient RNA** per cell and infer its origins|Output from `demux_vcf`|[`quant_contam`](#quant_contam)|
 |Infer global **doublet rate**|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
 
 # Installation
