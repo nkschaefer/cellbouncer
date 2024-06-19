@@ -43,7 +43,7 @@ Some useful optional arguments you can provide are:
   subsamples cells for calculating the expected allele frequencies per individual. This
   parameter sets how many cells are sampled (default 50).
 
---n_mixprop_trials -n When modeling ambient RNA as a mixture of individuals, several trials
+--n_mixprop_trials -N When modeling ambient RNA as a mixture of individuals, several trials
   of maximizing the likelihood function are done with different random starting values. This
   sets the number of random trials (default 10)
 
