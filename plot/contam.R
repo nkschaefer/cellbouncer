@@ -21,6 +21,10 @@ basename <- args[1]
 cr <- read.table(paste(basename, '.contam_rate', sep=''))
 assn <- read.table(paste(basename, '.assignments', sep=''))
 
+# Strip library names, etc. from cell barcodes in case they don't match
+assn$V1 <- gsub("[^ACGT]+", "", assn$V1)
+cr$V1 <- gsub("[^ACGT]+", "", cr$V1)
+
 names <- unique(assn$V2)
 
 if (length(args) > 1 & (args[2] == 'D' | args[2] == 'd')){

@@ -470,6 +470,9 @@ int main(int argc, char *argv[]) {
        {"batch_num", required_argument, 0, 'b'},
        {"exact", no_argument, 0, 'e'},
        {"libname", required_argument, 0, 'n'},
+       {"cellranger", no_argument, 0, 'C'},
+       {"seurat", no_argument, 0, 'S'},
+       {"underscore", no_argument, 0, 'U'},
        {0, 0, 0, 0} 
     };
     
@@ -494,6 +497,9 @@ int main(int argc, char *argv[]) {
     int batch_num = -1;
     bool exact_matches = false;
     string libname = "";
+    bool cellranger = false;
+    bool seurat = false;
+    bool underscore = false;
 
     int option_index = 0;
     int ch;
@@ -501,7 +507,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "t:o:n:1:2:3:r:R:x:X:N:k:w:W:D:b:e:dh", 
+    while((ch = getopt_long(argc, argv, "t:o:n:1:2:3:r:R:x:X:N:k:w:W:D:b:e:CSUdh", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -518,6 +524,15 @@ int main(int argc, char *argv[]) {
                 break;
             case 'n':
                 libname = optarg;
+                break;
+            case 'C':
+                cellranger = true;
+                break;
+            case 'S':
+                seurat = true;
+                break;
+            case 'U':
+                underscore = true;
                 break;
             case 'k':
                 kmerbase = optarg;
@@ -886,11 +901,10 @@ data for %s with more species.\n", kmerbase.c_str());
         string species;
         char type;
         double llr;
-        bc cur_bc;
         ifstream inf(assnfilename.c_str());
         
         while (inf >> bc_str >> species >> type >> llr){
-            unsigned long bc_ul = str2bc(bc_str.c_str(), cur_bc);
+            unsigned long ul = bc_ul(bc_str);
             // Don't bother with doublets.
             if (type == 'S'){
                 bc2species.emplace(bc_ul, species2idx[species]);
@@ -906,12 +920,14 @@ data for %s with more species.\n", kmerbase.c_str());
             idx2species, doublet_rate, model_out_name);
         
         FILE* bc_out = fopen(assnfilename.c_str(), "w");
-        print_assignments(bc_out, libname, bc2species, bc2doublet, bc2llr, idx2species, false, bcs_pass);
+        print_assignments(bc_out, libname, cellranger, seurat, underscore, 
+            bc2species, bc2doublet, bc2llr, idx2species, false, bcs_pass);
         fclose(bc_out);
 
         // Create filtered version
         bc_out = fopen(assnfilename_filt.c_str(), "w");
-        print_assignments(bc_out, libname, bc2species, bc2doublet, bc2llr, idx2species, true, bcs_pass);
+        print_assignments(bc_out, libname, cellranger, seurat, underscore,
+            bc2species, bc2doublet, bc2llr, idx2species, true, bcs_pass);
         fclose(bc_out);
     }
     

@@ -94,6 +94,7 @@ void help(int code){
     fprintf(stderr, "        individuals and are worried some individual assignments might be mostly noise.\n");
     fprintf(stderr, "        Default behavior would be to give all cells assigned to the noise individual the\n");
     fprintf(stderr, "        same overall weight as all cells assigned to any other individual.\n"); 
+    print_libname_help();
     fprintf(stderr, "\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
@@ -109,11 +110,15 @@ int main(int argc, char *argv[]) {
        {"error_alt", required_argument, 0, 'E'},
        {"max_cells", required_argument, 0, 'c'},
        {"llr", required_argument, 0, 'l'},
-       {"n_mixprop_trials", required_argument, 0, 'n'},
+       {"n_mixprop_trials", required_argument, 0, 'N'},
        {"no_weights", no_argument, 0, 'w'},
        {"dump_freqs", no_argument, 0, 'd'},
        {"ids", required_argument, 0, 'i'},
        {"ids_doublet", required_argument, 0, 'I'},
+       {"libname", required_argument, 0, 'n'},
+       {"cellranger", no_argument, 0, 'C'},
+       {"seurat", no_argument, 0, 'S'},
+       {"underscore", no_argument, 0, 'U'},
        {0, 0, 0, 0} 
     };
     
@@ -132,6 +137,10 @@ int main(int argc, char *argv[]) {
     bool idfile_given = false;
     string idfile_doublet;
     bool idfile_doublet_given = false;
+    string libname = "";
+    bool cellranger = false;
+    bool seurat = false;
+    bool underscore = false;
 
     int option_index = 0;
     int ch;
@@ -139,7 +148,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:s:e:E:c:l:n:i:I:dwph", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "o:s:e:E:c:l:N:i:I:n:CSUdwph", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -176,7 +185,7 @@ int main(int argc, char *argv[]) {
             case 'l':
                 llr = atof(optarg);
                 break;
-            case 'n':
+            case 'N':
                 n_mixprop_trials = atoi(optarg);
                 break;
             case 'w':
@@ -184,6 +193,18 @@ int main(int argc, char *argv[]) {
                 break;
             case 'd':
                 dump_freqs = true;
+                break;
+            case 'n':
+                libname = optarg;
+                break;
+            case 'C':
+                cellranger = true;
+                break;
+            case 'S':
+                seurat = true;
+                break;
+            case 'U':
+                underscore = true;
                 break;
             default:
                 help(0);
@@ -246,12 +267,10 @@ all possible individuals\n", idfile_doublet.c_str());
     // Map cell barcodes to log likelihood ratio of best individual assignments
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     
-    string barcode_group;
-
     string assn_name = output_prefix + ".assignments";
     if (file_exists(assn_name)){
         fprintf(stderr, "Loading assignments...\n");
-        load_assignments_from_file(assn_name, assn, assn_llr, samples, barcode_group);
+        load_assignments_from_file(assn_name, assn, assn_llr, samples);
         if (llr > 0.0){
             // Filter assignments.
             for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin();
@@ -328,7 +347,7 @@ all possible individuals\n", idfile_doublet.c_str());
         string fname = output_prefix + ".contam_rate";
         FILE* outf = fopen(fname.c_str(), "w");
         dump_contam_rates(outf, cf.contam_rate, cf.contam_rate_se, samples,
-            barcode_group);
+            libname, cellranger, seurat, underscore);
     }
     
     if (dump_freqs){

@@ -1363,6 +1363,9 @@ int main(int argc, char *argv[]) {
        {"ids_doublet", required_argument, 0, 'I'},
        {"qual", required_argument, 0, 'q'},
        {"libname", required_argument, 0, 'n'},
+       {"cellranger", no_argument, 0, 'C'},
+       {"seurat", no_argument, 0, 'S'},
+       {"underscore", no_argument, 0, 'U'},
        {"error_ref", required_argument, 0, 'e'},
        {"error_alt", no_argument, 0, 'E'},
        {"error_sigma", required_argument, 0, 's'},
@@ -1386,6 +1389,10 @@ int main(int argc, char *argv[]) {
     double error_ref = 0.005;
     double error_alt = 0.005;
     double error_sigma = 0.1;
+    
+    bool cellranger = false;
+    bool seurat = false;
+    bool underscore = false;
 
     int option_index = 0;
     int ch;
@@ -1393,7 +1400,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:n:e:E:p:jh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:n:e:E:p:CSUjh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -1412,6 +1419,15 @@ int main(int argc, char *argv[]) {
                 break;
             case 'n':
                 barcode_group = optarg;
+                break;
+            case 'C':
+                cellranger = true;
+                break;
+            case 'S':
+                seurat = true;
+                break;
+            case 'U':
+                underscore = true;
                 break;
             case 'B':
                 cell_barcode = true;
@@ -1774,7 +1790,7 @@ all possible individuals\n", idfile_doublet.c_str());
         string fname = output_prefix + ".assignments";
         FILE* outf = fopen(fname.c_str(), "w");
         fprintf(stderr, "Writing cell-individual assignments to disk...\n");
-        dump_assignments(outf, assn, assn_llr, samples, barcode_group);
+        dump_assignments(outf, assn, assn_llr, samples, barcode_group, cellranger, seurat, underscore);
         fclose(outf);
     }
     

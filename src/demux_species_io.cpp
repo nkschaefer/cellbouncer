@@ -221,6 +221,9 @@ void load_from_files(string& countsfilename,
  */
 void print_assignments(FILE* outf,
     const string& libname, 
+    bool cellranger,
+    bool seurat,
+    bool underscore,
     robin_hood::unordered_map<unsigned long, short>& bc2species,
     robin_hood::unordered_map<unsigned long, pair<unsigned int, unsigned int> >& bc2doublet,
     robin_hood::unordered_map<unsigned long, double>& bc2llr,
@@ -253,9 +256,7 @@ void print_assignments(FILE* outf,
             name = idx2species[bc2species[b2llr->first]];
         }
         string bc_str = bc2str(b2llr->first);
-        if (libname != ""){
-            bc_str += "-" + libname;
-        }
+        mod_bc_libname(bc_str, libname, cellranger, seurat, underscore); 
         fprintf(outf, "%s\t%s\t%c\t%f\n", bc_str.c_str(), name.c_str(), type,
             b2llr->second);
     }

@@ -64,13 +64,15 @@ void dump_assignments(FILE* outf,
     robin_hood::unordered_map<unsigned long, int>& assn_final,
     robin_hood::unordered_map<unsigned long, double>& assn_final_llr,
     std::vector<std::string>& samples,
-    std::string& barcode_group);
+    std::string& barcode_group,
+    bool cellranger,
+    bool seurat,
+    bool underscore);
 
 void load_assignments_from_file(std::string& filename,
     robin_hood::unordered_map<unsigned long, int>& assn,
     robin_hood::unordered_map<unsigned long, double>& assn_llr,
-    std::vector<std::string>& samples,
-    std::string& barcode_group);
+    std::vector<std::string>& samples);
 
 void write_summary(FILE* outf, 
     std::string& outpre,
@@ -95,7 +97,10 @@ void dump_contam_rates(FILE* outf,
     robin_hood::unordered_map<unsigned long, double>& contam_rate,
     robin_hood::unordered_map<unsigned long, double>& contam_rate_se,
     std::vector<std::string>& samples,
-    std::string& barcode_group);
+    std::string& libname,
+    bool cellranger,
+    bool seurat,
+    bool underscore);
 
 void dump_amb_fracs(FILE* outf, 
     std::map<std::pair<int, int>, std::map<std::pair<int, int>, double> >& amb_mu);

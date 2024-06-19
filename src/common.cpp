@@ -37,18 +37,46 @@ void print_libname_help(){
     fprintf(stderr, "       appears by chance in multiple data sets, but representing different cells.\n");
     fprintf(stderr, "       To account for this, a unique name must be appended to barcode sequences.\n");
     fprintf(stderr, "       If you provide a unique name here, it will be appended to cell barcode\n");
-    fprintf(stderr, "       sequences, separated by a hyphen (-).\n");
-    fprintf(stderr, "       If you are using 10X Genomics CellRanger output, you should begin this with\n");
-    fprintf(stderr, "       the number 1 (automatically appended to output data from single libraries).\n");
+    fprintf(stderr, "       sequences, separated by a hyphen (-) (unless specified otherwise; see below).\n");
+    fprintf(stderr, "       By default, this mimics the behavior of the batch_categories argument to\n");
+    fprintf(stderr, "       anndata.concatenate() in scanpy.\n");
+    fprintf(stderr, "       If you combine data using anndata.concatenate() without batch_categories, then\n");
+    fprintf(stderr, "       this argument should be set to the 1-based numeric index of this data set in the\n");
+    fprintf(stderr, "       list of all data sets you plan to combine.\n");
     fprintf(stderr, "       If you are combining multiple runs using cellranger aggr, you should set this\n");
     fprintf(stderr, "       to the 1-based numeric index of this data set among all data sets you will\n");
-    fprintf(stderr, "       combine.\n");
-    fprintf(stderr, "       If you are combining multiple data sets using anndata.concatenate(), this should\n");
-    fprintf(stderr, "       also be a numeric index (like cellranger aggr), or should match the name for\n");
-    fprintf(stderr, "       this library that you pass via the batch_categories parameter.\n");
-    fprintf(stderr, "       If you are combining multiple data sets using anndata.concatenate(), and the data\n");
-    fprintf(stderr, "       was processed by CellRanger, you should set this to 1- followed by the (above)\n");
-    fprintf(stderr, "       unique name for the library.\n");
+    fprintf(stderr, "       combine and omit the --cellranger/-C argument (below).\n");
+    fprintf(stderr, "       If you are combining data sets using Seurat merge(), this should be set to what you\n");
+    fprintf(stderr, "       will pass to the add_cell_ids argument, and you should specify Seurat format (below).\n");
+    fprintf(stderr, "       If you want to use an underscore instead of a hyphen, see below.\n");
+    fprintf(stderr, "   --cellranger -C Set this flag to append a -1 to the end of all output barcodes, like\n");
+    fprintf(stderr ,"       10X Genomics CellRanger.\n");
+    fprintf(stderr, "   --Seurat -S Set this flag to append --libname to the beginning of barcode sequences, with an\n");
+    fprintf(stderr, "       underscore separator.\n");
+    fprintf(stderr, "   --underscore -U Set this flag to use an underscore instead of a hyphen when appending --libnames.\n");
+}
+
+/**
+ * Figures out how to modify the text of a barcode string before printing, based on user
+ * options.
+ */
+void mod_bc_libname(string& bc_str, const string& libname, bool cellranger, bool seurat, bool underscore){
+    if (libname != ""){
+        if (cellranger){
+            bc_str += "-1";
+        }
+        if (seurat){
+            bc_str = libname + "_" + bc_str;
+        }
+        else{
+            if (underscore){
+                bc_str += "_" + libname;
+            }
+            else{
+                bc_str += "-" + libname;
+            }
+        }
+    }
 }
 
 /**

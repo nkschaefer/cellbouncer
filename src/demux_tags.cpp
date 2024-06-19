@@ -132,7 +132,6 @@ void help(int code){
     fprintf(stderr, "   --sgRNA -g Specifies that data is from sgRNA capture. This affects how sequence\n");
     fprintf(stderr, "       matching in reads is done and slightly changes the output files. Also makes\n");
     fprintf(stderr, "       the default separator for multiple IDs a comma instead of +.\n");
-    
     fprintf(stderr, "   --filt -f Perform a filtering step to remove cells that do not fit the model well\n");
     fprintf(stderr, "       (these may correspond to high-order multiplets). Default: no filter\n");
     fprintf(stderr, "   --comma -c By default, cells assigned multiple identities will have these\n");
@@ -190,7 +189,10 @@ void dump_counts(string& filename,
     robin_hood::unordered_map<unsigned long, vector<umi_set*> >& bc_ms_umis,
     vector<string>& ms_names,
     robin_hood::unordered_map<unsigned long, map<int, long int> >& bc_tag_counts,
-    string& libname){
+    string& libname,
+    bool cellranger,
+    bool seurat,
+    bool underscore){
 
     FILE* f = fopen(filename.c_str(), "w");
     
@@ -210,9 +212,8 @@ void dump_counts(string& filename,
         bc_tag_counts.emplace(x->first, m);
 
         string bc_str = bc2str(x->first);
-        if (libname != ""){
-            bc_str += "-" + libname;
-        }
+        mod_bc_libname(bc_str, libname, cellranger, seurat, underscore);
+        
         fprintf(f, "%s", bc_str.c_str());
         for (int i = 0; i < x->second.size(); ++i){
             if (ms_names[i].length() > 0){
@@ -225,6 +226,41 @@ void dump_counts(string& filename,
                     fprintf(f, "\t%d", x->second[i]->count());
                 }
             }
+        }
+        fprintf(f, "\n");
+    }
+    fclose(f);
+}
+
+/**
+ * Alternate method for writing counts to disk, in case they were loaded from
+ * MEX-format files.
+ */
+void dump_counts2(string& countsfn, vector<string>& seqnames,
+    robin_hood::unordered_map<unsigned long, map<int, long int> >& bc_tag_counts,
+    string& libname,
+    bool cellranger,
+    bool seurat,
+    bool underscore){
+    
+    FILE* f = fopen(countsfn.c_str(), "w");
+    fprintf(f, "barcode");
+    for (int i = 0; i < seqnames.size(); ++i){
+        fprintf(f, "\t%s", seqnames[i].c_str());
+    }
+    fprintf(f, "\n");
+
+    for (robin_hood::unordered_map<unsigned long, map<int, long int> >::iterator btc = 
+        bc_tag_counts.begin(); btc != bc_tag_counts.end(); ++btc){
+        string bcstr = bc2str(btc->first);
+        mod_bc_libname(bcstr, libname, cellranger, seurat, underscore);
+        fprintf(f, "%s", bcstr.c_str());
+        for (int i = 0; i < seqnames.size(); ++i){
+            long int count = 0;
+            if (btc->second.count(i) > 0){
+                count = btc->second[i];
+            }
+            fprintf(f, "\t%ld", count);
         }
         fprintf(f, "\n");
     }
@@ -613,7 +649,14 @@ void fit_dists_2way(vector<vector<double> >& obscol,
     vector<double>& lomeans,
     vector<double>& lophis,
     vector<double>& himeans,
-    vector<double>& model_means){
+    vector<double>& model_means,
+    string& output_prefix){
+    
+    vector<double> loweights;
+    vector<double> hiweights;
+    
+    string outfn = output_prefix + ".dists";
+    FILE* outf = fopen(outfn.c_str(), "w");
 
     fprintf(stderr, "===== Initial model means: =====\n");
     for (int i = 0; i < labels.size(); ++i){
@@ -633,13 +676,33 @@ void fit_dists_2way(vector<vector<double> >& obscol,
             dists.push_back(high);
             mixtureModel mod(dists);
             mod.fit(obscol[i]);
-            fprintf(stderr, "%s:\t%f\t%f\n", labels[i].c_str(),
-                mod.dists[0].params[0][0], 1.0/mod.dists[1].params[0][0]);
-            lomeans.push_back(mod.dists[0].params[0][0]);
-            lophis.push_back(mod.dists[0].params[0][1]);
-            himeans.push_back(1.0/mod.dists[1].params[0][0]);
+            double dist_sep = pnbinom(1.0/mod.dists[1].params[0][0],
+                mod.dists[0].params[0][0], mod.dists[0].params[0][1]);
+            fprintf(stderr, "%s:\t%f\t%f\t%f\t%f\n", labels[i].c_str(),
+                mod.dists[0].params[0][0], 1.0/mod.dists[1].params[0][0], dist_sep, mod.weights[1]);
+            
+            fprintf(outf, "%s\t%f\t%f\t%f\t%f\n", labels[i].c_str(),
+                mod.weights[0], mod.dists[0].params[0][0], mod.dists[0].params[0][1],
+                mod.dists[1].params[0][0]);
+
+            if (mod.weights[1] >= mod.weights[0] || dist_sep < 0.99){
+                lomeans.push_back(0);
+                lophis.push_back(0);
+                himeans.push_back(0);
+                hiweights.push_back(0);
+                loweights.push_back(1);
+            }
+            else{
+                lomeans.push_back(mod.dists[0].params[0][0]);
+                lophis.push_back(mod.dists[0].params[0][1]);
+                himeans.push_back(1.0/mod.dists[1].params[0][0]);
+                hiweights.push_back(mod.weights[1]);
+                loweights.push_back(mod.weights[0]);
+            }
         }
     }
+    
+    fclose(outf);
 
     // Check to see whether any label appears to have dropped out.
     // We fit normal distributions to the means of low and high count
@@ -648,24 +711,50 @@ void fit_dists_2way(vector<vector<double> >& obscol,
     // mean, then that label will be removed.
     
     fprintf(stderr, "Checking for label dropout...\n");
-
+    pair<double, double> hiweightmv = welford(hiweights);
+    pair<double, double> loweightmv = welford(loweights);
+    pair<double, double> hiweightbeta = beta_moments(hiweightmv.first, hiweightmv.second);
+    pair<double, double> loweightbeta = beta_moments(loweightmv.first, loweightmv.second);
     pair<double, double> lomv = welford(lomeans);
     pair<double, double> himv = welford(himeans);
     
     for (int i = 0; i < labels.size(); ++i){
-        double d1 = dnorm(himeans[i], lomv.first, sqrt(lomv.second));
-        double d2 = dnorm(himeans[i], himv.first, sqrt(himv.second));
+        
         string filtstr = "";
-        if (lophis[i] == 0.0 || himeans[i] == 0.0 || d2 - d1 < 1){
-            fprintf(stderr, "  Remove label %s, LLR(ambient-foreground) = %f\n", 
-                labels[i].c_str(),d1-d2);
+        if (lophis[i] == 0.0 || himeans[i] == 0.0){
+            fprintf(stderr, "  Remove label %s, insufficient dist separation\n", 
+                labels[i].c_str());
             model_means.push_back(-1);
             lomeans[i] = -1;
             lophis[i] = -1;
-            himeans[i] = -1;
+            himeans[i] = -1;    
         }
         else{
-            model_means.push_back(himeans[i]);
+            double d1 = dnorm(himeans[i], lomv.first, sqrt(lomv.second));
+            double d2 = dnorm(himeans[i], himv.first, sqrt(himv.second));
+            if (d2 - d1 < 0){
+                fprintf(stderr, "  Remove label %s, LLR(ambient-foreground) = %f\n", 
+                    labels[i].c_str(),d1-d2);
+                model_means.push_back(-1);
+                lomeans[i] = -1;
+                lophis[i] = -1;
+                himeans[i] = -1;
+            }
+            else{
+                double dbeta1 = dbeta(hiweights[i], loweightbeta.first, loweightbeta.second);
+                double dbeta2 = dbeta(hiweights[i], hiweightbeta.first, hiweightbeta.second);
+                if (dbeta2 - dbeta1 < 0){
+                    fprintf(stderr, "  Remove label %s, LLR(weight) = %f\n", labels[i].c_str(),
+                        dbeta1-dbeta2);
+                    model_means.push_back(-1);
+                    lomeans[i] = -1;
+                    lophis[i] = -1;
+                    himeans[i] = -1;
+                }
+                else{
+                    model_means.push_back(himeans[i]);
+                }
+            }
         }
     }
 }
@@ -782,7 +871,8 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     robin_hood::unordered_map<unsigned long, double>& assn_llr,
     robin_hood::unordered_map<unsigned long, double>& cell_bg,
     vector<string>& labels,
-    bool filt){
+    bool filt,
+    string& output_prefix){
     
     // For initial fitting: let counts for each label be a vector 
     vector<vector<double> > obscol;
@@ -834,7 +924,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     vector<double> lomeans;
     vector<double> lophis;
     vector<double> himeans;
-    fit_dists_2way(obscol, labels, lomeans, lophis, himeans, model_means);
+    fit_dists_2way(obscol, labels, lomeans, lophis, himeans, model_means, output_prefix);
     fprintf(stderr, "Making preliminary assignments...\n");
 
     // Now make preliminary assignments and learn background dists
@@ -948,6 +1038,9 @@ void write_assignments(string filename,
     robin_hood::unordered_map<unsigned long, double>& assn_llr,
     string sep,
     const string& batch_id,
+    bool cellranger,
+    bool seurat,
+    bool underscore,
     bool sgrna){
     
     FILE* f_out = fopen(filename.c_str(), "w");
@@ -979,9 +1072,7 @@ void write_assignments(string filename,
                 first = false;
             }
             string bc_str = bc2str(a->first);
-            if (batch_id != ""){
-                bc_str += "-" + batch_id;
-            }
+            mod_bc_libname(bc_str, batch_id, cellranger, seurat, underscore);
             if (sgrna){
                 fprintf(f_out, "%s\t%s\t%ld\t%f\n", bc_str.c_str(), name.c_str(), a->second.size(), 
                     assn_llr[a->first]);
@@ -997,7 +1088,10 @@ void write_assignments(string filename,
 void write_assignments_table(string filename,
     robin_hood::unordered_map<unsigned long, set<int> >& assn,
     vector<string>& labels,
-    const string& batch_id){
+    const string& batch_id,
+    bool cellranger,
+    bool seurat,
+    bool underscore){
     
     // Put labels in alphabetical order
     vector<pair<string, int> > labelsort;
@@ -1019,9 +1113,8 @@ void write_assignments_table(string filename,
         a != assn.end(); ++a){
         
         string bcstr = bc2str(a->first);
-        if (batch_id != ""){
-            bcstr += "-" + batch_id;
-        }
+        mod_bc_libname(bcstr, batch_id, cellranger, seurat, underscore);
+        
         fprintf(f_out, "%s", bcstr.c_str());
         for (vector<pair<string, int> >::iterator l = labelsort.begin(); l != labelsort.end(); ++l){
             if (a->second.find(l->second) != a->second.end()){
@@ -1247,7 +1340,7 @@ void count_tags_in_reads(vector<string>& read1fn,
 }
 
 int main(int argc, char *argv[]) {    
-
+    
     // Define long-form program options 
     static struct option long_options[] = {
        {"output_prefix", required_argument, 0, 'o'},
@@ -1261,6 +1354,9 @@ int main(int argc, char *argv[]) {
        {"filt", no_argument, 0, 'f'},
        {"comma", no_argument, 0, 'c'},
        {"libname", required_argument, 0, 'n'},
+       {"cellranger", no_argument, 0, 'C'},
+       {"seurat", no_argument, 0, 'S'},
+       {"underscore", no_argument, 0, 'U'},
        {"exact", no_argument, 0, 'e'},
        {"umi_len", required_argument, 0, 'u'},
        {"sgRNA", no_argument, 0, 'g'},
@@ -1287,8 +1383,10 @@ int main(int argc, char *argv[]) {
     string input_mtx = "";
     string input_features = "";
     string featuretype = "";
+    bool cellranger = false;
+    bool seurat = false;
+    bool underscore = false;
 
-    fprintf(stderr, "%s\n", STRINGIZE(PROJ_ROOT));
     string pr = STRINGIZE(PROJ_ROOT);
     if (pr[pr.length()-1] != '/'){
         pr += "/";
@@ -1301,7 +1399,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:n:i:M:F:t:1:2:m:N:w:u:B:s:egfch", 
+    while((ch = getopt_long(argc, argv, "o:n:i:M:F:t:1:2:m:N:w:u:B:s:CSUegfch", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -1327,6 +1425,15 @@ int main(int argc, char *argv[]) {
                 break;
             case 'n':
                 batch_id = optarg;
+                break;
+            case 'C':
+                cellranger = true;
+                break;
+            case 'S':
+                seurat = true;
+                break;
+            case 'U':
+                underscore = true;
                 break;
             case '1':
                 read1fn.push_back(optarg);
@@ -1438,6 +1545,10 @@ next time)...\n");
             // Load MEX-format data
             parse_mex(cell_barcodesfn, input_features, input_mtx, 
                 bc_tag_counts, labels, featuretype); 
+            
+            // Dump MEX-format data to count table and quit
+            string countsfn = output_prefix + ".counts";
+            dump_counts2(countsfn, labels, bc_tag_counts, batch_id, cellranger, seurat, underscore);
         }
         else{
             if (read1fn.size() == 0 || read2fn.size() == 0){    
@@ -1532,7 +1643,7 @@ next time)...\n");
 
             // Write counts to disk
             string countsfn = output_prefix + ".counts";
-            dump_counts(countsfn, bc_tag_umis, seq_names, bc_tag_counts, batch_id);
+            dump_counts(countsfn, bc_tag_umis, seq_names, bc_tag_counts, batch_id, cellranger, seurat, underscore);
            
             if (has_mapfile){
                 // Check to see that the desired MULTIseq barcodes are the most common ones.
@@ -1558,12 +1669,14 @@ next time)...\n");
     robin_hood::unordered_map<unsigned long, set<int> > assn;
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     robin_hood::unordered_map<unsigned long, double> cell_bg; 
-    assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, filt);
+    assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, filt, output_prefix);
     string assnfilename = output_prefix + ".assignments";
-    write_assignments(assnfilename, assn, labels, assn_llr, sep, batch_id, sgrna);
+    write_assignments(assnfilename, assn, labels, assn_llr, sep, batch_id, 
+        cellranger, seurat, underscore, sgrna);
     if (sgrna){
         string tablefilename = output_prefix + ".table";
-        write_assignments_table(tablefilename, assn, labels, batch_id);
+        write_assignments_table(tablefilename, assn, labels, batch_id, cellranger, seurat,
+            underscore);
     }
     string bgfilename = output_prefix + ".bg";
     write_bg(bgfilename, cell_bg, batch_id);

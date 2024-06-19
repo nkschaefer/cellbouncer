@@ -1784,7 +1784,10 @@ void write_bchaps(string& haps_out,
     int nvars,
     hapstr& mask_global,
     robin_hood::unordered_map<unsigned long, hap>& haplotypes,
-    string& bc_group){
+    string& bc_group,
+    bool cellranger,
+    bool seurat,
+    bool underscore){
     
     // Open output file
     FILE* haps_outf = fopen(haps_out.c_str(), "w");
@@ -1811,9 +1814,7 @@ void write_bchaps(string& haps_out,
         
         bc bcbits(h->first);
         string bcstr = bc2str(bcbits);
-        if (bc_group != ""){
-            bcstr += "-" + bc_group;
-        }
+        mod_bc_libname(bcstr, bc_group, cellranger, seurat, underscore);
 
         if ((h->second.mask & mask_global).count() > 0){
             firstprint = true;
@@ -1935,6 +1936,9 @@ void write_assignments(string& assn_out,
     robin_hood::unordered_map<unsigned long, int>& assignments,
     robin_hood::unordered_map<unsigned long, double>& assignments_llr,
     string& barcode_group,
+    bool cellranger,
+    bool seurat,
+    bool underscore,
     vector<string>& clust_ids,
     int nhaps,
     map<int, int>& id_counter,
@@ -1981,9 +1985,7 @@ void write_assignments(string& assn_out,
         id_counter[assn->second]++;
         bc as_bitset(assn->first);
         string bc_str = bc2str(as_bitset);
-        if (barcode_group != ""){
-            bc_str += "-" + barcode_group;
-        }
+        mod_bc_libname(bc_str, barcode_group, cellranger, seurat, underscore);
         fprintf(assn_outf, "%s\t%s\t%c\t%f\n", bc_str.c_str(),
             name.c_str(), s_d, assignments_llr[assn->first]);
     } 
@@ -2086,9 +2088,7 @@ void parse_assignments(string& assnfile,
         if (sep_pos != string::npos){
             bc_str = bc_str.substr(0, sep_pos);
         }
-        bc as_bitset;
-        str2bc(bc_str.c_str(), as_bitset);
-        unsigned long as_ul = as_bitset.to_ulong();
+        unsigned long as_ul = bc_ul(bc_str);
         if (s_d == 'D'){
             size_t sep_pos = id_str.find("+");
             if (sep_pos == string::npos){
@@ -2295,6 +2295,9 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
 
 void write_mixprops(FILE* outf,
     string& barcode_group,
+    bool cellranger,
+    bool seurat,
+    bool underscore,
     robin_hood::unordered_map<unsigned long, double>& mixprops_mean,
     robin_hood::unordered_map<unsigned long, double>& mixprops_sd,
     robin_hood::unordered_map<unsigned long, int>& assignments,
@@ -2304,10 +2307,7 @@ void write_mixprops(FILE* outf,
         mp != mixprops_mean.end(); ++mp){
         
         string bc_str = bc2str(mp->first);
-        
-        if (barcode_group != ""){
-            bc_str += "-" + barcode_group;
-        }
+        mod_bc_libname(bc_str, barcode_group, cellranger, seurat, underscore);
 
         int assn = assignments[mp->first];
         pair<int, int> combo = idx_to_hap_comb(assn, clust_ids.size());
@@ -2332,6 +2332,9 @@ int main(int argc, char *argv[]) {
        {"barcodes", required_argument, 0, 'B'},
        {"barcodes_filter", required_argument, 0, 'f'},
        {"libname", required_argument, 0, 'n'},
+       {"cellranger", no_argument, 0, 'C'},
+       {"seurat", no_argument, 0, 'S'},
+       {"underscore", no_argument, 0, 'U'},
        {"mapq", required_argument, 0, 'q'},
        {"baseq", required_argument, 0, 'Q'},
        {"nclust_max", required_argument, 0, 'N'},
@@ -2367,6 +2370,9 @@ int main(int argc, char *argv[]) {
     bool mixing_proportions = false;
     string assnfile = "";
     bool cov_filt = true;
+    bool cellranger = false;
+    bool seurat = false;
+    bool underscore = false;
 
     int option_index = 0;
     int ch;
@@ -2374,7 +2380,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:o:n:B:f:g:q:Q:N:m:v:H:i:D:a:cdh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:o:n:B:f:g:q:Q:N:m:v:H:i:D:a:CSUcdh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -2387,6 +2393,15 @@ int main(int argc, char *argv[]) {
                 break;
             case 'n':
                 barcode_group = optarg;
+                break;
+            case 'C':
+                cellranger = true;
+                break;
+            case 'S':
+                seurat = true;
+                break;
+            case 'U':
+                underscore = true;
                 break;
             case 'H':
                 hapsfilename = optarg;
@@ -2596,7 +2611,8 @@ int main(int argc, char *argv[]) {
             clsort, one);  
         
         if (dump){
-            write_bchaps(haps_out, nvars, mask_global, haplotypes, barcode_group); 
+            write_bchaps(haps_out, nvars, mask_global, haplotypes, barcode_group, 
+                cellranger, seurat, underscore); 
             return 0; // finished
         }
     }
@@ -2675,13 +2691,14 @@ were found in input file %s\n", assnfile.c_str());
         // Spill to disk.
         string mixprops_out_name = output_prefix + ".props";
         FILE* mixprops_out = fopen(mixprops_out_name.c_str(), "w");
-        write_mixprops(mixprops_out, barcode_group, mixprops_mean, mixprops_sd, assignments, clust_ids);
+        write_mixprops(mixprops_out, barcode_group, cellranger, seurat, underscore, 
+            mixprops_mean, mixprops_sd, assignments, clust_ids);
         fclose(mixprops_out);
         return 0;
     }
 
     // Write barcode haps file
-    write_bchaps(haps_out, nvars, mask_global, haplotypes, barcode_group);
+    write_bchaps(haps_out, nvars, mask_global, haplotypes, barcode_group, cellranger, seurat, underscore);
     
     // Assign all cell barcodes to a haplotype ID.
     map<unsigned long, int> bc2hap;
@@ -2711,7 +2728,8 @@ were found in input file %s\n", assnfile.c_str());
     
     
     write_assignments(assn_out, assignments, assignments_llr,
-        barcode_group, clust_ids, clusthaps.size(), id_counter, 
+        barcode_group, cellranger, seurat, underscore,
+        clust_ids, clusthaps.size(), id_counter, 
         tot_cells, doub_cells);
    
     string statsfilename = output_prefix + ".summary";

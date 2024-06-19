@@ -509,15 +509,16 @@ void dump_assignments(FILE* outf,
     robin_hood::unordered_map<unsigned long, int>& assn_final,
     robin_hood::unordered_map<unsigned long, double>& assn_final_llr,
     vector<string>& samples,
-    string& barcode_group){
+    string& barcode_group,
+    bool cellranger,
+    bool seurat,
+    bool underscore){
 
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn_final.begin();
         a != assn_final.end(); ++a){
         bc as_bitset(a->first);
         string bc_str = bc2str(as_bitset);
-        if (barcode_group != ""){
-            bc_str += "-" + barcode_group;
-        }
+        mod_bc_libname(bc_str, barcode_group, cellranger, seurat, underscore);
         string assn = idx2name(a->second, samples);
         double llr = assn_final_llr[a->first];
         // Only write assignments that are better than an even guess
@@ -538,8 +539,7 @@ void dump_assignments(FILE* outf,
 void load_assignments_from_file(string& filename,
     robin_hood::unordered_map<unsigned long, int>& assn,
     robin_hood::unordered_map<unsigned long, double>& assn_llr,
-    vector<string>& samples,
-    string& barcode_group){
+    vector<string>& samples){
     
     map<string, int> sample2idx;
     for (int i = 0; i < samples.size(); ++i){
@@ -552,20 +552,8 @@ void load_assignments_from_file(string& filename,
     char s_d;
     double llr;
     
-    barcode_group = "";
-
     while (inf >> bc_str >> idstr >> s_d >> llr){
-        size_t dashpos = bc_str.rfind("-");
-        if (dashpos != string::npos){
-            // Assumes all "barcode_group" signifiers are the same. We shouldn't be 
-            // trying to quanitfy contamination across more than one lane at a time.
-            barcode_group = bc_str.substr(dashpos + 1, bc_str.length()-dashpos-1);
-            bc_str = bc_str.substr(0, dashpos);
-        }
-        bc as_bitset;
-        str2bc(bc_str.c_str(), as_bitset);
-        unsigned long as_ul = as_bitset.to_ulong();
-
+        unsigned long as_ul = bc_ul(bc_str);
         int indv_idx = -1;
         size_t splitpos = string::npos;
         if (s_d == 'D'){
@@ -749,15 +737,15 @@ void dump_contam_rates(FILE* outf,
     robin_hood::unordered_map<unsigned long, double>& contam_rate,
     robin_hood::unordered_map<unsigned long, double>& contam_rate_se,
     vector<string>& samples,
-    string& barcode_group){
+    string& libname,
+    bool cellranger,
+    bool seurat,
+    bool underscore){
     
     for (robin_hood::unordered_map<unsigned long, double>::iterator cr = contam_rate.begin();
        cr != contam_rate.end(); ++cr){
-        bc as_bitset(cr->first);
-        string bc_str = bc2str(as_bitset);
-        if (barcode_group != ""){
-            bc_str += "-" + barcode_group;
-        }
+        string bc_str = bc2str(cr->first);
+        mod_bc_libname(bc_str, libname, cellranger, seurat, underscore);
         fprintf(outf, "%s\t%f\t%f\n", bc_str.c_str(), cr->second, contam_rate_se[cr->first]);
     }
 }

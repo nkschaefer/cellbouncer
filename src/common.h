@@ -29,6 +29,11 @@ using namespace std;
 // (used by multiple programs)
 void print_libname_help();
 
+// Modifies a string representation of a cell barcode to include unique
+// library information before printing.
+void mod_bc_libname(string& bc, const string& libname, bool cellranger,
+   bool seurat, bool underscore);
+
 // Parse a file mapping cell barcodes to identities
 void parse_barcode_map(std::string& fn, 
     std::map<unsigned long, std::string>& bc2hap,

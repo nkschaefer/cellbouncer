@@ -23,6 +23,11 @@ names <- read.table(namesfile)
 assn <- read.table(assnfile)
 assnfull <- read.table(assnfile_full)
 
+# Strip extra stuff off of cell barcodes to ensure counts & assignments
+# files can match barcodes
+assn$V1 <- gsub("[^ACGT]+", "", assn$V1)
+assnfull$V1 <- gsub("[^ACGT]+", "", assnfull$V1)
+
 if (length(colnames(assn)) > 4){
     assn$V4 <- assn$V5
     assn <- assn[,c(1,2,3,4)]
