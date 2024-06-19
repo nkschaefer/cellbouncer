@@ -40,6 +40,8 @@ If you later need to update a local `CellBouncer` to the latest version, you can
 ```
 git pull --recurse-submodules
 git submodule update --remote
+make clean
+make
 ```
 # Overview
 The programs in `cellbouncer` are standalone command line tools. If you run one of them with no arguments or with `-h`, it will give you detailed information about how to run it. Each program uses the concept of an `--output_prefix/-o`, which is a base name that will be used for all output files.
