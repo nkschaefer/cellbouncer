@@ -44,15 +44,17 @@ Demultiplexing tools all write a file called `[output_prefix].assignments`, whic
 In output files, cell barcodes will by default be printed without any additional text (they will consist only of DNA sequences). When you plan to combine data from multiple single-cell libraries, however, additional text must be appended to barcodes from each data set to prevent barcode collisions. 
 
 Different programs have different conventions for handling this:
-* [CellRanger](https://www.10xgenomics.com/support/software/cell-ranger/latest) appends "-" and a numeric ID (starting from 1) to cell barcodes.
+* [CellRanger](https://www.10xgenomics.com/support/software/cell-ranger/latest) appends `-` and a numeric ID (starting from 1) to cell barcodes.
   * If you are not using `cellranger aggr` to combine libraries, then this will result in `-1` being at the end of all barcodes.
 * In [scanpy](https://scanpy.readthedocs.io/en/stable/), the [anndata.concatenate](https://anndata.readthedocs.io/en/latest/generated/anndata.AnnData.concatenate.html) command also follows this convention, unless the `batch_categories` argument is used. In this case, names passed to `batch_categories` are appended to barcode sequences, separated by `-`.
 * [Seurat](https://satijalab.org/seurat/archive/v4.3/merge) appends unique IDs given by the `add_cell_ids` argument to the `merge` function, but these are prepended to barcode sequences, separated by `_`. If loading CellRanger data, this may result in barcodes that begin with unique IDs and end with `-1`.
 
 `CellBouncer` programs that write files containing cell barcodes have a `--libname/-n` argument that allows users to append unique identifiers to barcode sequences, by default at the end and with the separator `-`.
-  * If you wish to mimic single-library `cellranger` output, use the `--cellranger/-C` argument to append `-1` to the end of each barcode sequence. 
-  * If you wish to merge with data in `Seurat`, use the `--seurat/-S` argument to instead append `--libname` to the beginning of each cell barcode, with the separator `_`.
-  * If you wish to use `_` as a separator (at the end of barcode sequences) instead of `-`, use the `--underscore/-U` argument.
+  * To mimic single-library `cellranger` output, use the `--cellranger/-C` argument to append `-1` to the end of each barcode sequence. 
+  * To merge with data in `Seurat`, use the `--seurat/-S` argument to instead append `--libname` to the beginning of each cell barcode, with the separator `_`.
+  * To use `_` as a separator (at the end of barcode sequences) instead of `-`, use the `--underscore/-U` argument.
+
+`CellBouncer` programs each run on data from a single library: extra characters like library identifiers are removed from cell barcode sequences when loading them. This means that if you do provide data from multiple libraries together, any cells that share the same barcode sequence will be treated as the same cell. 
 
 # Programs
 
