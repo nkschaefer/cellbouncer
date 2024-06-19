@@ -40,8 +40,11 @@ Demultiplexing tools all write a file called `[output_prefix].assignments`, whic
 * droplet type: `S` (for singlet), `D` (for doublet), or in some cases `M` (for multiplet, 3+ individuals, so far only considered by `demux_tags`)
 * ratio of the log likelihood of the best to the second best assignment (a measure of confidence in the assignment)
 
-## [Cell barcode format and merging with other data](docs/merging.md)
+## Cell barcode format and merging with other data
 To load data from CellBouncer into a single cell analysis tool like [Seurat](https://satijalab.org/seurat/) or [scanpy](https://scanpy.readthedocs.io/en/stable/), you will need to load CellBouncer's (text format) output files and merge with your single cell data set. This requires ensuring that cell barcodes are formatted the same way by CellBouncer as in your data set. Read more [here](docs/merging.md). 
+
+## Note about multi-library data sets
+`CellBouncer` programs take input from single libraries. If you have concatenated multiple single cell sequencing data sets, `CellBouncer` will interpret all cells with the same barcode sequence as the same cell, ignoring any unique IDs you have added to barcodes. If you need to load data in [MEX format](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices) (i.e. for `demux_tags`) and that data comes from multiple libraries that were concatenated together, you can separate the data by library using the program [`utils/split_mex_libs.py'](docs/utils_split_mex_libs.md).
 
 # Programs
 
