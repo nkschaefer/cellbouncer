@@ -51,7 +51,7 @@ void print_libname_help(){
     fprintf(stderr, "       If you want to use an underscore instead of a hyphen, see below.\n");
     fprintf(stderr, "   --cellranger -C Set this flag to append a -1 to the end of all output barcodes, like\n");
     fprintf(stderr ,"       10X Genomics CellRanger.\n");
-    fprintf(stderr, "   --Seurat -S Set this flag to append --libname to the beginning of barcode sequences, with an\n");
+    fprintf(stderr, "   --seurat -S Set this flag to append --libname to the beginning of barcode sequences, with an\n");
     fprintf(stderr, "       underscore separator.\n");
     fprintf(stderr, "   --underscore -U Set this flag to use an underscore instead of a hyphen when appending --libnames.\n");
 }
