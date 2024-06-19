@@ -54,7 +54,7 @@ Different programs have different conventions for handling this:
   * To merge with data in `Seurat`, use the `--seurat/-S` argument to instead append `--libname` to the beginning of each cell barcode, with the separator `_`.
   * To use `_` as a separator (at the end of barcode sequences) instead of `-`, use the `--underscore/-U` argument.
 
-`CellBouncer` programs each run on data from a single library: extra characters like library identifiers are removed from cell barcode sequences when loading them. This means that if you do provide data from multiple libraries together, any cells that share the same barcode sequence will be treated as the same cell. 
+`CellBouncer` programs each expect data from a single library: extra characters like library identifiers are removed from cell barcode sequences when loading them. This means that if you do provide data from multiple libraries together, any cells that share the same barcode sequence will be treated as the same cell. 
 
 # Programs
 
