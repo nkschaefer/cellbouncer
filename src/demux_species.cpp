@@ -907,8 +907,8 @@ data for %s with more species.\n", kmerbase.c_str());
             unsigned long ul = bc_ul(bc_str);
             // Don't bother with doublets.
             if (type == 'S'){
-                bc2species.emplace(bc_ul, species2idx[species]);
-                bc2llr.emplace(bc_ul, llr); 
+                bc2species.emplace(ul, species2idx[species]);
+                bc2llr.emplace(ul, llr); 
             }
         }
     }
