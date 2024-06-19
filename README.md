@@ -41,7 +41,18 @@ Demultiplexing tools all write a file called `[output_prefix].assignments`, whic
 * ratio of the log likelihood of the best to the second best assignment (a measure of confidence in the assignment)
 
 ### Cell barcode format
-In output files, cell barcodes will by default be printed without any additional text (they will consist only of DNA sequences). When there are multiple data sets to be analyzed together, additional text must be appended to barcodes from each data set to prevent barcode collisions. Different programs have different conventions for handling this, such as [CellRanger](https://www.10xgenomics.com/support/software/cell-ranger/latest) appending "-" and a numeric ID (starting from 1) to cell barcodes. In [scanpy](https://scanpy.readthedocs.io/en/stable/), the [anndata.concatenate](https://anndata.readthedocs.io/en/latest/generated/anndata.AnnData.concatenate.html) command also follows this convention, unless the `batch_categories` argument is used. `CellBouncer` programs that write files containing cell barcodes have a `--libname/-n` argument that allows users to append unique identifiers in the same format (separated from the barcode sequence with `-`). To match `cellranger` output from single libraries, users should set this argument to `1`, and to match `cellranger` output from individual libraries that will be combined with `anndata.concatenate()`, users should set this to `1-` followed by the unique ID to be passed to `batch_categories`, or to the 1-based numeric index of this library in the list, if `batch_categories` will be omitted.
+In output files, cell barcodes will by default be printed without any additional text (they will consist only of DNA sequences). When you plan to combine data from multiple single-cell libraries, however, additional text must be appended to barcodes from each data set to prevent barcode collisions. 
+
+Different programs have different conventions for handling this:
+* [CellRanger](https://www.10xgenomics.com/support/software/cell-ranger/latest) appends "-" and a numeric ID (starting from 1) to cell barcodes.
+  * If you are not using `cellranger aggr` to combine libraries, then this will result in `-1` being at the end of all barcodes.
+* In [scanpy](https://scanpy.readthedocs.io/en/stable/), the [anndata.concatenate](https://anndata.readthedocs.io/en/latest/generated/anndata.AnnData.concatenate.html) command also follows this convention, unless the `batch_categories` argument is used. In this case, names passed to `batch_categories` are appended to barcode sequences, separated by `-`.
+* [Seurat](https://satijalab.org/seurat/archive/v4.3/merge) appends unique IDs given by the `add_cell_ids` argument to the `merge` function, but these are prepended to barcode sequences, separated by `_`. If loading CellRanger data, this may result in barcodes that begin with unique IDs and end with `-1`.
+
+`CellBouncer` programs that write files containing cell barcodes have a `--libname/-n` argument that allows users to append unique identifiers to barcode sequences, by default at the end and with the separator `-`.
+  * If you wish to mimic single-library `cellranger` output, use the `--cellranger/-C` argument to append `-1` to the end of each barcode sequence. 
+  * If you wish to merge with data in `Seurat`, use the `--seurat/-S` argument to instead append `--libname` to the beginning of each cell barcode, with the separator `_`.
+  * If you wish to use `_` as a separator (at the end of barcode sequences) instead of `-`, use the `--underscore/-U` argument.
 
 # Programs
 
