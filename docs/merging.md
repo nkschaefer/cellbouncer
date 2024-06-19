@@ -37,7 +37,7 @@ adata = sc.read_h5ad('[scanpy_saved].h5ad')
 
 # Load CellBouncer assignments file
 assn = pd.read_csv('[output_prefix].assignments', \
-  sep='\t', index_col=0, header=['individual', 'droplet_type', 'individual_llr'])
+    sep='\t', index_col=0, header=['individual', 'droplet_type', 'individual_llr'])
 
 # Merge CellBouncer data into cell metadata, without dropping any cells
 adata.obs = adata.obs.merge(assn, how='left', left_index=True, right_index=True)
@@ -45,6 +45,21 @@ adata.obs = adata.obs.merge(assn, how='left', left_index=True, right_index=True)
 `adata.obs` should now contain the columns `individual`, `droplet_type`, and `individual_llr`, with values set to `NA` for all cells missing from the `CellBouncer` output file (which could not be identified). This will not work if your barcode format does not match that in `scanpy` (see above section).
 
 ### In Seurat
+```
+library(Seurat)
+library(SeuratDisk)
 
+# Load Seurat object
+seuratObj <- LoadH5Seurat("[seurat_saved].h5Seurat")
+
+# Load CellBouncer assignments file
+assn <- read.table('[output_prefix].assignments', row.names=1,
+    col.names=c("individual", "droplet_type", "individual_llr"))
+
+# Merge assignments with Seurat object metadata. This automatically matches
+# row names and will keep cells that do not have metadata, setting missing
+# values to NA
+seuratObj <- AddMetaData(seuratObj, assn)
+```
 
 [Back to main README](../README.md)
