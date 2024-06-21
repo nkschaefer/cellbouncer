@@ -12,9 +12,11 @@ To run, you must first build a set of reference k-mers. To accomplish this,
   * `FastK -N[output_prefix] -k[kmer_size] -t1 [output_tx.fa]` where `[output_prefix]` will be the beginning of the name of the output files and `[output_tx.fa]` is the file you created in the last step. Note that there should be no space between argument names and argument values.
 * Compare each species' k-mer sets to find k-mers unique to each species' transcriptome, and create the files needed by `demux_species`
   * Run `utils/get_unique_kmers` in this package, with `-k [name.ktab]` specified once for each species you ran `FastK` on and `-n [name]` once again for each species, in the same order. For example, if you have the files `human.ktab`, `chicken.ktab`, and `mouse.ktab` representing human, chicken, and mouse k-mers, you could run:
+    
     ```
     utils/get_unique_kmers -k human.ktab -k chicken.ktab -k mouse.ktab -n Human -n Chicken -n Mouse -o hcm_kmers
     ```
+    
     This will create a set of "unique k-mers" files beginning with `hcm_kmers`.
 
 ### Running the program
