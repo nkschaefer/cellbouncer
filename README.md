@@ -1,5 +1,5 @@
 <p>
-<img src="img/logo.png", width=400, alt="CellBouncer" />
+<img src="img/logo.png", width=350, alt="CellBouncer" />
 </p>
 
 Tools for demultiplexing and keeping the riffraff out of pooled single cell sequencing data sets. 
