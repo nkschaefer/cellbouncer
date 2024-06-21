@@ -53,7 +53,7 @@ Unfortunately, matching cell barcodes to large whitelists and counting k-mers ca
 **NOTE**: k-mers are stored in a suffix tree, which can become very large. Because of this, only one species' k-mers are counted at a time. Small k-mer sizes can help curtail memory usage (but will also become more likely to become non-species-specific as sizes decrease), but you should expect k-mer counting runs to take a lot of RAM (potentially 60-80 GB or more).
 ### Plotting
 <p>
-<img src="../img/species.png" width=500 alt="demux_species plot" />
+<img src="../img/species.png" width=600 alt="demux_species plot" />
 </p>
 
 Run `plot/species.R [output_directory]` after a `demux_species` run to create a heatmap of species-specific k-mer counts in cells next to the species assignments those cells received (left), as well as bar plots of the number of cells assigned each identity, both in the full set and the filtered set of cell barcodes. The unfiltered/left bar plot represents what will go into the separated FASTQ files (filtering will be done later, during QC after alignment). The filtered/right bar plot is likely a better reflection of the true proportions of species in the pool.
