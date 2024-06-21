@@ -56,6 +56,8 @@ Unfortunately, matching cell barcodes to large whitelists and counting k-mers ca
 <img src="../img/species.png" width=600 alt="demux_species plot" />
 </p>
 
-Run `plot/species.R [output_directory]` after a `demux_species` run to create a heatmap of species-specific k-mer counts in cells next to the species assignments those cells received (left), as well as bar plots of the number of cells assigned each identity, both in the full set and the filtered set of cell barcodes. The unfiltered/left bar plot represents what will go into the separated FASTQ files (filtering will be done later, during QC after alignment). The filtered/right bar plot is likely a better reflection of the true proportions of species in the pool.
+Run `plot/species.R [output_directory]` after a `demux_species` run to create a summary plot.
+
+The left panel contains a heatmap of species-specific k-mer counts in cells, clustered by cell-cell similarity and with the inferred identity of each cell shown as color bars on the left side. If the color bars do not line up well with groups of cells, something may have gone wrong with assigning cells. The right panel shows the proportion of cells assigned each identity, both in the full set and the filtered set of cell barcodes. The unfiltered/left bar plot represents what will go into the separated FASTQ files (filtering will be done later, during QC after alignment). The filtered/right bar plot is likely a better reflection of the true proportions of species in the pool.
 
 [Back to main README](../README.md)
