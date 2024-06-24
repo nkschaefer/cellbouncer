@@ -79,9 +79,13 @@ If a user wishes to use `demux_tags` to assign identities from counts produced b
 ```
 #### Multiple data types together
 If a data set includes multiple data types (i.e. a CellRanger run including both gene expression and feature barcoding, or gene expression and sgRNA capture), the MEX-format data will contain all these types, and `demux_tags` must be told which data type to load. For this, the `--feature_type/-f` argument must be used.
-* For 10X cell hashing, for example, specify `Multiplexing\ Capture`
-* For 10X antibody capture specify `Antibody\ Capture`
-* For 10X sgRNA capture, specify `CRISPR\ Guide\ Capture`
+* For 10X cell hashing, for example, specify `"Multiplexing Capture"`
+* For 10X antibody capture specify `"Antibody Capture"`
+* For 10X sgRNA capture, specify `"CRISPR Guide Capture"`
+
+In each case, you should include the double quotes around the name (so the shell can include the space in the name). 
+
+If you converted `.h5` format to MEX format using [`utils/h5tomex.py`](mex_format.md) and filtered to a specific feature type there, you can skip this option. Similarly, if your file only contained one feature type to begin with, this step can be skipped. If the input file contains multiple feature types and you do not specify one here, `demux_tags` will throw an error and quit.
 
 ### Starting from the output of a previous run
 If you already ran `demux_tags` to count tags in reads, you can simply re-run with the same `--output_prefix` argument with no input options (see above), and it will automatically load the data written to `[output_prefix].counts`. This is useful for when you want to change parameters than can affect final assignments, but you have already obtained the count data.
