@@ -16,7 +16,16 @@ def parse_args():
     parser.add_argument("--h5", "-H", help="The h5ad file to load", \
         required=True)
     parser.add_argument("--out", "-o", help="The directory for output files", \
-        required=True)
+        required=False)
+    parser.add_argument("--feature_type", "-t", help="If not --scanpy/-s, and the \
+file contains more than one feature type, subset to a specific feature type here. \
+You should wrap it in double quotes (\"\"). This is useful, for example, if you \
+processed gene expression data together with sgRNA capture data using CellRanger. \
+In this case, you can extract the sgRNA data using -t \"CRISPR Guide Capture\".",
+        required=False, default=None)
+    parser.add_argument("--list_features", "-l", help="For help choosing a feature \
+for the --feature_type/-t argument, choose this argument to print a list of all \
+feature types in the input data file and exit", action="store_true", required=False)
     parser.add_argument("--scanpy", "-s", help="Specify input is .h5ad format from \
 AnnData/scanpy. Default is to assume 10X Genomics format h5", \
         action="store_true", required=False)
@@ -25,8 +34,25 @@ AnnData/scanpy. Default is to assume 10X Genomics format h5", \
 def main(args):
     options = parse_args()
     
+    if options.feature_type is not None:
+        if options.list_features:
+            print("ERROR: cannot specify both --list_features/-l and --feature_type/-t", \
+                file=sys.stderr)
+            exit(1)
+        if options.scanpy:
+            print("ERROR: cannot specify a --feature_type/-t with the --scanpy/-s option.", \
+                file=sys.stderr)
+            exit(1)
+    if options.list_features and options.scanpy:
+        print("ERROR: cannot specify --list_features/-l with option --scanpy/-s.", file=sys.stderr)
+        exit(1)
+    if options.out is None and not options.list_features:
+        print("ERROR: you must provide an --out/-o directory unless listing features (-l).", \
+            file=sys.stderr)
+        exit(1)
+
     # Ensure output directory exists
-    if not os.path.isdir(options.out):
+    if options.out is not None and not os.path.isdir(options.out):
         os.mkdir(options.out)
     
     print("Loading {}...".format(options.h5), file=sys.stderr)
@@ -41,6 +67,23 @@ def main(args):
         print("ERROR loading input h5 file. Did you specify (or omit) --scanpy correctly?", \
             file=sys.stderr)
         exit(1)
+    adata.var_names_make_unique()
+    
+    if options.list_features or options.feature_type is not None:
+        if 'feature_types' in adata.var.columns:
+            if options.list_features:
+                for elt in adata.var['feature_types'].unique():
+                    print(elt)
+                # Done here
+                exit(0)
+            else:
+                # Subset anndata instead of listing features.
+                adata = adata[:,list(adata.var.loc[adata.var['feature_types'] == options.feature_type,:].index)] 
+        else:
+            print("ERROR: no feature_types column in adata.var. Is this a --scanpy .h5ad file?", \
+                file=sys.stderr)
+            exit(1)
+
 
     print("Writing barcodes...", file=sys.stderr)
     f = gzip.open('{}/barcodes.tsv.gz'.format(options.out), 'wt')
