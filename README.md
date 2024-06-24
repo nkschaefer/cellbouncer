@@ -22,7 +22,7 @@ The file `cellbouncer_minimum.yml` contains all dependencies you need to run `ce
 To install, first, clone this github repository and its submodules. Then, choose which of the two environment files to use and create a `conda` environment. Then all that's left to do is `make`:
 
 ```
-git clone --recurse-submodules https://github.com/nkschaefer/cellbouncer.git
+git clone --recurse-submodules git@github.com:nkschaefer/cellbouncer.git
 cd cellbouncer
 [conda/mamba] env create --file=[environment].yml
 conda activate cellbouncer
