@@ -21,8 +21,13 @@ The file `cellbouncer_minimum.yml` contains all dependencies you need to run `ce
 
 **Note for Mac users**: The file `cellbouncer_extra_osx.yml` is a version of `cellbouncer_extra.yml` that omits the program [`FastK`](https://github.com/thegenemyers/FASTK), which is not available through `conda` for Mac OSX. If you want to use that program on a Mac, you will need to install it through other means. Additionally, M1 Macs can run programs compiled for both x86_64 and arm64 architectures (and conda doesn't care which by default), but attempting to link against programs compiled for one architecture while compiling for the other will cause problems. Therefore, you need to set a special variable before creating the conda environment if using an M1 Mac (see below).
 
-To install, first, choose which of the environment files to use and create a `conda` environment. Next, clone this github repository and all its submodules. Then all that's left to do is `make`:
+To install, first clone the repository (and its submodules). Nest, choose which of the environment files to use and create a `conda` environment. Then all that's left to do is `make`:
 
+### Get the repository
+```
+git clone --recurse-submodules git@github.com:nkschaefer/cellbouncer.git
+cd cellbouncer
+```
 ### Create conda environment
 #### Linux
 ```
@@ -39,10 +44,8 @@ conda activate cellbouncer
 [conda/mamba] env create --file=[cellranger_minimum/cellranger_extra_osx].yml
 conda activate cellbouncer
 ```
-### Clone and compile
+### Compile
 ```
-git clone --recurse-submodules git@github.com:nkschaefer/cellbouncer.git
-cd cellbouncer
 make
 ```
 You've now got all the programs compiled, and you can run them as long as you remember to `conda activate cellbouncer` first.
