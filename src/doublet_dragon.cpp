@@ -277,7 +277,6 @@ int main(int argc, char *argv[]) {
         if (fn.length() <= 12 || fn.substr(fn.length()-12, 12) != ".assignments"){
             // Assume it's a base file name instead
             string fn2 = fn + ".assignments";
-            fprintf(stderr, "%s\n", fn.substr(fn.length()-12,12).c_str());
             if (!file_exists(fn2)){
                 fprintf(stderr, "ERROR: file %s does not appear to be an .assignments file or\n", fn.c_str());
                 fprintf(stderr, "  an output_prefix with an assignments file.\n");
@@ -293,9 +292,9 @@ int main(int argc, char *argv[]) {
             exit(1);
         }
         
-        file2singlets.insert(make_pair(argv[i], counts_singlet));
-        file2doublets.insert(make_pair(argv[i], counts_doublet));
-        file_tot.insert(make_pair(argv[i], totcells));
+        file2singlets.insert(make_pair(fn, counts_singlet));
+        file2doublets.insert(make_pair(fn, counts_doublet));
+        file_tot.insert(make_pair(fn, totcells));
             
         int tot_singlet = 0;
         for (map<string, int>::iterator cs = counts_singlet.begin();
