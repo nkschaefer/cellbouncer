@@ -8,13 +8,25 @@ Some programs, such as [`kite`](https://github.com/pachterlab/kite) from `kallis
 CellBouncer provides a program, `utils/h5tomex.py`, that can convert `.h5` format output files to market exchange format. To do this, simply run
 
 ```
-utils/h5tomex.py -H [file.h5] -o [output_directory] (--scanpy)
+utils/h5tomex.py -H [file.h5] -o [output_directory] (--list) (--feature_type) (--scanpy)
 ```
 
-where `[file.h5]` is the input file, `[output_directory]` is a new directory that will contain `barcodes.tsv.gz`, `features.tsv.gz`, and `matrix.mtx.gz` after the program runs, and `--scanpy` is an optional flag to set if the data is an `.h5ad` file saved by `scanpy/Anndata` rather than an `.h5` file from a data processing program.
+where:
+* `[file.h5]` is the input file
+* `[output_directory]` is a new directory that will contain `barcodes.tsv.gz`, `features.tsv.gz`, and `matrix.mtx.gz` after the program runs
+* `--scanpy/-s` is an optional flag to set if the data is an `.h5ad` file saved by `scanpy/Anndata` rather than an `.h5` file from a data processing program
+* For CellRanger `.h5` files, the matrix will often contain multiple data types. If you have processed feature barcoding/sgRNA capture together with gene expression data, for example, both will be output together in this file. Two other options help with this scenario:
+  * `--list/-l` lists all data types in the `.h5` file and quits
+  * `--feature_type/-t` lets you subset the data to only the type you specify here. The value should be in double quotes and should match one of the options output when you run with the `--list` option. For example, if your data contains both RNA-seq and sgRNA capture, running with `--list` will show:
+
+    ```
+    CRISPR Guide Capture
+    Gene Expression
+    ```
+    And you can run again with `--feature_type "CRISPR Guide Capture"` to include only sgRNA capture data in the output files, which will be loaded by `demux_tags`.
 
 ### Note
-`demux_tags` needs to know which pieces of the `MEX`-format data represent tag or sgRNA capture data. If you converted an `h5` file from CellRanger, it likely contains gene expression as well as other data types. If you're not sure what data types exist in the file, you can try this:
+`demux_tags` needs to know which pieces of the `MEX`-format data represent tag or sgRNA capture data. If you converted an `h5` file from CellRanger and did not filter it to a specific data type (see `--feature_type` option above), it likely contains gene expression as well as other data types. If you're not sure what data types exist in the file, you can try this:
 
 ```
 zcat [output_directory]/features.tsv.gz | cut -f3 | sort | uniq
@@ -30,6 +42,8 @@ demux_tags ... -M [output_dir]/matrix.mtx.gz \
   -F [output_dir]/features.tsv.gz \
   -t "CRISPR guide capture"
 ```
+
+If you already filtered your data, or the `.h5` file only contains the data type of interest, you can omit the `--feature_type/-t` argument to `demux_tags`.
 
 ## Splitting libraries
 
