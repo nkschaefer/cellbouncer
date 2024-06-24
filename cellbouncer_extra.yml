@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - bioconda
   - jdblischak
+  - anaconda
 dependencies:
   - python=3
   - htslib
@@ -20,3 +21,5 @@ dependencies:
   - tabix
   - freebayes
   - bedtools
+  - pandas
+  - anndata
