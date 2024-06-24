@@ -597,10 +597,18 @@ void parse_mex(const string& barcodesfile,
     parse_barcode_file(barcodesfile, barcodes);
     
     set<string> unique_featuretype; 
-    set<int> feature_inds;
+    
+    // Map feature index in whole file to feature index in subset 
+    map<int, int> feature_inds;
+    
     // Then, parse genes
+    // Feature index in file
     int feature_idx = 0;
+    // Feature index in subset
+    int feature_idx_subset = 0;
+
     gzreader labelsreader(featuresfile);
+    int nfeatures_match = 0;
     while(labelsreader.next()){
         istringstream splitter(labelsreader.line);
         string field;
@@ -627,16 +635,28 @@ void parse_mex(const string& barcodesfile,
             else{
                 labels.push_back(id);
             }
-            feature_inds.insert(feature_idx);
+            feature_inds.insert(make_pair(feature_idx, feature_idx_subset));
+            ++feature_idx_subset;
+            ++nfeatures_match;
         }
         if (featuretype == "" && featuretype != ""){
             unique_featuretype.insert(featuretype);
         }
         ++feature_idx;
     }
+    
+    if (nfeatures_match == 0){
+        fprintf(stderr, "ERROR: 0 features match provided type %s\n", featuretype.c_str());
+        fprintf(stderr, "Allowed feature types:\n");
+        for (set<string>::iterator ut = unique_featuretype.begin(); ut != unique_featuretype.end();
+            ++ut){
+            fprintf(stderr, "%s\n", ut->c_str());
+        }
+        exit(1);
+    }
 
     bool barcodes_first = false;
-
+    
     // Then, populate data structure
     gzreader mtxreader(matrixfile);
     int mexline = 0;
@@ -693,15 +713,17 @@ void parse_mex(const string& barcodesfile,
                     }
                     else if (idx == 2){
                         // UMI count
-                        count = atol(token.c_str());
-                        if (feature_inds.find(feature_idx) != feature_inds.end()){
+                        double count_d = atof(token.c_str());
+                        count = (long int)round(count_d);
+                        
+                        if (feature_inds.count(feature_idx) > 0){ 
                             // This feature is in the list
                             unsigned long barcode = barcodes[bc_idx];
                             if (counts.count(barcode) == 0){
                                 map<int, long int> m;
                                 counts.emplace(barcode, m);
                             }
-                            counts[barcode].emplace(feature_idx, count);
+                            counts[barcode].emplace(feature_inds[feature_idx], count);
                         }
                     }
                     ++idx;
@@ -716,4 +738,6 @@ void parse_mex(const string& barcodesfile,
         fprintf(stderr, "encountered in MEX data\n");
         exit(1);
     }
+    fprintf(stderr, "Loaded %ld barcodes and %d features\n", barcodes.size(), nfeatures_match);
+
 }

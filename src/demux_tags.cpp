@@ -187,7 +187,7 @@ void load_well_mapping(string& filename, map<string, string>& well2id){
  */
 void dump_counts(string& filename, 
     robin_hood::unordered_map<unsigned long, vector<umi_set*> >& bc_ms_umis,
-    vector<string>& ms_names,
+    vector<string>& seq_names,
     robin_hood::unordered_map<unsigned long, map<int, long int> >& bc_tag_counts,
     string& libname,
     bool cellranger,
@@ -198,7 +198,7 @@ void dump_counts(string& filename,
     
     // Print header line
     fprintf(f, "barcode");
-    for (vector<string>::iterator n = ms_names.begin(); n != ms_names.end(); ++n){
+    for (vector<string>::iterator n = seq_names.begin(); n != seq_names.end(); ++n){
         if (n->length() > 0){
             fprintf(f, "\t%s", n->c_str());
         }
@@ -215,16 +215,19 @@ void dump_counts(string& filename,
         mod_bc_libname(bc_str, libname, cellranger, seurat, underscore);
         
         fprintf(f, "%s", bc_str.c_str());
+        // j == index in bc_tag_counts
+        int j = 0;
         for (int i = 0; i < x->second.size(); ++i){
-            if (ms_names[i].length() > 0){
+            if (seq_names[i].length() > 0){
                 // This MULTIseq barcode was intended to be present in the data set
                 if (x->second[i] == NULL){
                     fprintf(f, "\t0");
                 }
                 else{
-                    bc_tag_counts[x->first].insert(make_pair(i, x->second[i]->count()));
+                    bc_tag_counts[x->first].insert(make_pair(j, x->second[i]->count()));
                     fprintf(f, "\t%d", x->second[i]->count());
                 }
+                ++j;
             }
         }
         fprintf(f, "\n");
@@ -678,8 +681,8 @@ void fit_dists_2way(vector<vector<double> >& obscol,
             mod.fit(obscol[i]);
             double dist_sep = pnbinom(1.0/mod.dists[1].params[0][0],
                 mod.dists[0].params[0][0], mod.dists[0].params[0][1]);
-            fprintf(stderr, "%s:\t%f\t%f\t%f\t%f\n", labels[i].c_str(),
-                mod.dists[0].params[0][0], 1.0/mod.dists[1].params[0][0], dist_sep, mod.weights[1]);
+            fprintf(stderr, "%s:\t%f\t%f\n", labels[i].c_str(),
+                mod.dists[0].params[0][0], 1.0/mod.dists[1].params[0][0]);
             
             fprintf(outf, "%s\t%f\t%f\t%f\t%f\n", labels[i].c_str(),
                 mod.weights[0], mod.dists[0].params[0][0], mod.dists[0].params[0][1],
@@ -889,10 +892,8 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     vector<vector<double> > obs;
     vector<unsigned long> bcs;
     vector<double> tots;
-    
     for (robin_hood::unordered_map<unsigned long, map<int, long int> >::iterator x = 
         bc_tag_counts.begin(); x != bc_tag_counts.end(); ++x){    
-        
         vector<double> row;
         for (int i = 0; i < labels.size(); ++i){
             row.push_back(0.0);
@@ -906,7 +907,6 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
             obscol[y->first].push_back(val);
             meanscol[y->first] += val;
         }
-        
         // Skip rows with 0 counts
         if (tot > 0.0){
             tots.push_back(tot);
@@ -915,7 +915,6 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
             bcs.push_back(x->first);
         }
     }
-    
     // Step 1: fit a 2-way mixture model to each label independently.
     // This will allow us to get a rough idea of which cells are which
     // identities, and learn about the background distribution.
@@ -1185,12 +1184,11 @@ void check_missing_ms_wells(robin_hood::unordered_map<unsigned long, vector<umi_
             well2name[counts[i].second].c_str());
     }
     fclose(outf);
-    if (minrank_missing < toprank_present){
+    if (minrank_missing != -1 && minrank_missing < toprank_present){
         fprintf(stderr, "WARNING: one or more un-named wells has higher counts than one or \
 more named/expected wells. You may have mis-specified well-to-ID mappings in provided \
 metadata. Please see the output well counts file to evaluate.\n");
     }
-
 }
 
 void count_tags_in_reads(vector<string>& read1fn,
@@ -1651,7 +1649,7 @@ next time)...\n");
                 string wellcountsfn = output_prefix + ".wells";
                 check_missing_ms_wells(bc_tag_umis, seq_wells, well2id, wellcountsfn);        
             }
-
+            
             // Free stuff
             for (robin_hood::unordered_map<unsigned long, vector<umi_set*> >::iterator x = 
                 bc_tag_umis.begin(); x != bc_tag_umis.end(); ){
@@ -1664,7 +1662,6 @@ next time)...\n");
             }
         }
     }
-    
     // Now we can do the actual demultiplexing
     robin_hood::unordered_map<unsigned long, set<int> > assn;
     robin_hood::unordered_map<unsigned long, double> assn_llr;
