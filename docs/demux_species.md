@@ -11,7 +11,14 @@ To run, you must first build a set of reference k-mers. To accomplish this,
 * Run [FASTK](https://github.com/thegenemyers/FASTK) to count k-mers in each species' transcriptome. You should use a value of k that is large enough to be unique but small enough to allow for multiple k-mers per read and limit the amount of RAM required; a value between 25-45 should work well. To run FASTK, do this:
   * `FastK -N[output_prefix] -k[kmer_size] -t1 [output_tx.fa]` where `[output_prefix]` will be the beginning of the name of the output files and `[output_tx.fa]` is the file you created in the last step. Note that there should be no space between argument names and argument values.
 * Compare each species' k-mer sets to find k-mers unique to each species' transcriptome, and create the files needed by `demux_species`
-  * Run `utils/get_unique_kmers` in this package, with `-k [name.ktab]` specified once for each species you ran `FastK` on and `-n [name]` once again for each species, in the same order. For example, if you have the files `human.ktab`, `chicken.ktab`, and `mouse.ktab` representing human, chicken, and mouse k-mers, you could run `utils/get_unique_kmers -k human.ktab -k chicken.ktab -k mouse.ktab -n Human -n Chicken -n Mouse -o hcm_kmers`. This will create a set of "unique k-mers" files beginning with `hcm_kmers`.
+  * Run `utils/get_unique_kmers` in this package, with `-k [name.ktab]` specified once for each species you ran `FastK` on and `-n [name]` once again for each species, in the same order. For example, if you have the files `human.ktab`, `chicken.ktab`, and `mouse.ktab` representing human, chicken, and mouse k-mers, you could run:
+    
+    ```
+    utils/get_unique_kmers -k human.ktab -k chicken.ktab -k mouse.ktab -n Human -n Chicken -n Mouse -o hcm_kmers
+    ```
+    
+    This will create a set of "unique k-mers" files beginning with `hcm_kmers`.
+
 ### Running the program
 * Run `demux_species` using the unique k-mer lists you have just created as the `-k` argument: in the example above, `-k hcm_kmers`. If you run `demux_species` with no arguments, there will be a detailed usage screen. At minimum, you will need to provide a file of forward and reverse single cell RNA-seq reads, an output prefix, a [cell barcode whitelist](https://kb.10xgenomics.com/hc/en-us/articles/115004506263-What-is-a-barcode-whitelist), and a unique k-mer set. If you have multiple types of data from cells that share the same barcodes (i.e. [10X Genomics multiome data](https://www.10xgenomics.com/products/single-cell-multiome-atac-plus-gene-expression), or [feature barcoding](https://www.10xgenomics.com/support/software/cell-ranger/latest/getting-started/cr-what-is-feature-bc) data for the same cells), you can provide these files as well. The RNA-seq alone will be checked against the species-specific k-mers, but once cells are assigned to species, the other types of reads will be split into separate files by species as well.
   * This program will output the following:
@@ -27,7 +34,15 @@ To run, you must first build a set of reference k-mers. To accomplish this,
 ### Running in parallel
 Unfortunately, matching cell barcodes to large whitelists and counting k-mers can be slow. To speed up this process, `cellbouncer` has a way to split up data, run in parallel on a cluster, and join results.
 * Chop up the input read files using `utils/split_read_files`
-  * Usage: `utils/split_read_files -1 MyLibrary_S1_L001_R1_001.fastq.gz -2 MyLibrary_S1_L001_R2_001.fastq.gz -o [output_directory] -n [number of chunks]`
+  * Usage:
+
+    ```
+    utils/split_read_files -1 MyLibrary_S1_L001_R1_001.fastq.gz \
+        -2 MyLibrary_S1_L001_R2_001.fastq.gz \
+        -o [output_directory] \
+        -n [number of chunks]
+    ```
+    
   * This will create files in `[output_directory]` with the same names as the input read files, but with a 1-based numeric index appended to the end.
 * Run `demux_species` on each chunk in batch mode, using the same output directory for all runs
   * Pass one forward/reverse read pair file chunk in: i.e. `-r MyLibrary_S1_L001_R1_001.1.fastq.gz -R MyLibrary_S1_L001_R2_001.1.fastq.gz` and add the chunk number, so it can be appended to output files: i.e. `--batch_num 1`
@@ -37,6 +52,12 @@ Unfortunately, matching cell barcodes to large whitelists and counting k-mers ca
 
 **NOTE**: k-mers are stored in a suffix tree, which can become very large. Because of this, only one species' k-mers are counted at a time. Small k-mer sizes can help curtail memory usage (but will also become more likely to become non-species-specific as sizes decrease), but you should expect k-mer counting runs to take a lot of RAM (potentially 60-80 GB or more).
 ### Plotting
-Run `plot/species.R [output_directory]` after a `demux_species` run to create a heatmap of species-specific k-mer counts in cells next to the species assignments those cells received, as well as bar plots of the number of cells assigned each identity, both in the full set and the filtered set of cell barcodes.
+<p>
+<img src="../img/species.png" width=600 alt="demux_species plot" />
+</p>
+
+Run `plot/species.R [output_directory]` after a `demux_species` run to create a summary plot.
+
+The left panel contains a heatmap of species-specific k-mer counts in cells, clustered by cell-cell similarity and with the inferred identity of each cell shown as color bars on the left side. If the color bars do not line up well with groups of cells, something may have gone wrong with assigning cells. The right panel shows the proportion of cells assigned each identity, both in the full set and the filtered set of cell barcodes. The unfiltered/left bar plot represents what will go into the separated FASTQ files (filtering will be done later, during QC after alignment). The filtered/right bar plot is likely a better reflection of the true proportions of species in the pool.
 
 [Back to main README](../README.md)

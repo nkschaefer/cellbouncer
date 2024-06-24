@@ -1,5 +1,5 @@
 <p>
-<img src="img/logo.png", width=300, alt="CellBouncer" />
+<img src="img/logo.png", width=350, alt="CellBouncer" />
 </p>
 
 Tools for demultiplexing and keeping the riffraff out of pooled single cell sequencing data sets. 
@@ -30,6 +30,19 @@ make
 ```
 You've now got all the programs compiled, and you can run them as long as you remember to `conda activate cellbouncer` first.
 
+## Notes
+
+`CellBouncer` depends on several other repositories included as git submodules. If you forget the `--recurse-submodules` option in your `git pull` command above, you can get all the submodules with
+```
+git submodule update --init --recursive
+```
+If you later need to update a local `CellBouncer` to the latest version, you can do so like this:
+```
+git pull --recurse-submodules
+git submodule update --remote
+make clean
+make
+```
 # Overview
 The programs in `cellbouncer` are standalone command line tools. If you run one of them with no arguments or with `-h`, it will give you detailed information about how to run it. Each program uses the concept of an `--output_prefix/-o`, which is a base name that will be used for all output files.
 
