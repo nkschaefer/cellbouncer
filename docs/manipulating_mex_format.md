@@ -1,4 +1,4 @@
-# MEX format, converting to it, and manipulating it
+# Working with MEX-format input files
 
 The program [`demux_tags`](demux_tags.md) can load tag or sgRNA counts per cell computed by an outside program. These data must be in [market exchange format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices), however. 
 
