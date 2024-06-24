@@ -68,6 +68,8 @@ If users prefer to have another program, such as [10X Genomics CellRanger](https
 * Genes or features file (file name should include `features.txt/tsv` or `genes.txt/tsv` and can end with/without `.gz`)
 * Matrix file (file name should include `.mtx` and can end with/without `.gz`)
 
+If you do not have MEX-format output but instead have an `.h5` file, you can try using the program [`utils/h5tomex.py`](mex_format.md) to convert your data to MEX format before running `demux_tags`.
+
 If a user wishes to use `demux_tags` to assign identities from counts produced by another such program, `demux_tags` provides three input options to load these files (described above):
 ```
 --cell_barcodes -B Cell barcodes, optionally gzipped
@@ -109,5 +111,16 @@ A few arguments affect how `demux_tags` will run after counts are computed or lo
 * If you set the `--sgRNA` argument, another file is created called `[output_prefix].table`. This file can become very large, but its purpose is to be helpful in high-MOI CRISPR screens, where every cell can receive multiple guides. This file is a table where the first column is the cell barcode, and all other columns are sgRNAs (named in the first line of the file). Every row below the header row is then a cell barcode, followed by `0` (for not assigned) or `1` (for assigned) in every column, signifying whether or not the cell received that guide RNA.
 * The `[output_prefix].bg` file contains maximum likelihood estimates of the percent of tag counts consisting of ambient/background tag counts for every cell. This includes cells that were filtered out of the data set and do not appear in `[output_prefix].assignments`.
   * It may be useful to filter using this file in cases (such as sgRNA capture data) where one wishes to be conservative in assigning cells to identities. This can be used together with the log likelihood ratio of assignment (the fourth column in the `.assignments` file).
+* The `[output_prefix].counts` file contains the counts of each tag (or sgRNA) per cell barcode, which were used to create the assignments. Each cell is a row and each column is a tag/identity.
+* The `[output_prefix].dists` file lists information about the initial two-way mixture model fit to each label separately. These distributions are used to make initial assignments before inferring the ambient tag profile. If these two distributions are too close together, labels can be removed from analysis altogether. Each mixture model is made of two components, with the lower-count component being a negative binomial distribution and the higher-count component being an exponential distribution.
+
+The columns of this file are:
+  * Label/tag name
+  * Weight of lower/background component of tag counts
+  * Lower, Negative binomial distribution mu parameter (mean count)
+  * Lower, Negative binomial distribution phi parameter (dispersion)
+  * Higher, exponential distribution lambda parameter (1/mean count)
+    
+* The `[output_prefix].wells` file is created only if you counted tags in reads and provided both a sequence to intermediate ID mapping (i.e. MULTIseq barcode to MULTIseq well) along with an intermediate to final ID mapping (i.e. MULTIseq well to human-readable identity). This file lists each intermediate ID (i.e. sample well) sorted by decreasing number of times its barcode was found in reads, and with the label given for each well as the last column. This file allows you to inspect whether any unexpected barcodes (i.e. those tied to wells you thought went unused in this experiment) occurred more times than those you intended to use. If all is well, all labeled wells should be at the top of the list. If all is not well, you should have received a warning message about it when you ran `demux_tags`.
 
 [Back to main README](../README.md)
