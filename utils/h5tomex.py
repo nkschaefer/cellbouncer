@@ -50,7 +50,7 @@ def main(args):
 
     print("Writing features...", file=sys.stderr)
     f = gzip.open('{}/features.tsv.gz'.format(options.out), 'wt')
-    if options.tenX:
+    if not options.scanpy:
         adata.var.to_csv(f, header=False, sep='\t')
     else:
         for gene in adata.var.index:
