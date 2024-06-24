@@ -22,4 +22,5 @@ dependencies:
   - freebayes
   - bedtools
   - pandas
+  - scanpy
   - anndata
