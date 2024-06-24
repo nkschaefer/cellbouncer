@@ -17,15 +17,32 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 # Installation
 The non-plotting programs in `cellbouncer` require only [HTSLib](https://github.com/samtools/htslib) and [zlib](https://www.zlib.net/). You can install these dependencies yourself, or to make it easier, get these and plotting-related dependencies by creating a [conda](https://github.com/conda-forge/miniforge/releases) environment from one of the included `cellbouncer.yml` files. If you have [mamba](https://anaconda.org/conda-forge/mamba) installed, we recommend using `mamba` in place of `conda` in the `env create` command below, because it will be faster.
 
-The file `cellbouncer_minimum.yml` contains all dependencies you need to run `cellbouncer` programs and make plots. The file `cellbouncer_extra.yml` also includes other programs useful for processing/analyzing data outside of `cellbouncer` that are mentioned in these help pages. The file `cellbouncer_extra_osx.yml` is a version of `cellbouncer_extra.yml` that omits the program [`FastK`](https://github.com/thegenemyers/FASTK), which is not available through `conda` for Mac OSX. If you want to use that program on a Mac, you will need to install it through other means.
+The file `cellbouncer_minimum.yml` contains all dependencies you need to run `cellbouncer` programs and make plots. The file `cellbouncer_extra.yml` also includes other programs useful for processing/analyzing data outside of `cellbouncer` that are mentioned in these help pages. 
 
-To install, first, clone this github repository and its submodules. Then, choose which of the two environment files to use and create a `conda` environment. Then all that's left to do is `make`:
+**Note for Mac users**: The file `cellbouncer_extra_osx.yml` is a version of `cellbouncer_extra.yml` that omits the program [`FastK`](https://github.com/thegenemyers/FASTK), which is not available through `conda` for Mac OSX. If you want to use that program on a Mac, you will need to install it through other means. Additionally, M1 Macs can run programs compiled for both x86_64 and arm64 architectures (and conda doesn't care which by default), but attempting to link against programs compiled for one architecture while compiling for the other will cause problems. Therefore, you need to set a special variable before creating the conda environment if using an M1 Mac (see below).
 
+To install, first, choose which of the environment files to use and create a `conda` environment. Next, clone this github repository and all its submodules. Then all that's left to do is `make`:
+
+### Create conda environment
+#### Linux
+```
+[conda/mamba] env create --file=[cellranger_minimum/cellranger_extra].yml
+conda activate cellbouncer
+```
+#### Mac OS X (M1)
+```
+CONDA_SUBDIR=osx-arm64 [conda/mamba] env create --file=[cellranger_minimum/cellranger_extra_osx].yml
+conda activate cellbouncer
+```
+#### Mac OS X (Intel)
+```
+[conda/mamba] env create --file=[cellranger_minimum/cellranger_extra_osx].yml
+conda activate cellbouncer
+```
+### Clone and compile
 ```
 git clone --recurse-submodules git@github.com:nkschaefer/cellbouncer.git
 cd cellbouncer
-[conda/mamba] env create --file=[environment].yml
-conda activate cellbouncer
 make
 ```
 You've now got all the programs compiled, and you can run them as long as you remember to `conda activate cellbouncer` first.
