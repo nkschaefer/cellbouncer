@@ -525,7 +525,8 @@ bool assign_cell(vector<double>& bgprops,
     bool add_bg,
     set<int>& result,
     double& llr,
-    double& bgcount){
+    double& bgcount,
+    bool sgrna){
     
     // Get expected percent background counts from overall count
     double tot = obsrow[obsrow.size()-1];
@@ -555,8 +556,12 @@ bool assign_cell(vector<double>& bgprops,
     vector<double> llsize;
     
     double tot_fg = 0.0;
-
-    for (int i = 0; i < dim_enrich_sort.size(); ++i){
+    
+    long int maxn = dim_enrich_sort.size();
+    if (!sgrna){
+        maxn = 2;
+    }
+    for (int i = 0; i < maxn; ++i){
         int j = dim_enrich_sort[i].second;
         if (sizes[j] <= 0){
             continue;
@@ -774,7 +779,8 @@ pair<double, double> assign_init(vector<vector<double> >& obs,
     vector<double>& lomeans,
     vector<double>& lophis,
     vector<double>& himeans,
-    vector<double>& model_means){
+    vector<double>& model_means,
+    bool sgrna){
 
     // What does the probability of high-count need to be 
     // for a cell to be assigned that label in the first round?
@@ -875,7 +881,8 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     robin_hood::unordered_map<unsigned long, double>& cell_bg,
     vector<string>& labels,
     bool filt,
-    string& output_prefix){
+    string& output_prefix, 
+    bool sgrna){
     
     // For initial fitting: let counts for each label be a vector 
     vector<vector<double> > obscol;
@@ -929,7 +936,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     // Now make preliminary assignments and learn background dists
     vector<double> bgmeans;
     pair<double, double> slope_int = assign_init(obs, labels, bgmeans,   
-        lomeans, lophis, himeans, model_means);
+        lomeans, lophis, himeans, model_means, sgrna);
     // Make second-round assignments and store the maximum likelihood-inferred
     // background counts    
     vector<double> bgcount_all; 
@@ -940,7 +947,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
         double llr;
         double bgcount; 
         assign_cell(bgmeans, model_means, -1, -1, obs[i],   
-            labels.size(), slope_int, true, assns, llr, bgcount);
+            labels.size(), slope_int, true, assns, llr, bgcount, sgrna);
         if (bgcount != -1){
             bgcount_all.push_back(round(bgcount) + 1);    
             cell_bg.emplace(bcs[i], bgcount / obs[i][obs[i].size()-1]);
@@ -1006,7 +1013,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
         double llr; 
         double bgcount;
         bool assigned = assign_cell(bgmeans, model_means, muvarbg.first, 
-            muvarbg.second, obs[i], labels.size(), slope_int, true, assns, llr, bgcount);
+            muvarbg.second, obs[i], labels.size(), slope_int, true, assns, llr, bgcount, sgrna);
         
         if (assigned && filt){
             vector<double> row{ bgcount };
@@ -1666,7 +1673,7 @@ next time)...\n");
     robin_hood::unordered_map<unsigned long, set<int> > assn;
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     robin_hood::unordered_map<unsigned long, double> cell_bg; 
-    assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, filt, output_prefix);
+    assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, filt, output_prefix, sgrna);
     string assnfilename = output_prefix + ".assignments";
     write_assignments(assnfilename, assn, labels, assn_llr, sep, batch_id, 
         cellranger, seurat, underscore, sgrna);
