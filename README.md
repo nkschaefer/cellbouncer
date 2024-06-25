@@ -31,17 +31,17 @@ cd cellbouncer
 ### Create conda environment
 #### Linux
 ```
-[conda/mamba] env create --file=[cellranger_minimum/cellranger_extra].yml
+[conda/mamba] env create --file=[cellbouncer_minimum/cellbouncer_extra].yml
 conda activate cellbouncer
 ```
 #### Mac OS X (M1)
 ```
-CONDA_SUBDIR=osx-arm64 [conda/mamba] env create --file=[cellranger_minimum/cellranger_extra_osx].yml
+CONDA_SUBDIR=osx-arm64 [conda/mamba] env create --file=[cellbouncer_minimum/cellbouncer_extra_osx].yml
 conda activate cellbouncer
 ```
 #### Mac OS X (Intel)
 ```
-[conda/mamba] env create --file=[cellranger_minimum/cellranger_extra_osx].yml
+[conda/mamba] env create --file=[cellbouncer_minimum/cellbouncer_extra_osx].yml
 conda activate cellbouncer
 ```
 ### Compile
