@@ -50,7 +50,7 @@ make
 ```
 You've now got all the programs compiled, and you can run them as long as you remember to `conda activate cellbouncer` first.
 
-## Notes
+## Note about git submodules
 
 `CellBouncer` depends on several other repositories included as git submodules. If you forget the `--recurse-submodules` option in your `git pull` command above, you can get all the submodules with
 ```
