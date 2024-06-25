@@ -54,6 +54,8 @@ make
 ```
 You've now got all the programs compiled, and you can run them as long as you remember to `conda activate cellbouncer` first.
 
+# Test data set
+You can get a test data set from [this link](https://ucsf.box.com/s/wvrzl1tvdrozojlj0z4sp5fhmvqe05mu). It contains an example `.bam` file, `vcf` file, and cell hashing `.counts` file. The `README` in the linked directory will explain everything, but these give you the opportunity to test-run `demux_mt`, `demux_tags`, `demux_vcf`, `quant_contam`, and `doublet_dragon`.
 
 # Overview
 The programs in `cellbouncer` are standalone command line tools. If you run one of them with no arguments or with `-h`, it will give you detailed information about how to run it. Each program uses the concept of an `--output_prefix/-o`, which is a base name that will be used for all output files.
