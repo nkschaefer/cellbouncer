@@ -24,9 +24,11 @@ This program attempts to identify the individual of origin of each cell in a poo
 ## Running the program
 To run `demux_mt` with most default settings:
 ```
-demux_mt -b [input_file.bam] -o [output_prefix] (-m [chrM_seqname])
+demux_mt -b [input_file.bam] -o [output_prefix] (-c) (-m [chrM_seqname])
 ```
-Where the `-m` argument (the name of the mitochondrial sequence in the reference genome) is required only if it is not `chrM`.
+**Optional arguments**
+* `-c` disables filtering candidate mitochondrial variants by coverage. This may help recover more mitochondrial haplotypes, especially if the data are noisy and/or you are working with scRNA-seq (as opposed to scATAC-seq) data.
+* `-m` (the name of the mitochondrial sequence in the reference genome) is required only if it is not `chrM`.
 
 This will create the following output files:
 * `[output_prefix].vars` lists variable sites on the mitochondrial genome that compose the mitochondrial haplotypes
