@@ -15,7 +15,7 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |Infer global **doublet rate**|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
 
 # Installation
-To install (see below):
+To install ([see below](#get-the-repository)):
 
 * Clone the repository (and its submodules)
 * Choose a `conda` environment file to install
