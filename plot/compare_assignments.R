@@ -146,8 +146,9 @@ plt <- ggplot(tab) +
 ggsave(plt, file=paste(outname, '.pdf', sep=''), width=8, height=7)
 ggsave(plt, file=paste(outname, '.png', sep=''), width=8, height=7, units='in')
 
-tot_match <- sum(tab[which(tab$assn1 == tab$assn2),]$Freq)
+tot_match <- sum(tab[which(as.character(tab$assn1) == as.character(tab$assn2)),]$Freq)
 tot_all <- sum(tab$Freq)
-
-write(paste("Overall agreement = ", tot_match/tot_all, sep=""), stderr())
-
+# Only print matching if some labels agree
+if (tot_match > 0){
+    write(paste("Overall agreement = ", tot_match/tot_all, sep=""), stderr())
+}
