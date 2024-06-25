@@ -1,6 +1,5 @@
 #! /usr/bin/env Rscript
-library(ggplot2)
-library(viridis)
+
 args <- commandArgs(trailingOnly=TRUE)
 
 if (length(args) < 3){
@@ -19,6 +18,15 @@ if (length(args) < 3){
     q()
 }
 
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(viridis))
+
+if (nchar(args[1]) < 12 | substr(args[1], nchar(args[1])-12, 12) != ".assignments"){
+    args[1] <- paste(args[1], '.assignments', sep='')
+}
+if (nchar(args[2]) < 12 | substr(args[2], nchar(args[2])-12, 12) != ".assignments"){
+    args[2] <- paste(args[2], '.assignments', sep='')
+}
 assn1 <- read.table(args[1])
 assn2 <- read.table(args[2])
 outname <- args[3]
@@ -34,32 +42,37 @@ colnames(assn1) <- c("bc", "assn1", "type1")
 colnames(assn2) <- c("bc", "assn2", "type2")
 
 merged <- merge(assn1, assn2)
-
 tab <- as.data.frame(table(merged[,c(2,4)]))
+tabS <- as.data.frame(table(merged[which(merged$type1=="S" & merged$type2=="S"),c(2,4)]))
 tot1 <- as.data.frame(table(merged[,c(2), drop=FALSE]))
 tot2 <- as.data.frame(table(merged[,c(4),drop=FALSE]))
 colnames(tot1)[2] <- "tot1"
 colnames(tot2)[2] <- "tot2"
+
 tab <- merge(tab, tot1)
 tab <- merge(tab, tot2)
 tab$jaccard <- tab$Freq / (tab$tot1 + tab$tot2 - tab$Freq)
 
+tabS <- merge(tabS, tot1)
+tabS <- merge(tabS, tot2)
+tabS$jaccard <- tabS$Freq / (tabS$tot1 + tabS$tot2 - tabS$Freq)
+
 # Attempt to get these in the same order
 # Order both by decreasing counts of singlets
-tot1S <- as.data.frame(table(merged[which(merged$type1=="S"),c(2),drop=FALSE]))
-tot2S <- as.data.frame(table(merged[which(merged$type2=="S"),c(4),drop=FALSE]))
+#tot1S <- as.data.frame(table(merged[which(merged$type1=="S"),c(2),drop=FALSE]))
+#tot2S <- as.data.frame(table(merged[which(merged$type2=="S"),c(4),drop=FALSE]))
 
-nS1 <- length(rownames(tot1S))
-nS2 <- length(rownames(tot2S))
+#nS1 <- length(rownames(tot1S))
+#nS2 <- length(rownames(tot2S))
 
-tot1S <- tot1S[order(tot1S$Freq, decreasing=T),]
-tot2S <- tot2S[order(tot2S$Freq, decreasing=T),]
+#tot1S <- tot1S[order(tot1S$Freq, decreasing=T),]
+#tot2S <- tot2S[order(tot2S$Freq, decreasing=T),]
 
-tot1S$rank <- seq(1, length(rownames(tot1S)))
-tot2S$rank <- seq(1, length(rownames(tot2S)))
+#tot1S$rank <- seq(1, length(rownames(tot1S)))
+#tot2S$rank <- seq(1, length(rownames(tot2S)))
 
-tot1S <- tot1S[,c(1,3)]
-tot2S <- tot2S[,c(1,3)]
+#tot1S <- tot1S[,c(1,3)]
+#tot2S <- tot2S[,c(1,3)]
 
 assn1U <- unique(assn1[,c(2,3)])
 assn2U <- unique(assn2[,c(2,3)])
@@ -69,15 +82,29 @@ assn1U$name2 <- apply(assn1U, 1, function(x){ strsplit(x[1], "+", fixed=T)[[1]][
 assn2U$name1 <- apply(assn2U, 1, function(x){ strsplit(x[1], "+", fixed=T)[[1]][1] })
 assn2U$name2 <- apply(assn2U, 1, function(x){ strsplit(x[1], "+", fixed=T)[[1]][2] })
 
-colnames(tot1S) <- c("name1", "rank1")
-assn1U <- merge(assn1U, tot1S)
-colnames(tot1S) <- c("name2", "rank2")
-assn1U <- merge(assn1U, tot1S, all.x=TRUE)
+tabS <- tabS[order(tabS$jaccard, decreasing=T),]
+tabS1 <- data.frame("name1"=unique(tabS$assn1))
+tabS1$rank1 <- seq(1, length(rownames(tabS1)))
+tabS2 <- data.frame("name1"=unique(tabS$assn2))
+tabS2$rank1 <- seq(1, length(rownames(tabS2)))
 
-colnames(tot2S) <- c("name1", "rank1")
-assn2U <- merge(assn2U, tot2S)
-colnames(tot2S) <- c("name2", "rank2")
-assn2U <- merge(assn2U, tot2S, all.x=TRUE)
+#colnames(tot1S) <- c("name1", "rank1")
+#assn1U <- merge(assn1U, tot1S)
+#colnames(tot1S) <- c("name2", "rank2")
+#assn1U <- merge(assn1U, tot1S, all.x=TRUE)
+
+assn1U <- merge(assn1U, tabS1)
+colnames(tabS1) <- c("name2", "rank2")
+assn1U <- merge(assn1U, tabS1, all.x=TRUE)
+
+#colnames(tot2S) <- c("name1", "rank1")
+#assn2U <- merge(assn2U, tot2S)
+#colnames(tot2S) <- c("name2", "rank2")
+#assn2U <- merge(assn2U, tot2S, all.x=TRUE)
+
+assn2U <- merge(assn2U, tabS2)
+colnames(tabS2) <- c("name2", "rank2")
+assn2U <- merge(assn2U, tabS2, all.x=TRUE)
 
 assn1U[which(is.na(assn1U$rank2)),]$rank2 <- 0
 assn2U[which(is.na(assn2U$rank2)),]$rank2 <- 0
@@ -118,4 +145,9 @@ plt <- ggplot(tab) +
 
 ggsave(plt, file=paste(outname, '.pdf', sep=''), width=8, height=7)
 ggsave(plt, file=paste(outname, '.png', sep=''), width=8, height=7, units='in')
+
+tot_match <- sum(tab[which(tab$assn1 == tab$assn2),]$Freq)
+tot_all <- sum(tab$Freq)
+
+write(paste("Overall agreement = ", tot_match/tot_all, sep=""), stderr())
 
