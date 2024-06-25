@@ -15,13 +15,17 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |Infer global **doublet rate**|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
 
 # Installation
-The non-plotting programs in `cellbouncer` require only [HTSLib](https://github.com/samtools/htslib) and [zlib](https://www.zlib.net/). You can install these dependencies yourself, or to make it easier, get these and plotting-related dependencies by creating a [conda](https://github.com/conda-forge/miniforge/releases) environment from one of the included `cellbouncer.yml` files. If you have [mamba](https://anaconda.org/conda-forge/mamba) installed, we recommend using `mamba` in place of `conda` in the `env create` command below, because it will be faster.
+To install (see below):
 
-The file `cellbouncer_minimum.yml` contains all dependencies you need to run `cellbouncer` programs and make plots. The file `cellbouncer_extra.yml` also includes other programs useful for processing/analyzing data outside of `cellbouncer` that are mentioned in these help pages. 
+* Clone the repository (and its submodules)
+* Choose a `conda` environment file to install
+  * All necessary dependencies: `cellbouncer_minimum.yml`
+  * All necessary dependencies plus extra helper programs mentioned in documentation:
+    * Mac OS X: `cellbouncer_extra_osx.yml`
+    * Linux: `cellbouncer_extra.yml`
+* Run `make`
 
-**Note for Mac users**: The file `cellbouncer_extra_osx.yml` is a version of `cellbouncer_extra.yml` that omits the program [`FastK`](https://github.com/thegenemyers/FASTK), which is not available through `conda` for Mac OSX. If you want to use that program on a Mac, you will need to install it through other means. Additionally, M1 Macs can run programs compiled for both x86_64 and arm64 architectures (and conda doesn't care which by default), but attempting to link against programs compiled for one architecture while compiling for the other will cause problems. Therefore, you need to set a special variable before creating the conda environment if using an M1 Mac (see below).
-
-To install, first clone the repository (and its submodules). Nest, choose which of the environment files to use and create a `conda` environment. Then all that's left to do is `make`:
+For more information about installing or updating CellBouncer, see [here](docs/installation_notes.md).
 
 ### Get the repository
 ```
@@ -50,19 +54,7 @@ make
 ```
 You've now got all the programs compiled, and you can run them as long as you remember to `conda activate cellbouncer` first.
 
-## Note about git submodules
 
-`CellBouncer` depends on several other repositories included as git submodules. If you forget the `--recurse-submodules` option in your `git pull` command above, you can get all the submodules with
-```
-git submodule update --init --recursive
-```
-If you later need to update a local `CellBouncer` to the latest version, you can do so like this:
-```
-git pull --recurse-submodules
-git submodule update --remote
-make clean
-make
-```
 # Overview
 The programs in `cellbouncer` are standalone command line tools. If you run one of them with no arguments or with `-h`, it will give you detailed information about how to run it. Each program uses the concept of an `--output_prefix/-o`, which is a base name that will be used for all output files.
 
