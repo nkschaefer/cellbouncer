@@ -309,6 +309,7 @@ int main(int argc, char *argv[]) {
             
             int p_idx_this;
             if (name2idx.count(cs->first) > 0){
+
                 // If name matches an already-existing name, treat them as the
                 // same variable.
                 p_idx_this = name2idx[cs->first];
@@ -320,6 +321,11 @@ int main(int argc, char *argv[]) {
                 params_div[p_idx_this]++;
                 params[p_idx_this] += ((double)cs->second / (double)tot_singlet);
                 
+                if (grp_idx_this != -1 && idx2group[p_idx_this] != grp_idx_this){
+                    fprintf(stderr, "ERROR: individual name %s appears in multiple, non-matching sets \
+of individuals.\n", cs->first.c_str());
+                    exit(1);
+                } 
                 grp_idx_this = idx2group[p_idx_this];
             }
             else{
@@ -334,9 +340,15 @@ int main(int argc, char *argv[]) {
                     set<string> s;
                     groups.push_back(s);
                     groups[groups.size()-1].insert(cs->first);
+                    if (idx2group.count(p_idx_this) == 0){
+                        idx2group.insert(make_pair(p_idx_this, grp_idx_this));
+                    }
                 }
                 else{
                     groups[grp_idx_this].insert(cs->first);
+                    if (idx2group.count(p_idx_this) == 0){
+                        idx2group.insert(make_pair(p_idx_this, grp_idx_this));
+                    }
                 }
             }
                     
@@ -369,7 +381,7 @@ int main(int argc, char *argv[]) {
             p_idx2.push_back(name2idx[id2]);
             weights.push_back(weights_this[cd->first]);
         }
-        file2grp.insert(make_pair(argv[i], grp_idx_this));
+        file2grp.insert(make_pair(fn, grp_idx_this));
     }
 
     // Use means of initial guesses for each singlet proportion that was 
@@ -450,7 +462,9 @@ int main(int argc, char *argv[]) {
     fprintf(out_all, "all\tdoublet_rate\t%f\n", doublet_rate);
     fprintf(stderr, "Multinomial log likelihoods:\n");
     //fprintf(stdout, "data_set\ttype\tindv\tcount\texpected\n");    
+    
     for (map<string, int>::iterator ft = file_tot.begin(); ft != file_tot.end(); ++ft){
+
         string fntrunc = ft->first.substr(0, ft->first.length()-12);
         double tot = ft->second;
         vector<double> x_all;

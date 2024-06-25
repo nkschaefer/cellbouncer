@@ -78,7 +78,7 @@ indv$indv <- factor(indv$indv, labels=names, levels=names)
 maxdiff <- max(abs(indv$obs-indv$exp))
 
 indv_bars <- ggplot(indv) + 
-    geom_bar(aes(x=indv, y=obs-exp, fill=dataset), 
+    geom_bar(aes(x=indv, y=(obs-exp), fill=dataset), 
         stat='identity', show.legend=FALSE) + 
     coord_flip() + 
     theme_bw() + 
