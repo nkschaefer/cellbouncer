@@ -36,8 +36,10 @@ if (length(args) > 1 & (args[2] == 'D' | args[2] == 'd')){
     names <- unique(c(assn$V2, names))
     names <- names[order(names)]
 } else{
-    names <- c(unique(assn[which(assn$V3=="S"),]$V2, "Doublet"))
-    assn[which(assn$V3=="D"),]$V2 <- "Doublet"
+    if (length(rownames(assn[which(assn$V3=="D"),])) > 0){
+        names <- c(unique(assn[which(assn$V3=="S"),]$V2, "Doublet"))
+        assn[which(assn$V3=="D"),]$V2 <- "Doublet"
+    }
 }
 
 colnames(cr) <- c("bc", "cr", "cr.se")
@@ -142,15 +144,29 @@ cpfile <- paste(basename, '.contam_prof', sep='')
 if (file.exists(cpfile)){
     has_cp_file <- 1
     cp <- read.table(cpfile)
-    cp_plt <- ggplot(cp) + 
-        geom_bar(aes(x=0, y=V2, fill=V1), show.legend=TRUE, stat='identity') +
+    
+    assn_agg <- as.data.frame(table(assn$id))
+    assn_agg$Freq <- assn_agg$Freq / sum(assn_agg$Freq)
+    
+    colnames(assn_agg) <- c("var", "val")
+    assn_agg$type <- "cells"
+    colnames(cp) <- c("var", "val")
+    cp$type <- "amb.RNA"
+
+    cp_assn <- rbind(cp, assn_agg)
+    
+    cp_assn$type <- factor(cp_assn$type, labels=c("cells", "amb.RNA"), levels=c("cells", "amb.RNA"))
+
+    cp_plt <- ggplot(cp_assn) + 
+        geom_bar(aes(x=type, y=val, fill=var), show.legend=TRUE, stat='identity') +
         scale_fill_manual("", values=name2col) +
         theme_bw() + 
-        scale_y_continuous("Proportion in ambient RNA pool") +
-        theme(axis.text.x=element_blank(), 
+        scale_y_continuous("Proportion") +
+        theme(axis.text.x=element_text(size=8, angle=90, vjust=0.5, hjust=1), 
               axis.ticks.x=element_blank(), 
               axis.title.x=element_blank(),
-              axis.title.y=element_text(size=10),
+              #axis.title.y=element_text(size=10),
+              axis.title.y=element_blank(),
               axis.text.y=element_text(size=9), 
               legend.position='right', 
               legend.direction='vertical',
@@ -161,6 +177,26 @@ if (file.exists(cpfile)){
               panel.background=element_blank(),
               legend.key.size=unit(0.35, 'cm'))
     
+    #assn_plt <- ggplot(assn_agg) + 
+    #    geom_bar(aes(x=0, y=Freq, fill=Var1), show.legend=FALSE, stat='identity') +
+    #    scale_fill_manual("", values=name2col) +
+    #    theme_bw() + 
+    #    scale_y_continuous("Proportion in cell assignments") +
+    #    theme(axis.text.x=element_blank(), 
+    #          axis.ticks.x=element_blank(), 
+    #          axis.title.x=element_blank(),
+    #          axis.title.y=element_text(size=10),
+    #          axis.text.y=element_text(size=9), 
+    #          legend.position='right', 
+    #          legend.direction='vertical',
+    #          legend.text=element_text(size=8),
+    #          panel.border=element_blank(),
+    #          panel.grid.major=element_blank(), 
+    #          panel.grid.minor=element_blank(), 
+    #          panel.background=element_blank(),
+    #          legend.key.size=unit(0.35, 'cm'))
+    
+    #barbox <- plot_grid(assn_plt, cp_plt, ncol=2, rel_widths=c(0.25,0.75))
     row1col1 <- plot_grid(title, mu_sd, cp_plt, ncol=1, 
         rel_heights=c(0.2*0.5, 0.2*0.5, 0.8))
     row1col2 <- plot_grid(dens, byllr, ncol=1, rel_heights=c(0.45, 0.55))
