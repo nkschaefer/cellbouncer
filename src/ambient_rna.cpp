@@ -73,8 +73,6 @@ double adjust_p_err(double p, double e_r, double e_a){
     return p - p*e_a + (1-p)*e_r;
 }
 
-
-
 /**
  * Integrate binomial log likelihood wrt p_c (expected alt allele match rate from contamination)
  */
@@ -790,7 +788,8 @@ void contamFinder::est_contam_cells(){
     
         // Only store estimates if a maximum-likelihood estimate was found in the range
         // (0,1)
-        if (c_cell.root_found){
+        if (true){
+        //if (c_cell.root_found){
             contam_rate.emplace(ci->first, c_cell_map);
             cell_c_maps.push_back(c_cell_map);
             if (weighted){
@@ -1392,7 +1391,9 @@ double contamFinder::fit(){
     fprintf(stderr, "  Alt alleles: %f\n", err_final.second);
 
     if (model_mixprop){
+        fprintf(stderr, "Computing expected allele matching rates...\n");
         this->compute_expected_fracs_all_id();
+        fprintf(stderr, "Modeling ambient RNA as mixture of individuals...\n");
         double mixll = this->model_as_mixture();
     }
 
