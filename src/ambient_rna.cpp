@@ -784,7 +784,7 @@ void contamFinder::est_contam_cells(){
             // on the interval [0,1]
             c_cell.add_normal_prior(contam_cell_prior, contam_cell_prior_se, 0, 1);
         }
-        c_cell.set_maxiter(5000);
+        c_cell.set_maxiter(-1);
         double c_cell_map = c_cell.solve(0,1);
         
         // Set SE to 0 if we did not find a maximum-likelihood estimate in the range (0,1) 
