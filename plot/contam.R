@@ -27,6 +27,8 @@ cr$V1 <- gsub("[^ACGT]+", "", cr$V1)
 
 names <- unique(assn$V2)
 
+assnorig <- assn
+
 if (length(args) > 1 & (args[2] == 'D' | args[2] == 'd')){
     # Include specific doublets.
     names1 <- apply(assn, 1, function(x){ strsplit(x[2], '+', fixed=T)[[1]][1] })
@@ -145,9 +147,23 @@ if (file.exists(cpfile)){
     has_cp_file <- 1
     cp <- read.table(cpfile)
     
-    assn_agg <- as.data.frame(table(assn$id))
+    colnames(assnorig) <- c("bc", "id", "type", "llr") 
+    if (length(rownames(assnorig[which(assnorig$type=="D"),])) > 0){
+        assndoub <- assnorig[which(assnorig$type=="D"),]
+        assndoub$id1 <- apply(assndoub, 1, function(x){ strsplit(x[2], "+", fixed=T)[[1]][1] })
+        assndoub$id2 <- apply(assndoub, 1, function(x){ strsplit(x[2], "+", fixed=T)[[1]][2] })
+        assndoub1 <- assndoub[,c(1,5,3,4)]
+        assndoub2 <- assndoub[,c(1,6,3,4)]
+        colnames(assndoub1) <- c("bc", "id", "type", "llr")
+        colnames(assndoub2) <- c("bc", "id", "type", "llr")
+        # Count singlets twice (relative to doublets)
+        assnorig <- rbind(assnorig[which(assnorig$type=="S"),], 
+            assnorig[which(assnorig$type=="S"),],
+            assndoub1,
+            assndoub2)
+    }
+    assn_agg <- as.data.frame(table(assnorig$id))
     assn_agg$Freq <- assn_agg$Freq / sum(assn_agg$Freq)
-    
     colnames(assn_agg) <- c("var", "val")
     assn_agg$type <- "cells"
     colnames(cp) <- c("var", "val")
