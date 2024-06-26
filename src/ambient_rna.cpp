@@ -784,21 +784,21 @@ void contamFinder::est_contam_cells(){
             // on the interval [0,1]
             c_cell.add_normal_prior(contam_cell_prior, contam_cell_prior_se, 0, 1);
         }
+        c_cell.set_maxiter(5000);
         double c_cell_map = c_cell.solve(0,1);
-    
-        // Only store estimates if a maximum-likelihood estimate was found in the range
-        // (0,1)
-        if (true){
-        //if (c_cell.root_found){
-            contam_rate.emplace(ci->first, c_cell_map);
-            cell_c_maps.push_back(c_cell_map);
-            if (weighted){
-                double weight = assn_llr[ci->first] / id_llrsum[assn[ci->first]];
-                cell_c_llr.push_back(weight);
-            }
-            if (c_cell.se_found){
-                contam_rate_se.emplace(ci->first, c_cell.se);
-            }
+        
+        // Set SE to 0 if we did not find a maximum-likelihood estimate in the range (0,1) 
+        contam_rate.emplace(ci->first, c_cell_map);
+        cell_c_maps.push_back(c_cell_map);
+        if (weighted){
+            double weight = assn_llr[ci->first] / id_llrsum[assn[ci->first]];
+            cell_c_llr.push_back(weight);
+        }
+        if (c_cell.root_found && c_cell.se_found){
+            contam_rate_se.emplace(ci->first, c_cell.se);
+        }
+        else{
+            contam_rate_se.emplace(ci->first, 0.0);
         }
     }
     
@@ -1103,7 +1103,11 @@ void contamFinder::compute_expected_fracs_all_id(){
                 double ref = x->second[nullkey].first;
                 double alt = x->second[nullkey].second;
                 double frac = alt/(ref+alt);
-                    
+                
+                if (ref + alt == 0){
+                    continue;
+                }
+
                 for (int i = 0; i < n_samples; ++i){
                     if (allowed_ids.size() == 0 || allowed_ids.find(i) != allowed_ids.end()){
                         
