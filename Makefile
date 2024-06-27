@@ -6,11 +6,9 @@ FLAGS=-std=c++11 --std=gnu++11 -fPIC -DBC_LENX2=$(BC_LENX2) -DKX2=$(KX2)
 CFLAGS=-Wall
 IFLAGS=-I$(PREFIX)/include -Iinclude
 LFLAGS=-L$(PREFIX)/lib -Llib
-ifneq (${CONDA_PREFIX}, "")
-	ifeq ($(findstring "cellbouncer", ${CONDA_PREFIX}), "cellbouncer")
-		IFLAGS += -I${CONDA_PREFIX}/include
-		LFLAGS += -L${CONDA_PREFIX}/lib
-	endif
+ifeq ($(findstring cellbouncer, ${CONDA_PREFIX}), cellbouncer)
+	IFLAGS += -I${CONDA_PREFIX}/include
+	LFLAGS += -L${CONDA_PREFIX}/lib
 endif
 MAX_SITES ?= 2000
 MAKE=make
