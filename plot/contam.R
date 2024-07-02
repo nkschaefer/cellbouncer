@@ -199,9 +199,14 @@ if (file.exists(cpfile)){
     cp_assn <- rbind(cp, assn_agg)
     
     cp_assn$type <- factor(cp_assn$type, labels=c("cells", "amb"), levels=c("cells", "amb"))
-
+    
+    # Don't show legend if more than 10 individuals
+    sl <- TRUE
+    if (length(rownames(assn_agg)) > 10){
+        sl <- FALSE
+    }
     cp_plt <- ggplot(cp_assn) + 
-        geom_bar(aes(x=type, y=val, fill=var), show.legend=TRUE, stat='identity') +
+        geom_bar(aes(x=type, y=val, fill=var), show.legend=sl, stat='identity') +
         scale_fill_manual("", values=name2col) +
         theme_bw() + 
         scale_y_continuous("Proportion") +
