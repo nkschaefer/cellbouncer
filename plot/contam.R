@@ -134,9 +134,9 @@ mutxt <- format(mu_contam, scientific=TRUE, digits=2)
 sdtxt <- format(sd_contam, scientific=TRUE, digits=2)
 eq <- '='
 mu_sigma_text <- bquote(mu~.(eq)~.(mutxt)~sigma~.(eq)~.(sdtxt))
-pval <- ggdraw() + 
-    draw_label(paste("P(contamination) = ", format(p_contam, scientific=TRUE, digits=2), sep=''), 
-           size=10, lineheight=0.9, hjust=0.6)
+#pval <- ggdraw() + 
+#    draw_label(paste("P(contamination) = ", format(p_contam, scientific=TRUE, digits=2), sep=''), 
+#           size=10, lineheight=0.9, hjust=0.6)
 
 mu_sd <- ggdraw() + 
     draw_label(mu_sigma_text, size=10, lineheight=0.9, hjust=0.6)
@@ -163,18 +163,50 @@ if (file.exists(cpfile)){
             assndoub2)
     }
     assn_agg <- as.data.frame(table(assnorig$id))
+    assn_agg_counts <- assn_agg
     assn_agg$Freq <- assn_agg$Freq / sum(assn_agg$Freq)
     colnames(assn_agg) <- c("var", "val")
     assn_agg$type <- "cells"
     colnames(cp) <- c("var", "val")
-    cp$type <- "amb.RNA"
+    cp$type <- "amb"
+    
+    # Calculate entropy of both
+    H_amb <- -sum(cp[which(cp$var != "other_species"),]$val*log2(cp[which(cp$var != "other_species"),]$val)) 
+    H_cells <- -sum(assn_agg$val*log2(assn_agg$val))
+    H_max <- log2(length(rownames(cp[which(cp$var != "other_species"),])))
+    
+    # Create text for plot 
+    entropy_plt <- ggdraw() + 
+        draw_label(paste("H ratio = ", 
+            format(H_amb / H_cells, scientific=FALSE, digits=3), sep=''), 
+            size=10, lineheight=0.5, hjust=0.6)
+    
+    # Write out some stats about ambient RNA composition
+    assn_agg_counts$not <- sum(assn_agg_counts$Freq) - assn_agg_counts$Freq
+    colnames(assn_agg_counts) <- c("var", "A", "B")
+    beta_merge <- merge(cp[which(cp$var != "other_species"),c(1,2)], assn_agg_counts)
+    beta_merge$p <- pbeta(beta_merge$val, beta_merge$A, beta_merge$B, lower.tail=FALSE, log=TRUE) 
+    beta_merge$logdiff <- log(beta_merge$val) - log(beta_merge$A/(beta_merge$A + beta_merge$B))
+    
+    stats <- data.frame(lib=basename, type=c("all", "all", "all"), var=c("H.amb", "H.cells", "H.ratio"), 
+        val=c(H_amb/H_max, H_cells/H_max, H_amb/H_cells))
+    stats <- rbind(stats, data.frame(lib=basename, type=beta_merge$var, var="logdiff", val=beta_merge$logdiff))
+    stats <- rbind(stats, data.frame(lib=basename, type=beta_merge$var, var="log.p.enriched", val=beta_merge$p))
+
+    write.table(stats, file=paste(basename, '.contam.stats', sep=''), sep='\t', quote=FALSE, row.names=FALSE,
+        col.names=FALSE)
 
     cp_assn <- rbind(cp, assn_agg)
     
-    cp_assn$type <- factor(cp_assn$type, labels=c("cells", "amb.RNA"), levels=c("cells", "amb.RNA"))
-
+    cp_assn$type <- factor(cp_assn$type, labels=c("cells", "amb"), levels=c("cells", "amb"))
+    
+    # Don't show legend if more than 10 individuals
+    sl <- TRUE
+    if (length(rownames(assn_agg)) > 10){
+        sl <- FALSE
+    }
     cp_plt <- ggplot(cp_assn) + 
-        geom_bar(aes(x=type, y=val, fill=var), show.legend=TRUE, stat='identity') +
+        geom_bar(aes(x=type, y=val, fill=var), show.legend=sl, stat='identity') +
         scale_fill_manual("", values=name2col) +
         theme_bw() + 
         scale_y_continuous("Proportion") +
@@ -193,28 +225,8 @@ if (file.exists(cpfile)){
               panel.background=element_blank(),
               legend.key.size=unit(0.35, 'cm'))
     
-    #assn_plt <- ggplot(assn_agg) + 
-    #    geom_bar(aes(x=0, y=Freq, fill=Var1), show.legend=FALSE, stat='identity') +
-    #    scale_fill_manual("", values=name2col) +
-    #    theme_bw() + 
-    #    scale_y_continuous("Proportion in cell assignments") +
-    #    theme(axis.text.x=element_blank(), 
-    #          axis.ticks.x=element_blank(), 
-    #          axis.title.x=element_blank(),
-    #          axis.title.y=element_text(size=10),
-    #          axis.text.y=element_text(size=9), 
-    #          legend.position='right', 
-    #          legend.direction='vertical',
-    #          legend.text=element_text(size=8),
-    #          panel.border=element_blank(),
-    #          panel.grid.major=element_blank(), 
-    #          panel.grid.minor=element_blank(), 
-    #          panel.background=element_blank(),
-    #          legend.key.size=unit(0.35, 'cm'))
-    
-    #barbox <- plot_grid(assn_plt, cp_plt, ncol=2, rel_widths=c(0.25,0.75))
-    row1col1 <- plot_grid(title, mu_sd, cp_plt, ncol=1, 
-        rel_heights=c(0.2*0.5, 0.2*0.5, 0.8))
+    row1col1 <- plot_grid(title, mu_sd, entropy_plt, cp_plt, ncol=1, 
+        rel_heights=c(0.2*(1/3), 0.2*(1/3), 0.2*(1/3), 0.8))
     row1col2 <- plot_grid(dens, byllr, ncol=1, rel_heights=c(0.45, 0.55))
     row1 <- plot_grid(row1col1, row1col2, ncol=2, rel_widths=c(0.4, 0.6))
     row2 <- plot_grid(bars, boxes, ncol=2, rel_widths=c(0.33,0.66)) 
