@@ -111,6 +111,9 @@ lib/liboptimml.a:
 
 clean: clean_deps
 	rm -f build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o build/ambient_rna.o build/species_kmers.o build/reads_demux.o build/demux_species_io.o build/kmsuftree.o build/libfastk.o build/gene_core.o
+	rm lib/libmixturedist.a
+	rm lib/liboptimml.a
+	rm lib/libhtswrapper.a
 	rm -f utils/atac_fq_preprocess
 	rm -f utils/split_read_files
 	rm -f utils/combine_species_counts
