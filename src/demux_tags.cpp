@@ -894,6 +894,18 @@ double diff_negbin_exp(double x, const map<string, double>& data_d, const map<st
     return ll1-ll2;
 }
 
+double ll_beta_diff(double x, const map<string, double>& data_d, const map<string, int>& data_i){
+    
+    double a1 = data_d.at("a1");
+    double b1 = data_d.at("b1");
+    double a2 = data_d.at("a2");
+    double b2 = data_d.at("b2");
+
+    double ll1 = dbeta(x, a1, b1);
+    double ll2 = dbeta(x, a2, b2);
+    return ll1-ll2;
+}
+
 /**
  * Main function for assigning cell identities from data.
  */
@@ -963,7 +975,9 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     // Make second-round assignments and store the maximum likelihood-inferred
     // background counts    
     vector<double> bgcount_all; 
-    
+    vector<vector<double> > bgperc_all;
+    vector<double> bgperc_all_flat;
+
     fprintf(stderr, "Making second round of assignments to infer ambient counts per cell...\n");
     for (int i = 0; i < obs.size(); ++i){
         set<int> assns;
@@ -972,8 +986,11 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
         assign_cell(bgmeans, model_means, -1, -1, obs[i],   
             labels.size(), slope_int, true, assns, llr, bgcount, false, sgrna);
         if (bgcount != -1){
-            bgcount_all.push_back(round(bgcount) + 1);    
-            cell_bg.emplace(bcs[i], bgcount / obs[i][obs[i].size()-1]);
+            bgcount_all.push_back(bgcount);    
+            if (bgcount > 0 && bgcount < tots[i]){
+                bgperc_all.push_back(vector<double>{ bgcount / tots[i] }); 
+                bgperc_all_flat.push_back(bgcount/tots[i]);
+            }
         }
     }
     
@@ -981,11 +998,47 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     // of background counts per cell 
     pair<double, double> muvarbg = welford(bgcount_all);
     
+   
     mixtureModel bgmod;
-    
-    if (!bimod_test(bgcount_all)){
-        fprintf(stderr, "Disabled filtering step: background count distribution is unimodal\n");
-        filt = false;
+    mixtureModel bgpercmod; 
+    double intptx = -1;
+
+    if (sgrna){
+        
+        // Do not filter the normal way. Filter on percent background counts instead.
+        
+        if (bimod_test(bgperc_all_flat)){
+            filt = false;
+            mixtureDist lo("beta", 1.0, 9.0);
+            mixtureDist hi("beta", 9.0, 1.0);
+            vector<mixtureDist> dists;
+            dists.push_back(lo);
+            dists.push_back(hi);
+            vector<double> w{ 0.5, 0.5};
+            bgpercmod.init(dists, w);
+            bgpercmod.fit(bgperc_all);
+            bgpercmod.print();
+            
+            optimML::brent_solver intpt(ll_beta_diff);
+            intpt.set_root();
+            intpt.add_data_fixed("a1", bgpercmod.dists[0].params[0][0]);
+            intpt.add_data_fixed("b1", bgpercmod.dists[0].params[0][1]);
+            intpt.add_data_fixed("a2", bgpercmod.dists[1].params[0][0]);
+            intpt.add_data_fixed("b2", bgpercmod.dists[1].params[0][1]);
+            double mean1 = bgpercmod.dists[0].params[0][0] / (bgpercmod.dists[0].params[0][0] + bgpercmod.dists[0].params[0][1]);
+            double mean2 = bgpercmod.dists[1].params[0][0] / (bgpercmod.dists[1].params[0][0] + bgpercmod.dists[0].params[0][1]);
+            intptx = intpt.solve(mean1, mean2);
+            fprintf(stderr, "intpt %f\n", intptx);
+        }
+        else{
+            fprintf(stderr, "Disabled filtering on ambient fraction; distribution not bimodal\n");
+        }
+    }    
+    if (filt){ 
+        if (!bimod_test(bgcount_all)){
+            fprintf(stderr, "Disabled filtering step: background count distribution is unimodal\n");
+            filt = false;
+        }
     }
     if (filt){ 
         
@@ -1049,6 +1102,9 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     int count_filt = 0;
     
     fprintf(stderr, "Making final assignments...\n");
+    
+    pair<double, double> muphi = nbinom_moments(muvarbg.first, muvarbg.second);
+    double p_bg_thresh = 0.01;
 
     for (int i = 0; i < obs.size(); ++i){
         set<int> assns;
@@ -1058,6 +1114,30 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
             muvarbg.second, obs[i], labels.size(), slope_int, true, assns, llr, bgcount, 
             false, sgrna);
         
+        double pbg = bgcount / tots[i];
+        cell_bg.emplace(bcs[i], pbg);
+        
+        if (assigned && sgrna){
+            if (intptx > 0 && pbg > intptx){
+                assns.clear();
+                llr = 0.0;
+            }
+            /*
+            if (pbg == 1.0){
+                assns.clear();
+            }
+            else{
+                vector<double> row{ pbg };
+                double ll_lo = bgpercmod.dists[0].loglik(row);
+                double ll_hi = bgpercmod.dists[1].loglik(row);
+                if (ll_hi > ll_lo){
+                    llr = ll_hi - ll_lo;
+                    assns.clear();
+                }
+            }
+            */
+        }
+
         // Because exponential dists can catch low-count stuff too, make sure it's more likely
         // under the high dist AND that its count is high, not very low.
         if (assigned && filt && bgcount > bgmod.dists[0].params[0][0]){
@@ -1082,104 +1162,6 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
                     assigned = false;
                 }
             }
-            /*
-            continue;
-
-            if (ll2 > ll1 && prob_high > 0.9){
-                assigned = false;
-            }
-            continue;
-            if (ll2 > ll1){
-                fprintf(stderr, "LL2 %f LL1 %f prob %f\n", ll2, ll1, prob_high);
-                set<int> assns2;
-                double llr2;
-                double bgcount2;
-                bool assigned2 = assign_cell(bgmeans, model_means, muvarbg.first,
-                    muvarbg.second, obs[i], labels.size(), slope_int, true, assns2, llr2, bgcount2,
-                    true, sgrna);
-                
-                bool match = true;
-                if (assns.size() != assns2.size()){
-                    match = false;
-                }
-                else{
-                    if (assns.size() >= assns2.size()){
-                        for (set<int>::iterator a = assns.begin(); a != assns.end(); ++a){
-                            if (assns2.find(*a) == assns2.end()){
-                                match = false;
-                                break;
-                            }
-                        }
-                    }
-                    else{
-                        for (set<int>::iterator a = assns2.begin(); a != assns2.end(); ++a){
-                            if (assns.find(*a) == assns.end()){
-                                match = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-                string bcstr = bc2str(bcs[i]);
-                
-                set<string> n;
-                for (set<int>::iterator a = assns.begin(); a != assns.end(); ++a){
-                    n.insert(labels[*a]);
-                }
-               
-                string nprint = "";
-                for (set<string>::iterator nx = n.begin(); nx != n.end(); ++nx){
-                    if (nprint != ""){
-                        nprint += "+";
-                    }
-                    nprint += *nx;
-                }
-                fprintf(stdout, "%s\t%s\t%f\t%f\t%f\n", bcstr.c_str(), nprint.c_str(), llr, bgcount, prob_high);
-                continue; 
-
-                if (!match){
-                    
-                    set<string> n2;
-                    for (set<int>::iterator a = assns2.begin(); a != assns2.end(); ++a){
-                        n2.insert(labels[*a]);
-                    }
-                    string nprint2 = "";
-                    
-                   
-                    for (set<string>::iterator nx = n2.begin(); nx != n2.end(); ++nx){
-                        if (nprint2 != ""){
-                            nprint2 += "+";
-                            }
-                       nprint2 += *nx;     
-                    }
-                    fprintf(stdout, "%s\t%s\t%f\t%f\t%s\t%f\t%f\n", bcstr.c_str(), nprint.c_str(),
-                        llr, bgcount, nprint2.c_str(), llr2, bgcount2);
-
-                    assns = assns2;
-                    llr = llr2;
-                    bgcount = bgcount2;
-                }
-                */
-                /*
-                continue;
-                assigned = false;
-                count_filt++;
-                string bcstr = bc2str(bcs[i]);
-                
-                set<string> n;
-                for (set<int>::iterator a = assns.begin(); a != assns.end(); ++a){
-                    n.insert(labels[*a]);
-                }
-                string nprint = "";
-                for (set<string>::iterator nx = n.begin(); nx != n.end(); ++nx){
-                    if (nprint != ""){
-                        nprint += "+";
-                    }
-                    nprint += *nx;
-                }
-                fprintf(stdout, "%s\t%s\t%f\t%f\n", bcstr.c_str(), nprint.c_str(), llr, ll2-ll1);
-                */
-            //}
         }
         if (assigned){
             assn.emplace(bcs[i], assns);
@@ -1198,7 +1180,8 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
 /**
  * Spill cell -> identity assignments to disk (in .assignments file)
  */
-void write_assignments(string filename, 
+void write_assignments(robin_hood::unordered_map<unsigned long, map<int, long int> >& bc_tag_counts,
+    string filename, 
     robin_hood::unordered_map<unsigned long, set<int> >& assn,
     vector<string>& labels,
     robin_hood::unordered_map<unsigned long, double>& assn_llr,
@@ -1210,23 +1193,25 @@ void write_assignments(string filename,
     bool sgrna){
     
     FILE* f_out = fopen(filename.c_str(), "w");
-    for (robin_hood::unordered_map<unsigned long, set<int> >::iterator a = assn.begin(); 
-        a != assn.end(); ++a){
-        if (a->second.size() == 0){
+    
+    for (robin_hood::unordered_map<unsigned long, map<int, long int> >::iterator b = bc_tag_counts.begin();
+        b != bc_tag_counts.end(); ++b){
+        if (!sgrna && (assn.count(b->first) == 0 || assn[b->first].size() == 0)){
             // Filtered/background. Omit.
             continue;
         }
         else{
             char type = 'S';
-            if (a->second.size() == 2){
+            set<int>* a = &assn[b->first];
+            if (a->size() == 2){
                 type = 'D';
             }
-            else if (a->second.size() > 2){
+            else if (a->size() > 2){
                 type = 'M';
             }
             string name = "";
             set<string> names;
-            for (set<int>::iterator i = a->second.begin(); i != a->second.end(); ++i){
+            for (set<int>::iterator i = a->begin(); i != a->end(); ++i){
                 names.insert(labels[*i]);
             }
             bool first = true;
@@ -1237,21 +1222,25 @@ void write_assignments(string filename,
                 name += *n;
                 first = false;
             }
-            string bc_str = bc2str(a->first);
+            if (sgrna && a->size() == 0){
+                name = "WT";
+            }
+            string bc_str = bc2str(b->first);
             mod_bc_libname(bc_str, batch_id, cellranger, seurat, underscore);
             if (sgrna){
-                fprintf(f_out, "%s\t%s\t%ld\t%f\n", bc_str.c_str(), name.c_str(), a->second.size(), 
-                    assn_llr[a->first]);
+                fprintf(f_out, "%s\t%s\t%ld\t%f\n", bc_str.c_str(), name.c_str(), a->size(), 
+                    assn_llr[b->first]);
             }
             else{
-                fprintf(f_out, "%s\t%s\t%c\t%f\n", bc_str.c_str(), name.c_str(), type, assn_llr[a->first]); 
+                fprintf(f_out, "%s\t%s\t%c\t%f\n", bc_str.c_str(), name.c_str(), type, assn_llr[b->first]); 
             }
         }
     }
     fclose(f_out);
 }
 
-void write_assignments_table(string filename,
+void write_assignments_table(robin_hood::unordered_map<unsigned long, map<int, long int> >& bc_tag_counts,
+    string filename,
     robin_hood::unordered_map<unsigned long, set<int> >& assn,
     vector<string>& labels,
     const string& batch_id,
@@ -1275,15 +1264,16 @@ void write_assignments_table(string filename,
     }
     fprintf(f_out, "\n");
 
-    for (robin_hood::unordered_map<unsigned long, set<int> >::iterator a = assn.begin(); 
-        a != assn.end(); ++a){
+    for (robin_hood::unordered_map<unsigned long, map<int, long int> >::iterator b = bc_tag_counts.begin();
+        b != bc_tag_counts.end(); ++b){
         
-        string bcstr = bc2str(a->first);
+        string bcstr = bc2str(b->first);
         mod_bc_libname(bcstr, batch_id, cellranger, seurat, underscore);
         
+        set<int>* a = &assn[b->first];
         fprintf(f_out, "%s", bcstr.c_str());
         for (vector<pair<string, int> >::iterator l = labelsort.begin(); l != labelsort.end(); ++l){
-            if (a->second.find(l->second) != a->second.end()){
+            if (a->find(l->second) != a->end()){
                 fprintf(f_out, "\t1");
             }
             else{
@@ -1834,12 +1824,13 @@ next time)...\n");
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     robin_hood::unordered_map<unsigned long, double> cell_bg; 
     assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, filt, output_prefix, sgrna);
+    
     string assnfilename = output_prefix + ".assignments";
-    write_assignments(assnfilename, assn, labels, assn_llr, sep, batch_id, 
+    write_assignments(bc_tag_counts, assnfilename, assn, labels, assn_llr, sep, batch_id, 
         cellranger, seurat, underscore, sgrna);
     if (sgrna){
         string tablefilename = output_prefix + ".table";
-        write_assignments_table(tablefilename, assn, labels, batch_id, cellranger, seurat,
+        write_assignments_table(bc_tag_counts, tablefilename, assn, labels, batch_id, cellranger, seurat,
             underscore);
     }
     string bgfilename = output_prefix + ".bg";
