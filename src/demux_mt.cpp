@@ -2224,6 +2224,10 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
             }
             
             if (match1 + match2 > 0){
+                string bcstr = bc2str(a->first);
+                fprintf(stdout, "%s\t%s\t%s\t%d\t%d\n", bcstr.c_str(), clust_ids[combo.first].c_str(),
+                    clust_ids[combo.second].c_str(), match1, match2);
+
                 /*        
                 double mean = (double)match1/(double)(match1+match2);
                 double var = (double)(match1*match2)/(pow((double)match1+match2,2)*(double)(match1+match2+1));
@@ -2259,37 +2263,21 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
             }
         }
     }
+
     for (map<int, vector<int> >::iterator im = id_match1.begin(); im != id_match1.end();
         ++im){
-        
+         
         optimML::brent_solver solver(y_mixprop, dy_dp_mixprop, d2y_dp2_mixprop);
         solver.add_data("match1", im->second);
         solver.add_data("match2", id_match2[im->first]);
         solver.constrain_01();
         //solver.add_beta_prior(10000, 10000);
         double p = solver.solve(0,1);
-	pair<int, int> comb = idx_to_hap_comb(im->first, clust_ids.size());
-        fprintf(stdout, "%s\t%s\t%f\t%f\n", clust_ids[comb.first].c_str(), 
-	    clust_ids[comb.second].c_str(), p, solver.se);
+	    pair<int, int> comb = idx_to_hap_comb(im->first, clust_ids.size());
+        //fprintf(stdout, "%s\t%s\t%f\t%f\n", clust_ids[comb.first].c_str(), clust_ids[comb.second].c_str(), p, solver.se);
         id_mixprop_mean.insert(make_pair(im->first, p));
         id_mixprop_sd.insert(make_pair(im->first, solver.se));
         
-        /*
-        int alpha = 0;
-        int beta = 0;
-        for (int i = 0; i < im->second.size(); ++i){
-            alpha += im->second[i];
-            beta += id_match2[im->first][i];
-        }
-        double p;
-        if (alpha <= beta){
-            p = 1.0 - pbeta(0.5, alpha, beta);
-        }
-        else{
-            p = pbeta(0.5, alpha, beta);
-        }
-        */
-        //fprintf(stderr, "%d %d | %f | %f\n", alpha, beta, (double)alpha/(double)(alpha+beta), p);
     }
 }
 
