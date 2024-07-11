@@ -654,6 +654,9 @@ void parse_mex(const string& barcodesfile,
         }
         exit(1);
     }
+    
+    fprintf(stderr, "nfeature %d\n", nfeatures_match);
+    set<int> bciuniq;
 
     bool barcodes_first = false;
     
@@ -718,6 +721,7 @@ void parse_mex(const string& barcodesfile,
                         
                         if (feature_inds.count(feature_idx) > 0){ 
                             // This feature is in the list
+                            bciuniq.insert(bc_idx);
                             unsigned long barcode = barcodes[bc_idx];
                             if (counts.count(barcode) == 0){
                                 map<int, long int> m;
@@ -732,6 +736,7 @@ void parse_mex(const string& barcodesfile,
             ++mexline;
         }
     }
+    fprintf(stderr, "BCUNIQ %ld\n", bciuniq.size());
     if (featuretype == "" && unique_featuretype.size() > 1){
         fprintf(stderr, "ERROR: no feature type filter provided, but %ld feature types\n", 
             unique_featuretype.size());

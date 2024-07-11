@@ -21,7 +21,7 @@ BC_LENX2 = 32
 KX2 = 16
 DEPS = lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
 
-all: dependencies demux_vcf demux_mt demux_tags demux_species quant_contam doublet_dragon utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/split_read_files utils/atac_fq_preprocess
+all: dependencies demux_vcf demux_mt demux_tags demux_species quant_contam doublet_dragon bulkprops utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/split_read_files utils/atac_fq_preprocess
 
 dependencies: lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
 
@@ -42,6 +42,9 @@ quant_contam: src/common.h src/quant_contam.cpp src/ambient_rna.h build/common.o
 
 doublet_dragon: src/doublet_dragon.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o src/doublet_dragon.cpp $(LFLAGS) $(DEPS) -o doublet_dragon -lhts -lz
+
+bulkprops: src/bulkprops.cpp src/common.h build/common.o src/demux_vcf_hts.h build/demux_vcf_hts.o src/demux_vcf_io.h build/demux_vcf_io.o $(DEPS)
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o src/bulkprops.cpp $(LFLAGS) $(DEPS) -o bulkprops -lhts -lz
 
 utils/bam_indiv_rg: src/bam_indiv_rg.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o src/bam_indiv_rg.cpp $(LFLAGS) $(DEPS) -o utils/bam_indiv_rg -lhts -lz
