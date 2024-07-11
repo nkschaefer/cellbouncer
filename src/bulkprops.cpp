@@ -42,7 +42,7 @@ void help(int code){
     fprintf(stderr, "    --bam -b The BAM file of interest\n");
     fprintf(stderr, "    --vcf -v A VCF/BCF file listing variants. Only biallelic SNPs \n");
     fprintf(stderr, "       will be considered, and phasing will be ignored.\n");
-    fprintf(stderr, "    --output_prefix -o Base name for output files\n");
+    fprintf(stderr, "    --output_prefix -o Base name for output files. Will create [output_prefix].bulkprops\n");
     fprintf(stderr, "===== OPTIONAL =====\n");
     fprintf(stderr, "    --qual -q Minimum variant quality to consider (default 50)\n");
     fprintf(stderr, "    --ids -i If the VCF file contains individuals that you do not\n");
@@ -275,9 +275,16 @@ all possible individuals\n", idfile.c_str());
     double err_rate = 0.0;
     for (map<int, map<int, float> >::iterator s = snp_err.begin(); s != snp_err.end(); ++s){
         for (map<int, float>::iterator s2 = s->second.begin(); s2 != s->second.end(); ++s2){
-            double ef = s2->second / (snp_ref_alt[s->first][s2->first].first + snp_ref_alt[s->first][s2->first].second);
-            err_rate += frac*ef;
+            double ref = snp_ref_alt[s->first][s2->first].first;
+            double alt = snp_ref_alt[s->first][s2->first].second;
+            if (ref + alt + s2->second > 0){
+                double ef = s2->second / (s2->second + ref + alt);
+                err_rate += frac*ef;
+            }
         }
+    }
+    if (err_rate == 0.0 || isnan(err_rate)){
+        err_rate = 0.001;
     }
     fprintf(stderr, "Approximate error rate = %f\n", err_rate);
 
@@ -329,9 +336,12 @@ all possible individuals\n", idfile.c_str());
     optimML::mixcomp_solver solver(expfracs_all, "binom", n, k);
     solver.solve();
     
+    string outfn = output_prefix + ".bulkprops";
+    FILE* outf = fopen(outfn.c_str(), "w");
     for (int i = 0; i < solver.results.size(); ++i){
-        fprintf(stdout, "%s\t%f\n", samples[i].c_str(), solver.results[i]);
+        fprintf(outf, "%s\t%f\n", samples[i].c_str(), solver.results[i]);
     }
+    fclose(outf);
 
     return 0;
 }
