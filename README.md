@@ -13,6 +13,7 @@ Tools for demultiplexing and keeping the riffraff out of pooled single cell sequ
 |Assign **sgRNAs** to cells|FASTQs containing sgRNA capture data, or a table of pre-computed counts, optionally in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices)|[`demux_tags`](#demux_tags)|
 |Quantify **ambient RNA** per cell and infer its origins|Output from `demux_vcf`|[`quant_contam`](#quant_contam)|
 |Infer global **doublet rate**|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
+|Determine **proportion of individuals** in a pool|A VCF of known variants, plus a BAM of aligned sequence data (can be bulk)|[`bulkprops`](#bulkprops)|
 
 # Installation
 To install ([see below](#get-the-repository)):
@@ -130,6 +131,15 @@ Once you have run [`demux_vcf`](#demux_vcf), you can use the computed allele cou
 After assigning cells to individuals using one or more data types, `doublet_dragon` can compile all `.assignments` files given and infer global proportions of all individual assignment types, as well as a global doublet rate, using maximum likelihood.
 
 [more](docs/doublet_dragon.md)
+
+## [bulkprops](docs/bulkprops.md)
+<p>
+<img src="img/bulkprops.png" width=80, alt="bulkprops" />
+</p>
+
+If you have a VCF of known variant data for a set of individuals, and a BAM file of any type of mapped sequence data corresponding to those individuals (it need not be single cell), infer the proportion of reads corresponding to each individual. Can only use SNPs where there are no missing genotypes, but does not require very many SNPs for accuracy.
+
+[more](docs/bulkprops.md)
 
 ## Plotting
 In the `plot` directory, there are R scripts to plot output from some of the programs. If you run one with no arguments, it will tell you how to run it. Plotting programs are described in more detail on the README pages for specific tools.
