@@ -180,3 +180,8 @@ The `utils` directory is the junk drawer of `cellbouncer`. It contains several p
 |----|-------|
 |[`utils/h5tomex.py`](docs/mex_format.md)|If you use a tool outside of CellBouncer (like [CellRanger](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/running-pipelines/cr-feature-bc-analysis) or [kb kite](https://github.com/pachterlab/kite)) to count tag or sgRNA capture data, it might output the counts in `.h5` format. CellBouncer requires this data in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices) instead. This program converts h5 format data to MEX format.|
 |[`utils/split_mex_libs.py`](docs/mex_format.md)|CellBouncer programs expect input from a single library at a time. If you need to run [`demux_tags`](docs/demux_tags.md) on a data set that consists of multiple libraries concatenated together, this program can split the MEX-format UMI count matrix into one matrix per library.|
+
+#### For merging multiple sgRNA assignment tables (from multiple libraries) into one
+|Name|Purpose|
+|----|-------|
+|[`utils/combine_sgrna_tables.py`](docs/utils_combine_sgrna_tables.md)|If you have run [`demux_tags`](docs/demux_tags.md) in `--sgRNA` mode to assign sgRNAs to cells for multiple libraries from the same experiment, and you made barcodes unique by supplying the `--libname` argument for each run, this program can combine all the resulting `.table` files together into one, which can then be loaded and used to pseudobulk your data.|
