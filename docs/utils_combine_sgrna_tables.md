@@ -7,4 +7,4 @@ utils/combine_sgrna_tables.py [output_prefix1].table [output_prefix2].table... >
 ```
 Where `[output_prefix1]`, `[output_prefix2]`, and so on are `--output_prefix` options given to `demux_tags` for each run. You can provide as many input `.table` files as you like. Output will be printed to `stdout`, so to save a file you must use the `>` character and the name of the output file to create.
 
-[../README.md](Back to main README)
+[Back to main README](../README.md)
