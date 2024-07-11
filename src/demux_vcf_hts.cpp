@@ -42,7 +42,8 @@ int read_vcf(string& filename,
     vector<string>& samples,
     map<int, map<int, var> >& snps,
     int min_vq,
-    bool hdr_only){
+    bool hdr_only,
+    bool allow_missing){
     
     // Map sequence names to TIDs for storage
     map<string, int> seq2tid;
@@ -212,7 +213,13 @@ int read_vcf(string& filename,
                     }    
                 } 
                 free(gqs);            
-                snps[tid].insert(make_pair(pos, v));
+                
+                if (allow_missing || nmiss == 0){
+                    snps[tid].insert(make_pair(pos, v));
+                }
+                else{
+                    --nvar;
+                }
             }
         }
     }
@@ -363,6 +370,54 @@ void process_bam_record(bam_reader& reader,
                 else if (allele == vardat.alt){
                     var_counts[snppos][bc_key].second += prob_corr;
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Same as above, but for counting alt frequencies at individual SNPs in bulk data.
+ *
+ * Increments err_count if the read has a non-ref/alt allele.
+ */
+void process_bam_record_bulk(bam_reader& reader,
+    int snppos,
+    var& vardat,
+    map<int, map<int, pair<float, float> > >& snp_ref_alt,
+    map<int, map<int, float> >& snp_err){
+
+    if (!reader.unmapped() && !reader.secondary() && 
+        !reader.dup() && reader.has_cb_z){
+         
+        // Instead of storing actual read counts, store the probability
+        // that the mapping was correct.
+        float prob_corr = 1.0 - pow(10, -(float)reader.mapq/10.0);
+        
+        int tid = reader.tid();
+        if (snp_ref_alt.count(tid) == 0){
+            map<int, pair<float, float> > m;
+            snp_ref_alt.insert(make_pair(tid, m));
+            map<int, float> m2;
+            snp_err.insert(make_pair(tid, m2));
+        }
+        if (snp_ref_alt[tid].count(snppos) == 0){
+            snp_ref_alt[tid].insert(make_pair(snppos, make_pair(0.0, 0.0)));
+            snp_err[tid].insert(make_pair(snppos, 0.0));
+        }
+
+        // Note: this function expects positions to be 1-based, but 
+        // BCF/BAM functions store as 0-based
+        char allele = reader.get_base_at(snppos + 1);
+        
+        if (allele != 'N' && allele != '-'){
+            if (allele == vardat.ref){
+                snp_ref_alt[tid][snppos].first += prob_corr;
+            }
+            else if (allele == vardat.alt){
+                snp_ref_alt[tid][snppos].second += prob_corr;
+            }
+            else{
+                snp_err[tid][snppos] += prob_corr;
             }
         }
     }

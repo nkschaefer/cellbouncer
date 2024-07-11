@@ -66,7 +66,8 @@ int read_vcf(std::string& filename,
     std::vector<std::string>& samples,
     std::map<int, std::map<int, var> >& snps,
     int min_vq,
-    bool hdr_only);
+    bool hdr_only,
+    bool allow_missing=true);
  
 void get_conditional_match_fracs(std::map<int, std::map<int, var> >& snpdat,
     std::map<std::pair<int, int>, std::map<int, float> >& conditional_match_fracs, 
@@ -79,6 +80,12 @@ void process_bam_record(bam_reader& reader,
         std::pair<float, float> > >& var_counts,
     bool has_bc_list,
     std::set<unsigned long>& bcs_valid);
+
+void process_bam_record_bulk(bam_reader& reader,
+    int snppos,
+    var& vardat,
+    std::map<int, std::map<int, std::pair<float, float> > >& snp_ref_alt,
+    std::map<int, std::map<int, float> >& snp_err);
 
 void dump_vcs_counts(robin_hood::unordered_map<unsigned long, 
         std::pair<float, float> >& varcounts_site,
