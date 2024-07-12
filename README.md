@@ -134,7 +134,7 @@ After assigning cells to individuals using one or more data types, `doublet_drag
 
 ## [bulkprops](docs/bulkprops.md)
 <p>
-<img src="img/bulkprops2.png" width=120, alt="bulkprops" />
+<img src="img/bulkprops2.png" width=180, alt="bulkprops" />
 </p>
 
 If you have a VCF of known variant data for a set of individuals, and a BAM file of any type of mapped sequence data corresponding to those individuals (it need not be single cell), infer the proportion of reads corresponding to each individual. Can only use SNPs where there are no missing genotypes, but does not require very many SNPs for accuracy.
