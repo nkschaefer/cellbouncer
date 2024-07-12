@@ -1,6 +1,6 @@
 ## bulkprops
 <p>
-<img src="../img/bulkprops.png" width=80, alt="bulkprops" />
+<img src="../img/bulkprops3.png" width=180, alt="bulkprops" />
 </p>
 
 If you have a VCF of genotype data for a set of individuals and a BAM file of aligned sequencing data from those individuals, which can be either bulk or single-cell (in which case cell barcodes will be ignored), `bulkprops` can infer the proportion of reads originating from each of the individuals in the pool. It works the same way as the ambient RNA profiling step in [`quant_contam`](quant_contam.md), but it can only consider SNPs for which there are no missing genotypes.
