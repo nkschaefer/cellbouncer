@@ -184,7 +184,9 @@ void species_kmer_counter::process_gex_files(string& r1filename,
     while ((f_progress = kseq_read(seq_f)) >= 0){
         r_progress = kseq_read(seq_r);
         if (r_progress < 0){
-            fprintf(stderr, "ERROR: read order not matching R3 at seq %s in R1 file\n", seq_f->name.s);
+            fprintf(stderr, "ERROR: %s still contains reads, but %s reached end of file\n", r1filename.c_str(),
+                r2filename.c_str());
+            fprintf(stderr, "%s is likely truncated or corrupted.\n", r2filename.c_str());
             exit(1);
         }
         rp_info params;
@@ -192,8 +194,16 @@ void species_kmer_counter::process_gex_files(string& r1filename,
         params.seq_r = seq_r->seq.s;
         
         add_rp_job(params);        
-    
     }
+
+    // Check that R2 has hit EOF as well.
+    if ((r_progress = kseq_read(seq_r)) >= 0){
+        fprintf(stderr, "ERROR: %s still contains reads, but %s reached end of file\n", r2filename.c_str(),
+            r1filename.c_str());
+        fprintf(stderr, "%s is likely truncated or corrupted.\n", r1filename.c_str());
+        exit(1);
+    }
+
 }
 
 // Stop all running threads and then destroy them
