@@ -283,6 +283,16 @@ void create_library_file(vector<string>& rna_r1files,
                 fnprefix += "/";
             }
             string libfilename = fnprefix + i2s->second + ".library";
+            
+            if (file_exists(libfilename)){
+                // Don't create one.
+                // This allows us to, if running in batch mode, run once per file chunk to count,
+                // then merge counts, then run once with --dump option to assign species & create
+                // library file, then run once per pair of read files to demux each individually
+                // (in parallel).
+                continue;
+            }
+
             fnprefix += i2s->second;
             FILE* libfile = fopen(libfilename.c_str(), "w");
             fprintf(libfile, "fastqs,sample,library_type\n");

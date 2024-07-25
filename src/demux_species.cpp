@@ -106,7 +106,7 @@ void help(int code){
     fprintf(stderr, "       -n CRISPR -n Antibody.\n");
     fprintf(stderr, "\n   ===== BARCODE WHITELIST OPTIONS =====\n");
     fprintf(stderr, "   --whitelist_rna -w If multiome data and demultiplexing ATAC-seq reads,\n");
-    fprintf(stderr, "       provide both the ATAC-seq barcode whitelist (-w) and the RNA-seq\n");
+    fprintf(stderr, "       provide both the ATAC-seq barcode whitelist (-W) and the RNA-seq\n");
     fprintf(stderr, "       barcode whitelist (here) (REQUIRED). If not multiome or RNA-seq only,\n");
     fprintf(stderr, "       provide the standalone RNA-seq whitelist here.\n");
     fprintf(stderr, "   --whitelist_atac -W If multiome data and demultiplexing ATAC-seq\n");
@@ -507,7 +507,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "t:o:n:1:2:3:r:R:x:X:N:k:w:W:D:b:e:CSUdh", 
+    while((ch = getopt_long(argc, argv, "t:o:n:1:2:3:r:R:x:X:N:k:w:W:D:b:eCSUdh", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -931,6 +931,12 @@ data for %s with more species.\n", kmerbase.c_str());
         fclose(bc_out);
     }
     
+    // See if we can/should create "library files" for multiome data, to save headaches later
+    if (rna_r1files.size() > 0 || atac_r1files.size() > 0 || custom_r1files.size() > 0){
+        create_library_file(rna_r1files, atac_r1files, custom_r1files, 
+            custom_names, idx2species, outdir);
+    }
+    
     if (dump){
         // Our job is done here
         return 0;
@@ -984,9 +990,6 @@ data for %s with more species.\n", kmerbase.c_str());
         wl_out.init(ul_list);
     } 
 
-    // See if we can/should create "library files" for multiome data, to save headaches later
-    create_library_file(rna_r1files, atac_r1files, custom_r1files, 
-        custom_names, idx2species, outdir);
     
     // Now go through reads and demultiplex by species.
     reads_demuxer demuxer(wl_out, bc2species, idx2species, outdir);

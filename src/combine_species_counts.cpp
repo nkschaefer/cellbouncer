@@ -170,6 +170,8 @@ int main(int argc, char *argv[]) {
     string conv_out = outdir + "bcmap.txt";
     
     vector<string> rm;
+    
+    bool first = true;
 
     while (has_idx){
         sprintf(&buf[0], "%d", idx);
@@ -209,10 +211,13 @@ conversions from previous batches.\n", idx);
             }
         }
         else{
+            if (first){
+                fprintf(stderr, "ERROR: first file to merge, %s, does not exist.\n", countsfilename.c_str());
+            }
             has_idx = false;
             // Check ahead to see if future files exist - this would be evidence that some
             // runs failed
-            for (int idx2 = idx + 1; idx2 <= idx + 10; ++idx2){
+            for (int idx2 = idx + 1; idx2 <= idx + 100; ++idx2){
                 sprintf(&buf[0], "%d", idx);
                 string bufstr2 = buf;
                 string countsfn_future = outdir + "species_counts." + bufstr + ".txt";
@@ -225,6 +230,7 @@ conversions from previous batches.\n", idx);
                 }
             }
         }
+        first = false;
         ++idx;
     } 
    

@@ -71,9 +71,11 @@ countsm <- as.matrix(counts[,-c(c(1), metacols)])
 rownames(countsm) <- counts$bc
 
 basename <- gsub("/$", "", args[1])
+basename_split <- strsplit(basename, '/')[[1]]
+basename_title <- basename_split[length(basename_split)]
 
 title = ggdraw() + 
-    draw_label(basename, size=12, fontface='bold', lineheight=0.9, hjust=0.6) +
+    draw_label(basename_title, size=12, fontface='bold', lineheight=0.9, hjust=0.6) +
     theme(plot.margin=margin(0,0,0,0))
 
 name2col2 <- list(species=name2col)
@@ -116,7 +118,7 @@ png(paste(basename, '/', 'species.png', sep=''), width=8, height=6, bg='white', 
 plot_grid(title, row2, nrow=2, rel_heights=c(0.1,0.9))
 dev.off()
 
-pdf(paste(basename, '/', 'species.pdf', sep=''), width=8, height=6)
+pdf(paste(basename, '/', 'species.pdf', sep=''), width=8, height=6, bg='white')
 plot_grid(title, row2, nrow=2, rel_heights=c(0.1,0.9))
 dev.off()
 
