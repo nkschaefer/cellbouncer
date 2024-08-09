@@ -37,7 +37,7 @@ It will also create two files: `[out_doublet_dragon].dd.indv` and `[out_doublet_
 
 The program `plot/doublet_dragon.R` can create a summary plot of the information output by `doublet_dragon`. To run, simply run
 ```
-plot/doublet_dragon [out_doublet_dragon] (D)
+plot/doublet_dragon.R [out_doublet_dragon] (D)
 ```
 where `[out_doublet_dragon]` was the first argument you gave to `doublet_dragon` (the output file prefix), and `D` is an optional argument that, if present, will include counts of all individual doublet types in the plot (default behavior is to collapse all doublets into one category called "Doublet").
 
