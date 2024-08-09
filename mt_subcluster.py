@@ -120,13 +120,19 @@ def main(args):
             merge_str.append('NA')
     
     outs_cleanup = []
-    for clust in sorted(clustset):
-        print("Subcluster root cluster {}...".format(clust), file=sys.stderr)
-        cmd = ['{}/demux_mt'.format(script_dir), '-b', options.bam, '-m', \
-            chrM, '-f', '{}.{}.bcs'.format(options.out, clust), \
-            '-o', '{}.{}'.format(options.out, clust), '-D', '0.0']
-        subprocess.call(cmd)
-        outs_cleanup.append('{}.{}'.format(options.out, clust))
+    for ci, clust in enumerate(clustname_sorted):
+        if clust in clustset:
+            print("Subcluster root cluster {}...".format(clust), file=sys.stderr)
+            cmd = ['{}/demux_mt'.format(script_dir), '-b', options.bam, '-m', \
+                chrM, '-f', '{}.{}.bcs'.format(options.out, clust), \
+                '-o', '{}.{}'.format(options.out, clust), '-D', '0.0']
+            subprocess.call(cmd)
+            outs_cleanup.append('{}.{}'.format(options.out, clust))
+            if not os.path.isfile('{}.{}.haps'.format(options.out, clust)):
+                print("  cluster {} had no subclusters".format(clust), file=sys.stderr)
+                # Clustering failed.
+                # Swap out for root-level assignments.
+                merge_str[ci] = 'NA'
 
     # Merge hierarchically
     cmd = ['{}/utils/mt_merge_hierarchical.py'.format(script_dir), '-b', options.bam, \
@@ -139,12 +145,18 @@ def main(args):
     # Clean up
     if not options.keep_intermediate:
         for outbase in outs_cleanup:
-            os.unlink('{}.assignments'.format(outbase))
-            os.unlink('{}.bcs'.format(outbase))
-            os.unlink('{}.cellhaps'.format(outbase))
-            os.unlink('{}.haps'.format(outbase))
-            os.unlink('{}.summary'.format(outbase))
-            os.unlink('{}.vars'.format(outbase))
+            if os.path.isfile('{}.assignments'.format(outbase)):
+                os.unlink('{}.assignments'.format(outbase))
+            if os.path.isfile('{}.bcs'.format(outbase)):
+                os.unlink('{}.bcs'.format(outbase))
+            if os.path.isfile('{}.cellhaps'.format(outbase)):
+                os.unlink('{}.cellhaps'.format(outbase))
+            if os.path.isfile('{}.haps'.format(outbase)):
+                os.unlink('{}.haps'.format(outbase))
+            if os.path.isfile('{}.summary'.format(outbase)):
+                os.unlink('{}.summary'.format(outbase))
+            if os.path.isfile('{}.vars'.format(outbase)):
+                os.unlink('{}.vars'.format(outbase))
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))
