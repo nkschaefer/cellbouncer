@@ -41,8 +41,7 @@ kmer_tree_p init_kmer_tree( int k ) {
  * Sets all pointers to NULL.
  */
 ktnP init_ktn( void ) {
-    ktnP new_ktn;
-    new_ktn = (ktnP)malloc(sizeof(ktn));
+    ktnP new_ktn = (ktnP)malloc(sizeof(ktn));
     new_ktn->Ap = NULL;
     new_ktn->Cp = NULL;
     new_ktn->Gp = NULL;
