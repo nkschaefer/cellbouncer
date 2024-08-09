@@ -58,8 +58,11 @@ def parse_map_custom(filename):
                 custom, datatype, gex = dat
                 names[custom] = datatype
                 m[gex] = custom
-            custom, gex = line.split('\t')
-            m[gex] = custom
+            else:
+                print("ERROR parsing custom lib name map file {}".format(filename), file=sys.stderr)
+                print("Make sure lines have 2 or 3 fields, tab-separated.", file=sys.stderr)
+                exit(1)
+
     f.close()
     return (m, names)
 
@@ -91,8 +94,6 @@ One mapping should be given per line, and fields should be tab-separated.",
 
     parser.add_argument("--kmers", "-k", help="Path to root name for unique k-mers", 
         required=True)
-    parser.add_argument("--cellbouncer", "-c", help="Path to cellbouncer root directory", 
-        required=True)
     parser.add_argument("--whitelist", "-w", help="Path to 10X RNA-seq whitelist", 
         required=True)
     parser.add_argument("--whitelist_atac", "-W", help="Path to 10X ATAC-seq whitelist (Required \
@@ -107,6 +108,14 @@ Default = 100", type=int, required=False, default=100)
 
     parsed = parser.parse_args()
     
+    if parsed.rna_dir == parsed.tmp_directory or parsed.atac_dir == parsed.tmp_directory or parsed.custom_dir == parsed.tmp_directory:
+        print("ERROR: please make --tmp_directory different from read file directories", file=sys.stderr)
+        exit(1)
+    
+    if parsed.output_directory == parsed.tmp_directory:
+        print("ERROR: please make --tmp_directory different from --output_directory", file=sys.stderr)
+        exit(1)
+
     if parsed.atac_dir is not None and parsed.whitelist_atac is None:
         print("ERROR: ATAC whitelist required if using ATAC data", file=sys.stderr)
         exit(1)
@@ -118,7 +127,7 @@ Default = 100", type=int, required=False, default=100)
     if parsed.custom_map is not None and parsed.custom_dir is None:
         print("ERROR: custom mapping given without a custom dir", file=sys.stderr)
         exit(1)
-
+    
     if parsed.custom_dir is not None and parsed.custom_map is None:
         print("ERROR: custom read data must be given with a custom mapping file, to determine data types",
             file=sys.stderr)
@@ -240,11 +249,10 @@ def main(args):
         exit(1)
     
     # CellBouncer programs
-    if options.cellbouncer[-1] == '/':
-        options.cellbouncer = options.cellbouncer[0:-1]
-    if not os.path.isfile('{}/demux_species'.format(options.cellbouncer)) or \
-        not os.path.isfile('{}/utils/split_read_files'.format(options.cellbouncer)):
-        print("ERROR: cellbouncer not found at {}".format(options.cellbouncer), file=sys.stderr)
+    cbpath = '/'.join(__file__.split('/')[:-2])
+    if not os.path.isfile('{}/demux_species'.format(cbpath)) or \
+        not os.path.isfile('{}/utils/split_read_files'.format(cbpath)):
+        print("ERROR: cellbouncer not found at {}".format(cbpath), file=sys.stderr)
         exit(1)
     
     # RNA-seq barcode whitelist
@@ -296,7 +304,7 @@ def main(args):
             gex_r2.append('-R {}'.format(fn2))
 
             script = get_split_script(options.tmp_directory) + '\n' + \
-                "{}/utils/split_read_files -1 {} -2 {} -n {} -o {}".format(options.cellbouncer,
+                "{}/utils/split_read_files -1 {} -2 {} -n {} -o {}".format(cbpath,
                 fn1, fn2, options.num_chunks, libdir)
             
             jid = launch_job(script)
@@ -304,7 +312,7 @@ def main(args):
             # Create a job to run demux_species on this chunk
             script2 = get_count_script(libdir, jid, options.num_chunks) + '\n' + \
                 '{}/demux_species -r {}/{}.${{SGE_TASK_ID}}.fastq.gz -R {}/{}.${{SGE_TASK_ID}}.fastq.gz -w {} -k {} -b $(( $SGE_TASK_ID + {} )) -o {}'.format(\
-                options.cellbouncer, libdir, fn1.split('/')[-1].split('.fastq.gz')[0], \
+                cbpath, libdir, fn1.split('/')[-1].split('.fastq.gz')[0], \
                 libdir, fn2.split('/')[-1].split('.fastq.gz')[0], options.whitelist, options.kmers, \
                 lib_idx * options.num_chunks, libdir_out)
             
@@ -341,7 +349,7 @@ def main(args):
 
         # Queue up script to combine counts
         script = get_join_script(libdir, lib_jids) + '\n' + \
-            '{}/utils/combine_species_counts -o {}/{}'.format(options.cellbouncer, os.getcwd(), libdir_out)
+            '{}/utils/combine_species_counts -o {}/{}'.format(cbpath, os.getcwd(), libdir_out)
         
         jid = launch_job(script)
 
@@ -361,14 +369,14 @@ def main(args):
             script_extra.append(' '.join(custom_names))
 
         script = get_assn_script(libdir, jid) + '\n' + \
-            '{}/demux_species -o {} -d -w {} '.format(options.cellbouncer, libdir_out, options.whitelist) + \
+            '{}/demux_species -o {} -d -w {} '.format(cbpath, libdir_out, options.whitelist) + \
             ' ' + ' '.join(script_extra)
         
         jid = launch_job(script)
 
         # Create plots
         script = get_plot_script(libdir, jid) + '\n' + \
-            '{}/plot/species.R {}/{}'.format(options.cellbouncer, os.getcwd(), libdir_out)
+            '{}/plot/species.R {}/{}'.format(cbpath, os.getcwd(), libdir_out)
         
         jid2 = launch_job(script)
 
@@ -377,7 +385,7 @@ def main(args):
             fn1 = gex_r1[idx]
             fn2 = gex_r2[idx]
             script = get_demux_script(libdir, jid) + '\n' + \
-                '{}/demux_species -w {} -o {}'.format(options.cellbouncer, options.whitelist, libdir_out) + \
+                '{}/demux_species -w {} -o {}'.format(cbpath, options.whitelist, libdir_out) + \
                 ' ' + fn1 + ' ' + fn2
             jid2 = launch_job(script)
 
@@ -386,7 +394,7 @@ def main(args):
             fn2 = atac_r2[idx]
             fn3 = atac_r3[idx]
             script = get_demux_script(libdir, jid) + '\n' + \
-                '{}/demux_species -w {} -W {} -o {}'.format(options.cellbouncer, options.whitelist, \
+                '{}/demux_species -w {} -W {} -o {}'.format(cbpath, options.whitelist, \
                 options.whitelist_atac, libdir_out) + \
                 ' ' + fn1 + ' ' + fn2 + ' ' + fn3
             jid2 = launch_job(script)
@@ -396,7 +404,7 @@ def main(args):
             fn2 = custom_r2[idx]
             name = custom_names[idx]
             script = get_demux_script(libdir, jid) + '\n' + \
-                '{}/demux_species -w {} -o {}'.format(options.cellbouncer, options.whitelist, libdir_out) + \
+                '{}/demux_species -w {} -o {}'.format(cbpath, options.whitelist, libdir_out) + \
                 ' ' + fn1 + ' ' + fn2 + ' ' + name
             jid2 = launch_job(script)
     
