@@ -26,6 +26,7 @@ if (length(args) < 3){
     write("      For example: S1D2 or S2D1. You cannot pass a contradictory combination.", stderr())
     q()
 }
+options(error=traceback)
 
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(viridis))
@@ -55,6 +56,15 @@ colnames(assn1) <- c("bc", "assn1", "type1")
 colnames(assn2) <- c("bc", "assn2", "type2")
 
 merged <- merge(assn1, assn2)
+if (length(rownames(merged)) == 0){
+    write("ERROR: no matching barcodes.", stderr())
+    write("Check to make sure barcode suffixes match (i.e. does one set have -1 at the end?)", stderr())
+    q()
+}
+
+nmiss1 <- length(rownames(assn1)) - length(rownames(merged))
+nmiss2 <- length(rownames(assn2)) - length(rownames(merged))
+
 tab <- as.data.frame(table(merged[,c(2,4)]))
 mfilt <- NA
 if (length(args) > 3){
@@ -177,7 +187,107 @@ ggsave(plt, file=paste(outname, '.png', sep=''), width=8, height=7, units='in')
 
 tot_match <- sum(tab[which(as.character(tab$assn1) == as.character(tab$assn2)),]$Freq)
 tot_all <- sum(tab$Freq)
-# Only print matching if some labels agree
-if (tot_match > 0){
-    write(paste("Overall agreement = ", tot_match/tot_all, sep=""), stderr())
+
+t1Smatch <- length(rownames(merged[which(merged$type1=="S" & merged$assn1 == merged$assn2),]))
+t1Stot <- length(rownames(merged[which(merged$type1=="S"),]))
+t1Dmatch <- length(rownames(merged[which(merged$type1=="D" & merged$assn1 == merged$assn2),]))
+t1Dtot <- length(rownames(merged[which(merged$type1=="D"),]))
+t2Smatch <- length(rownames(merged[which(merged$type2=="S" & merged$assn1 == merged$assn2),]))
+t2Stot <- length(rownames(merged[which(merged$type2=="S"),]))
+t2Dmatch <- length(rownames(merged[which(merged$type2=="D" & merged$assn1 == merged$assn2),]))
+t2Dtot <- length(rownames(merged[which(merged$type2=="D"),]))
+
+
+# If some labels agree, assume that we are comparing the same sets of labels.
+if (tot_match == 0){
+    # Otherwise, try to decide on matching labels using Jaccard index
+    jmax <- aggregate(tab[grep("+", tab$assn1, fixed=T, invert=T),]$jaccard, 
+        by=list(assn1=tab[grep("+", tab$assn1, fixed=T, invert=T),]$assn1), FUN=max)
+    jmax2 <- aggregate(tab[grep("+", tab$assn2, fixed=T, invert=T),]$jaccard,
+        by=list(assn2=tab[grep("+", tab$assn2, fixed=T, invert=T),]$assn2), FUN=max)
+    colnames(jmax)[2] <- "jaccard.max"
+    colnames(jmax2)[2] <- "jaccard.max2"
+    tab2 <- merge(tab, jmax)
+    tab2 <- merge(tab2, jmax2)
+    tab2 <- tab2[which(tab2$jaccard == tab2$jaccard.max & tab2$jaccard == tab2$jaccard.max2),]
+    tab2 <- tab2[,c(2,1)]
+    colnames(tab2)[2] <- "assn2.corr"
+    
+    missing_1 <- unique(tab[grep("+", tab$assn1, fixed=T, invert=T),]$assn1)
+    missing_1 <- missing_1[which(! missing_1 %in% tab2$assn1)]
+    
+    missing_2 <- unique(tab[grep("+", tab$assn2, fixed=T, invert=T),]$assn2)
+    missing_2 <- missing_2[which( ! missing_2 %in% tab2$assn2.corr)]
+    
+    if (length(missing_1) > 0 || length(missing_2) > 0){
+        write("", stderr())
+        write("===== Label misalignment =====", stderr())
+    } 
+
+    if (length(missing_1) > 0){
+        write(paste(args[1], " IDs missing a reciprocal match in ", args[2], ":", sep=""), stderr())
+        for (id in missing_1){
+            write(id, stderr())
+        }
+    }
+    
+    if (length(missing_2) > 0){
+        write(paste(args[2], " IDs missing a reciprocal match in ", args[1], ":", sep=""), stderr())
+        for (id in missing_2){
+            write(id, stderr())
+        }
+    }
+    missing_1_df <- data.frame(id=missing_1)
+    
+    missing_2_df <- data.frame(id=missing_2)
+
+    idmap_S <- data.frame(assn1=unique(merged[which(merged$type1=="S"),]$assn1))
+    idmap_S <- merge(idmap_S, tab2, by=c("assn1"))
+
+    idmap_D <- data.frame(assn=unique(merged[which(merged$type1=="D"),]$assn1))
+    idmap_D$id1 <- apply(idmap_D, 1, function(x){ strsplit(x[1], '+', fixed=T)[[1]][1] })
+    idmap_D$id2 <- apply(idmap_D, 1, function(x){ strsplit(x[1], '+', fixed=T)[[1]][2] })
+    colnames(tab2)[1] <- "id1"
+    idmap_D <- merge(idmap_D, tab2, by=c("id1"))
+    colnames(tab2)[1] <- "id2"
+    idmap_D <- merge(idmap_D, tab2, by=c("id2"))
+    idmap_D$assn2.corr.x <- as.character(idmap_D$assn2.corr.x)
+    idmap_D$assn2.corr.y <- as.character(idmap_D$assn2.corr.y)
+    idmap_D$assn2corr.1 <- idmap_D$assn2.corr.x
+    idmap_D$assn2corr.2 <- idmap_D$assn2.corr.y
+    idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2corr.1 <- 
+        idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2.corr.y
+    idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2corr.2 <- 
+        idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2.corr.x
+    idmap_D$assn2.corr <- paste(idmap_D$assn2corr.1 , idmap_D$assn2corr.2, sep='+')
+    idmap_D <- idmap_D[,which(colnames(idmap_D) %in% c("assn", "assn2.corr"))]
+    colnames(idmap_D)[1] <- "assn1"
+    idmap <- rbind(idmap_S, idmap_D)
+    tab3 <- merge(tab, idmap, by=c("assn1"), all.x=TRUE)    
+    
+    merged <- merge(merged, idmap, by=c("assn1"), all.x=TRUE)    
+    
+    tot_match <- length(rownames(merged[which(merged$assn2.corr == merged$assn2),]))
+    #tot_match <- sum(tab3[which(as.character(tab3$assn2.corr) == as.character(tab3$assn2)),]$Freq)
+    t1Smatch <- length(rownames(merged[which(merged$type1=="S" & merged$assn2.corr == merged$assn2),]))
+    t1Stot <- length(rownames(merged[which(merged$type1=="S"),]))
+    t1Dmatch <- length(rownames(merged[which(merged$type1=="D" & merged$assn2.corr == merged$assn2),]))
+    t1Dtot <- length(rownames(merged[which(merged$type1=="D"),]))
+    t2Smatch <- length(rownames(merged[which(merged$type2=="S" & merged$assn2.corr == merged$assn2),]))
+    t2Stot <- length(rownames(merged[which(merged$type2=="S"),]))
+    t2Dmatch <- length(rownames(merged[which(merged$type2=="D" & merged$assn2.corr == merged$assn2),]))
+    t2Dtot <- length(rownames(merged[which(merged$type2=="D"),]))
+
 }
+
+write("", stderr())
+write("===== Agreement: =====", stderr())
+write(paste("Overall = ", tot_match/tot_all, sep=""), stderr())
+write("----- File 1 -----", stderr())
+write(paste("Missing (present in 2) = ", nmiss2/length(rownames(assn2))), stderr())
+write(paste("File 1 singlet = ", t1Smatch/t1Stot, sep=""), stderr())
+write(paste("File 1 doublet = ", t1Dmatch/t1Dtot, sep=""), stderr())
+write("----- File 2 -----", stderr())
+write(paste("Missing (present in 1) = ", nmiss1/length(rownames(assn1))), stderr())
+write(paste("File 2 singlet = ", t2Smatch / t2Stot, sep=""), stderr())
+write(paste("File 2 doublet = ", t2Dmatch / t2Dtot, sep=""), stderr())
