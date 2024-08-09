@@ -828,7 +828,7 @@ data for %s with more species.\n", kmerbase.c_str());
             fprintf(stderr, "Loading %s-specific k-mers\n", speciesnames[i].c_str());
             counter.init(i, kmerfiles[i]);
             fprintf(stderr, "done\n");
-            
+
             idx2species.insert(make_pair(i, speciesnames[i]));
             species2idx.insert(make_pair(speciesnames[i], i));
             
