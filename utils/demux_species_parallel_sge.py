@@ -103,6 +103,10 @@ if using ATAC data)", required=False)
     parser.add_argument("--tmp_directory", "-t", help="Output path for split files (REQUIRED)", 
         required=True)
     
+    parser.add_argument("--max_mem", "-m", type=int, help="Maximum memory (in GB) to request for k-mer counting \
+jobs. Default = 60. This number should be higher if you use longer k-mers (i.e. 120-150GB for 45-mers).", \
+        default=60, required=False)
+
     parser.add_argument("--num_chunks", "-n", help="How many pieces should reads be split into? \
 Default = 100", type=int, required=False, default=100)
 
@@ -148,14 +152,14 @@ def get_split_script(tmpdir):
     lines.append('#$ -e {}/{}/split.err'.format(os.getcwd(), tmpdir))
     return '\n'.join(lines)
 
-def get_count_script(libdir, jid, num_chunks):
+def get_count_script(libdir, jid, max_mem, num_chunks):
     lines = get_script_base()
     lines.append('#$ -N demux_species__count')
     # Hopefully this is liberal enough: shouldn't need more than 10 hours per chunk
     # after splitting into many pieces
     lines.append('#$ -l h_rt=10:00:00')
     # Ensure it gets a lot of memory
-    lines.append('#$ -l mem_free=120G')
+    lines.append('#$ -l mem_free={}G'.format(max_mem))
     lines.append('#$ -o {}/{}/count.out'.format(os.getcwd(), libdir))
     lines.append('#$ -e {}/{}/count.err'.format(os.getcwd(), libdir))
     lines.append('#$ -hold_jid {}'.format(jid))
@@ -310,7 +314,7 @@ def main(args):
             jid = launch_job(script)
 
             # Create a job to run demux_species on this chunk
-            script2 = get_count_script(libdir, jid, options.num_chunks) + '\n' + \
+            script2 = get_count_script(libdir, jid, options.max_mem, options.num_chunks) + '\n' + \
                 '{}/demux_species -r {}/{}.${{SGE_TASK_ID}}.fastq.gz -R {}/{}.${{SGE_TASK_ID}}.fastq.gz -w {} -k {} -b $(( $SGE_TASK_ID + {} )) -o {}'.format(\
                 cbpath, libdir, fn1.split('/')[-1].split('.fastq.gz')[0], \
                 libdir, fn2.split('/')[-1].split('.fastq.gz')[0], options.whitelist, options.kmers, \
