@@ -35,7 +35,6 @@ class contamFinder{
                     std::map<std::pair<int, int>, 
                         std::pair<float, float> > > > indv_allelecounts;
         std::set<int> allowed_ids; 
-        
         // Map each ID to the sum of all LLRs of all cells assigned to it
         map<int, double> id_llrsum;
 
@@ -60,8 +59,7 @@ class contamFinder{
         // First key: allele type (individual index, number alt alleles)
         //  Second key: true identity
         //    Value: Expected rate of matching alt alleles at sites of this type
-        std::map<std::pair<int, int>, std::map<int, float> > expfracs;
-        
+        std::map<std::pair<int, int>, std::map<int, float> > expfracs; 
         
 
         map<pair<int, int>, map<pair<int, int>, double> > amb_tot;
@@ -130,13 +128,22 @@ class contamFinder{
             std::vector<std::pair<int, int> >& type2);
         
         // Calculate stuff
-        void solve_params_init(); 
+        double solve_params_init(); 
         void est_contam_cells();
         // Returns log likelihood
         double update_ambient_profile();
         std::pair<double, double> est_error_rates(bool init);
         void compute_expected_fracs_all_id();
         double model_as_mixture();
+        
+        void test();
+        double test_aux(double c);
+        bool omit_hets;
+        double c_init_global;
+        
+        double update_amb_prof_mixture(bool est_c, double& global_c); 
+        double est_min_c();
+        void test_new(double c);
 
     public:
         
@@ -160,6 +167,7 @@ class contamFinder{
                         std::pair<float, float> > > >& indv_allelecounts,
             robin_hood::unordered_map<unsigned long, int>& assn,
             robin_hood::unordered_map<unsigned long, double>& assn_llr,
+            std::map<std::pair<int, int>, std::map<int, float> >& exp_match_fracs,
             int n_samples);
 
         // Functions to update parameter values

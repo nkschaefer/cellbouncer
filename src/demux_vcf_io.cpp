@@ -451,39 +451,20 @@ void dump_cellcounts(gzFile& out_cell,
  * on cell identities.
  */
 void load_exp_fracs(string& filename,   
-    map<pair<int, int>, map<int, float> >& conditional_match_frac,
-    vector<string>& samples){
+    map<pair<int, int>, map<int, float> >& conditional_match_frac){
     
-    map<string, int> sample2idx;
-    for (int i = 0; i < samples.size(); ++i){
-        sample2idx.insert(make_pair(samples[i], i));
-    }
-
     ifstream infile(filename.c_str());
-    string sample1;
+    int idx1;
     int type;
-    string sample2;
+    int idx2;
     float frac; 
-    while (infile >> sample1 >> type >> sample2 >> frac){
-        if (sample2idx.count(sample1) == 0){
-            fprintf(stderr, "ERROR: indv %s from expected fraction file not found in VCF\n", sample1.c_str());
-            exit(1);
+    while (infile >> idx1 >> type >> idx2 >> frac){
+        pair<int, int> key1 = make_pair(idx1, type);
+        if (conditional_match_frac.count(key1) == 0){
+            map<int, float> m;
+            conditional_match_frac.insert(make_pair(key1, m));
         }
-        if (sample2idx.count(sample2) == 0){
-            fprintf(stderr, "ERROR: indv %s from expected fraction file not found in VCF\n", sample2.c_str());
-            exit(1);
-        }       
-        else{
-            int idx1 = sample2idx[sample1];
-            int idx2 = sample2idx[sample2];
-
-            pair<int, int> key1 = make_pair(idx1, type);
-            if (conditional_match_frac.count(key1) == 0){
-                map<int, float> m;
-                conditional_match_frac.insert(make_pair(key1, m));
-            }
-            conditional_match_frac[key1].insert(make_pair(idx2, frac));
-        }
+        conditional_match_frac[key1].insert(make_pair(idx2, frac));
     }
 }
 
@@ -491,13 +472,12 @@ void load_exp_fracs(string& filename,
  * Write conditional match fracs to output file.
  */
 void dump_exp_fracs(FILE* exp_frac_out,
-    map<pair<int, int>, map<int, float> >& conditional_match_frac,
-    vector<string>& samples){ 
+    map<pair<int, int>, map<int, float> >& conditional_match_frac){ 
     for (map<pair<int, int>, map<int, float> >::iterator cmf = conditional_match_frac.begin();
         cmf != conditional_match_frac.end(); ++cmf){
         for (map<int, float>::iterator cmf2 = cmf->second.begin(); cmf2 != cmf->second.end(); ++cmf2){
-            fprintf(exp_frac_out, "%s\t%d\t%s\t%f\n", idx2name(cmf->first.first, samples).c_str(),
-                cmf->first.second, idx2name(cmf2->first, samples).c_str(), cmf2->second);
+            fprintf(exp_frac_out, "%d\t%d\t%d\t%f\n", cmf->first.first,
+                cmf->first.second, cmf2->first, cmf2->second);
         }
     }
 }

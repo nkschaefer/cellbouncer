@@ -67,6 +67,7 @@ int read_vcf(std::string& filename,
     std::map<int, std::map<int, var> >& snps,
     int min_vq,
     bool hdr_only,
+    bool skip_seq2tid,
     bool allow_missing=true);
  
 void get_conditional_match_fracs(std::map<int, std::map<int, var> >& snpdat,

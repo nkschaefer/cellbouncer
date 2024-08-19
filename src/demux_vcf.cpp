@@ -1345,6 +1345,18 @@ void help(int code){
     fprintf(stderr, "       jump to each variant position. This will be faster if you \n");
     fprintf(stderr, "       have relatively few SNPs, and much slower if you have a lot \n");
     fprintf(stderr, "       of SNPs.\n");
+    fprintf(stderr, "    --disable_conditional -f By default, the program will compute\n");
+    fprintf(stderr, "       expected alt allele matching probabilities for SNPs of each type\n");
+    fprintf(stderr, "       (homozygous ref, het, or homozygous alt in each individual), conditional\n");
+    fprintf(stderr, "       on the cell's identity being each individual. This will be spilled\n");
+    fprintf(stderr, "       to disk and can be used by quant_contam. If you do not plan on inferring\n");
+    fprintf(stderr, "       ambient RNA contamination, setting this option can slightly speed things\n");
+    fprintf(stderr, "       up by omitting this step.\n");
+    fprintf(stderr, "   --dump_conditional -F If you ran once with -f (to disable computing\n");
+    fprintf(stderr, "       alt allele matching probabilities conditional on each identity), and you\n");
+    fprintf(stderr, "       now wish to run quant_contam, re-run this program with this option enabled\n");
+    fprintf(stderr, "       to load the VCF, compute these values, and write them to disk. Use the\n");
+    fprintf(stderr, "       same output prefix you used on the previous run.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
@@ -1369,6 +1381,8 @@ int main(int argc, char *argv[]) {
        {"error_ref", required_argument, 0, 'e'},
        {"error_alt", no_argument, 0, 'E'},
        {"error_sigma", required_argument, 0, 's'},
+       {"disable_conditional", no_argument, 0, 'f'},
+       {"dump_conditional", no_argument, 0, 'F'},
        {0, 0, 0, 0} 
     };
     
@@ -1394,13 +1408,16 @@ int main(int argc, char *argv[]) {
     bool seurat = false;
     bool underscore = false;
 
+    bool disable_conditional = false;
+    bool dump_conditional = false;
+
     int option_index = 0;
     int ch;
     
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:n:e:E:p:s:CSUjh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:n:e:E:p:s:fFCSUjh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -1459,6 +1476,12 @@ int main(int argc, char *argv[]) {
             case 's':
                 error_sigma = atof(optarg);
                 break;
+            case 'f':
+                disable_conditional = true;
+                break;
+            case 'F':
+                dump_conditional = true;
+                break;
             default:
                 help(0);
                 break;
@@ -1482,6 +1505,10 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: only one of -i/-I is allowed.\n");
         exit(1);
     }
+    if (disable_conditional && dump_conditional){
+        fprintf(stderr, "ERROR: only one of -f/-F is allowed.\n");
+        exit(1);
+    }
     
     // Init BAM reader
     bam_reader reader = bam_reader();
@@ -1489,10 +1516,10 @@ int main(int argc, char *argv[]) {
     // Decide whether we will be loading counts or computing them
     bool load_counts = false;
     string countsfilename = output_prefix + ".counts";
-    if (file_exists(countsfilename)){
+    if (!dump_conditional && file_exists(countsfilename)){
         load_counts = true;
     }
-    else{
+    else if (!dump_conditional){
         if (bamfile.length() == 0){
             fprintf(stderr, "ERROR: bam file (--bam) required\n");
             exit(1);
@@ -1524,7 +1551,7 @@ int main(int argc, char *argv[]) {
                 exit(1);
             }
             fprintf(stderr, "Reading VCF/BCF header...\n");
-            nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, true);
+            nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, false, true);
             samples_from_vcf = true;
         }
     }
@@ -1534,7 +1561,21 @@ int main(int argc, char *argv[]) {
             exit(1);
         }
         fprintf(stderr, "Loading variants from VCF/BCF...\n");
-        nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, load_counts);
+        nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, dump_conditional, load_counts);
+        // Compute conditional matching fractions for quant_contam (can disable)
+        if (!disable_conditional){
+            map<pair<int, int>, map<int, float> > conditional_match_fracs;
+            fprintf(stderr, "Computing conditional alt allele probabilities...\n");
+            get_conditional_match_fracs(snpdat, conditional_match_fracs, samples.size());
+            string outname = output_prefix + ".condf";
+            FILE* outf = fopen(outname.c_str(), "w");
+            dump_exp_fracs(outf, conditional_match_fracs);
+            fclose(outf); 
+            if (dump_conditional){
+                // Nothing left to do.
+                return 0;
+            }
+        }
         samples_from_vcf = true;
     }
 
@@ -1618,6 +1659,9 @@ all possible individuals\n", idfile_doublet.c_str());
         load_counts_from_file(indv_allelecounts, samples, countsfilename, allowed_ids);
     }
     else{
+
+        fprintf(stderr, "Counting alleles in BAM file...\n");
+
         // initialize the BAM reader
         reader.set_file(bamfile);
         

@@ -381,6 +381,7 @@ contamFinder::contamFinder(robin_hood::unordered_map<unsigned long,
         map<pair<int, int>, map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
     robin_hood::unordered_map<unsigned long, int>& assn,
     robin_hood::unordered_map<unsigned long, double>& assn_llr,
+    map<pair<int, int>, map<int, float> >& exp_match_fracs,
     int n_samples){
     
     // Copy external data structures that we will need in the future 
@@ -389,7 +390,8 @@ contamFinder::contamFinder(robin_hood::unordered_map<unsigned long,
     this->indv_allelecounts = indv_allelecounts;
     this->n_samples = n_samples;
     this->n_mixprop_trials = 10;
-     
+    this->expfracs = exp_match_fracs;
+
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin(); a != 
         assn.end(); ++a){
         allowed_ids.insert(a->second);
@@ -593,6 +595,11 @@ void contamFinder::get_reads_expectations(int ident,
                 for (map<pair<int, int>, pair<float, float> >::iterator ac2 = ac->second.begin();
                     ac2 != ac->second.end(); ++ac2){
                     if (ac2->first.first == combo.second){
+                        
+                        if (omit_hets && (ac->first.second == 1 || ac2->first.second == 1)){
+                            continue;
+                        }
+
                         double ref = ac2->second.first;
                         double alt = ac2->second.second;
                         if (ref + alt > 0){
@@ -623,7 +630,7 @@ void contamFinder::get_reads_expectations(int ident,
             }
         }
         else{
-            if (ac->first.first == ident){
+            if (ac->first.first == ident && (!omit_hets || ac->first.second != 1)){
                 // Store expectations without error incorporated (for now)
                 double expected = ac->first.second / 2.0;
                 double ref = ac->second[nullkey].first;
@@ -652,7 +659,7 @@ void contamFinder::get_reads_expectations(int ident,
  *
  * Solve jointly, using BFGS, with initial guesses of 0.001 for everything.
  */
-void contamFinder::solve_params_init(){
+double contamFinder::solve_params_init(){
     
     vector<pair<int, int> > idx2expfrac1;
     vector<pair<int, int> > idx2expfrac2;
@@ -677,6 +684,10 @@ void contamFinder::solve_params_init(){
         for (map<pair<int, int>, vector<int> >::iterator ei2 = ei1->second.begin(); ei2 != 
             ei1->second.end(); ++ei2){
             
+            if (omit_hets && ei2->first.second == 1){
+                continue;
+            }
+
             int ef_param_idx = efparams.size();
             double p_c = amb_mu[ei1->first][ei2->first];
             if (p_c < floor){
@@ -709,7 +720,14 @@ void contamFinder::solve_params_init(){
             }        
         }
     }
-    efparams.push_back(0.01);
+
+    // Add in global contam rate
+    if (c_init_global > 0){
+        efparams.push_back(c_init_global);
+    }
+    else{
+        efparams.push_back(0.01);
+    }
     optimML::multivar_ml_solver solver(efparams, ll_ambmu2, dll_ambmu2);
     for (int i = 0; i < efparams.size(); ++i){
         solver.constrain_01(i);
@@ -720,7 +738,8 @@ void contamFinder::solve_params_init(){
     solver.add_data("ef_idx", efp_idx);
     solver.add_weights(weights);
     solver.solve();
-    
+    fprintf(stderr, "LL %f\n", solver.log_likelihood);
+
     for (int i = 0; i < efparams.size()-1; ++i){
         double updated = solver.results[i];
         if (amb_mu.count(efp2ef1[i]) == 0){
@@ -734,6 +753,8 @@ void contamFinder::solve_params_init(){
     }
     fprintf(stderr, "Init global contamination estimate = %f\n", 
         solver.results[solver.results.size()-1]);
+    
+    return solver.log_likelihood;
 }
 /**
  * Once an ambient RNA profile exists (we have estimates of p_c parameters for
@@ -854,6 +875,10 @@ double contamFinder::update_ambient_profile(){
         for (map<pair<int, int>, vector<int> >::iterator ei2 = ei1->second.begin(); ei2 != 
             ei1->second.end(); ++ei2){
             
+            if (omit_hets && ei2->first.second == 1){
+                continue;
+            }
+
             int ef_param_idx = efparams.size();
             double p_c = amb_mu[ei1->first][ei2->first];
             if (p_c < floor){
@@ -1016,7 +1041,7 @@ void contamFinder::compute_expected_fracs_all_id(){
             }
         }
     }
-
+    
     // Set up parameters & compute initial values
     vector<double> params;
     vector<double> params_tot;
@@ -1069,7 +1094,8 @@ void contamFinder::compute_expected_fracs_all_id(){
             continue;
         }
 
-        if (contam_rate.count(a->first) > 0){
+        if (true){
+        //if (contam_rate.count(a->first) > 0){
             
             unsigned long cell = a->first;
             int cell_id = a->second;
@@ -1245,6 +1271,20 @@ double contamFinder::model_as_mixture(){
     mix.add_data("c", c);
     mix.add_data("p_e", p_e);
     mix.add_mixcomp(mixfrac_exp);
+    mix.explore_starting_mixcomps();
+    
+    contam_prof.clear();
+    for (int i = 0; i < mix.results_mixcomp.size(); ++i){
+        int key = i;
+        if (i >= n_samples){
+            key = -1;
+        }
+        contam_prof.insert(make_pair(i, mix.results_mixcomp[i]));
+    }
+    return mix.log_likelihood;
+
+    /*
+    //mix.add_mixcomp(mixfrac_exp);
     
     // Since MLE finding in this case can be very sensitive to initial
     // values, we will try once starting from an even mixture of cells.
@@ -1263,17 +1303,86 @@ double contamFinder::model_as_mixture(){
 
     solution_ll.push_back(mix.log_likelihood);
     solution_cp.push_back(mix.results_mixcomp);
+    
+    // Do another trial where starting proportions are based on 1-(mean contamination rate) per ID
+    // Intuition here: if some IDs tend to have much lower inferred contam rates than others, that
+    // probably means those IDs more closely resemble the contamination itself.
+    map<int, double> id_contam_mean;
+    map<int, double> id_contam_count;
+    for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin();
+        a != assn.end(); ++a){
+        if (a->second >= n_samples){
+            pair<int, int> combo = idx_to_hap_comb(a->second, n_samples);
+            if (id_contam_count.count(combo.first) == 0){
+                id_contam_mean.insert(make_pair(combo.first, 0.0));
+                id_contam_count.insert(make_pair(combo.first, 0.0));
+            }
+            if (id_contam_count.count(combo.second) == 0){
+                id_contam_mean.insert(make_pair(combo.second, 0.0));
+                id_contam_count.insert(make_pair(combo.second, 0.0));
+            }
+            id_contam_mean[combo.first] += contam_rate[a->first];
+            id_contam_count[combo.first]++;
+            id_contam_mean[combo.second] += contam_rate[a->first];
+            id_contam_count[combo.second]++;
+        } 
+        else{
+            if (id_contam_count.count(a->second) == 0){
+                id_contam_mean.insert(make_pair(a->second, 0.0));
+                id_contam_count.insert(make_pair(a->second, 0.0));
+            }
+            id_contam_mean[a->second] += contam_rate[a->first];
+            id_contam_count[a->second]++;
+        }
+    }
+    vector<double> starting_props1;
+    double starting_props1_tot = 0.0;
+    double mean_max = 0.0;
+    for (map<int, double>::iterator m = id_contam_mean.begin(); m != id_contam_mean.end(); ++m){
+        m->second /= id_contam_count[m->first];
+        if (m->second > mean_max){
+            mean_max = m->second;
+        }
+    }
+    double pseudocount = 0.01;
+
+    for (map<int, double>::iterator m = id_contam_mean.begin(); m != id_contam_mean.end(); ++m){
+        double val = (mean_max - m->second)/mean_max + pseudocount;
+        starting_props1.push_back(val);
+        starting_props1_tot += val;
+    }
+    for (int i = 0; i < starting_props1.size(); ++i){
+        starting_props1[i] /= starting_props1_tot;
+    }
+    mix.add_mixcomp_fracs(starting_props1);
+    mix.solve();
+    solution_ll.push_back(mix.log_likelihood);
+    solution_cp.push_back(mix.results_mixcomp);
 
     if (!inter_species){
         map<int, int> assncount;
         int assntot;
         for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin();
             a != assn.end(); ++a){
-            if (assncount.count(a->second) == 0){
-                assncount.insert(make_pair(a->second, 0));
+            if (a->second >= n_samples){
+                pair<int, int> comb = idx_to_hap_comb(a->second, n_samples);
+                if (assncount.count(comb.first) == 0){
+                    assncount.insert(make_pair(comb.first, 0));
+                }
+                if (assncount.count(comb.second) == 0){
+                    assncount.insert(make_pair(comb.second, 0));
+                }
+                assncount[comb.first]++;
+                assncount[comb.second]++;
+                assntot += 2;
             }
-            assncount[a->second]++;
-            assntot++;
+            else{
+                if (assncount.count(a->second) == 0){
+                    assncount.insert(make_pair(a->second, 0));
+                }
+                assncount[a->second] += 2;
+                assntot += 2;
+            }
         }
         vector<double> starting_props;
         for (int i = 0; i < idx2samp.size(); ++i){
@@ -1306,7 +1415,7 @@ double contamFinder::model_as_mixture(){
             max_ll = solution_ll[i];
         }
     }
-
+    
     // Update contamination profile
     contam_prof.clear();
     for (int i = 0; i < idx2samp.size(); ++i){
@@ -1318,6 +1427,7 @@ double contamFinder::model_as_mixture(){
     }
 
     return max_ll;
+    */
 }
 
 /**
@@ -1338,18 +1448,630 @@ double contamFinder::compute_ll(){
     return loglik;
 }
 
+double ll_test_aux(double p_c, const map<string, double>& params_d, const map<string, int>& params_i){
+    double n = params_d.at("n");
+    double k = params_d.at("k");
+    double c = params_d.at("c");
+    double p_0 = params_d.at("p");
+    double binom_p = (1.0 - c)*p_0 + c*p_c;
+    return logbinom(n, k, binom_p);
+}
+
+double dll_test_aux(double p_c, const map<string, double>& params_d, const map<string, int>& params_i){
+    double n = params_d.at("n");
+    double k = params_d.at("k");
+    double c = params_d.at("c");
+    double p_0 = params_d.at("p");
+    double binom_p = (1.0 - c)*p_0 + c*p_c;
+    double dy_dp = (k-n*binom_p)/(binom_p - binom_p*binom_p);
+    return dy_dp * c;
+}
+
+
+double contamFinder::test_aux(double c){
+ 
+    double llsum = 0.0;
+
+    for (map<pair<int, int>, map<pair<int, int>, vector<int> > >::iterator ei1 = 
+        expfrac_to_idx.begin(); ei1 != expfrac_to_idx.end(); ++ei1){
+        for (map<pair<int, int>, vector<int> >::iterator ei2 = ei1->second.begin(); ei2 != 
+            ei1->second.end(); ++ei2){
+            
+            // Solve for p_c given current c
+            vector<double> n;
+            vector<double> k;
+            vector<double> p_e;
+            vector<double> weights;
+            
+            for (vector<int>::iterator i = ei2->second.begin(); i != ei2->second.end(); ++i){
+                if (idx_to_cell.count(*i) > 0){ 
+                    
+                    n.push_back(n_all[*i]);
+                    k.push_back(k_all[*i]);
+                    p_e.push_back(adjust_p_err(p_e_all[*i], e_r, e_a));
+                            
+                    double weight = 1.0;
+                    if (weighted){ 
+                        // Weight by fraction of LLR sum of all cells assigned to this ID
+                        // assigned to this cell
+                        weight = assn_llr[idx_to_cell[*i]] / id_llrsum[assn[idx_to_cell[*i]]];
+                    }
+                    weights.push_back(weight);
+                }
+            }        
+            
+            optimML::brent_solver solver(ll_test_aux, dll_test_aux);
+            solver.add_weights(weights);
+            solver.add_data_fixed("c", c);
+            solver.add_data("n", n);
+            solver.add_data("k", k);
+            solver.add_data("p", p_e);
+            solver.constrain_01();
+            double res = solver.solve(0,1);
+            
+            amb_mu[ei1->first][ei2->first] = res;
+
+            //if (ei2->first.first == -1){
+            //    fprintf(stderr, "%d\t%d\t%d\t%d\t%f\n", ei1->first.first, ei1->first.second,
+            //        ei2->first.first, ei2->first.second, res);
+            //}
+            //fprintf(stdout, "%f\t%f\n", c, solver.log_likelihood);
+            
+            //if (true){
+            //    llsum += solver.log_likelihood; 
+            //}
+
+        }
+    }
+    
+    return solve_params_init();
+
+    for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin(); a != assn.end(); ++a){
+        bool is_combo = false;
+        pair<int, int> combo;
+        if (a->second >= n_samples){
+            is_combo = true;
+            combo = idx_to_hap_comb(a->second, n_samples);
+        }
+        for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator ac1 = 
+            indv_allelecounts[a->first].begin(); ac1 != indv_allelecounts[a->first].end(); ++ac1){
+            for (map<pair<int, int>, pair<float, float> >::iterator ac2 = ac1->second.begin();
+                ac2 != ac1->second.end(); ++ac2){
+                
+                if (!is_combo){
+                    if (ac1->first.first == a->second && ac2->first.first == -1){
+                        double expec = adjust_p_err((double)ac1->first.second / 2.0, e_r, e_a);
+                        double ref = ac2->second.first;
+                        double alt = ac2->second.second;
+                        double p = (1-c)*expec + c*amb_mu[ac1->first][ac2->first];
+                        llsum += logbinom(ref+alt, alt, p);
+                    }
+                }
+                else{
+                    if (ac1->first.first == combo.first && ac2->first.first == combo.second){
+                        double expec = adjust_p_err((double)(ac1->first.second + ac2->first.second)/4.0,
+                            e_r, e_a);
+                        double ref = ac2->second.first;
+                        double alt = ac2->second.second;
+                        double p = (1-c)*expec + c*amb_mu[ac1->first][ac2->first];
+                        llsum += logbinom(ref+alt, alt, p);
+                    }
+                }
+            }
+        }
+    }
+
+    return llsum;
+}
+
+void contamFinder::test(){
+    double llprev = 0.0;
+    for (double c = 0.01; c <= 0.99; c += 0.01){
+        amb_mu.clear();
+        double ll = test_aux(c);
+        fprintf(stderr, "c = %f: %f\n", c, ll);
+        if (llprev != 0 && (ll-llprev) < 1){
+            //break;
+        }
+        llprev = ll;
+    }
+}
+
+double ll_test_new(const vector<double>& params, 
+    const map<string, double>& data_d, 
+    const map<string, int>& data_i){
+    
+    double c;
+    if (data_d.count("c") > 0){
+        c = data_d.at("c");
+    }    
+    else{
+        c = params[0];
+    }
+    double p_c = params[params.size()-1];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p_e = data_d.at("p_e");
+    double binom_p = (1.0 - c) * p_e + c * p_c;
+    
+    if (isnan(logbinom(n,k,binom_p)) || isinf(logbinom(n,k,binom_p))){
+       fprintf(stderr, "oops\n");
+       exit(1);
+
+    }
+    return logbinom(n, k, binom_p);
+}
+
+void dll_test_new(const vector<double>& params, 
+    const map<string, double>& data_d,
+    const map<string, int>& data_i,
+    vector<double>& results){
+    
+    double c;
+    bool c_in_data = false;
+    if (data_d.count("c") > 0){
+        c = data_d.at("c");
+        c_in_data = true;
+    }
+    else{
+        c = params[0];
+    }
+    double p_c = params[params.size()-1];
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    double p_e = data_d.at("p_e");
+    double binom_p = (1.0 - c) * p_e + c * params[1];
+    double dy_dp = (k-n*binom_p)/(binom_p - binom_p*binom_p);
+    results[results.size()-1] += dy_dp * c;
+    if (c_in_data){
+        results[0] += dy_dp * (p_c - p_e);
+    }
+}
+
+/**
+ *
+ * Returns log likelihood.
+ * Edits init_c to updated value (if solve_for_c == true)
+ */
+double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c){
+    vector<double> params;
+    if (solve_for_c){
+        params.push_back(init_c);
+    }
+    optimML::multivar_ml_solver solver(params, ll_test_new, dll_test_new);
+    
+    vector<vector<double> > mixfracs;
+    vector<double> weights;
+    vector<double> n;
+    vector<double> k;
+    vector<double> p_e;
+    vector<double> c;
+    
+    // true means short-circuit expfrac calculation - if one of two individuals
+    // for a SNP type matches conditional individual, treat as that individual
+    bool ef_all_avg = false;
+
+    for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin(); a != 
+        assn.end(); ++a){
+        
+        bool is_comb = false;
+        pair<int, int> comb;
+        if (a->second >= n_samples){
+            is_comb = true;
+            comb = idx_to_hap_comb(a->second, n_samples);
+        }
+        
+        // get weight
+        double weight = 1.0;
+        if (weighted){
+            weight = assn_llr[a->first] / id_llrsum[a->second];
+        }
+        
+        double this_c;
+        if (!solve_for_c){
+            this_c = contam_rate[a->first];
+        }
+
+        for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator ac1 = 
+            indv_allelecounts[a->first].begin(); ac1 != indv_allelecounts[a->first].end(); ++ac1){
+
+            if ((!is_comb && ac1->first.first == a->second) || (!is_comb && ac1->first.first == comb.first)){
+                for (map<pair<int, int>, pair<float, float> >::iterator ac2 = ac1->second.begin();
+                    ac2 != ac1->second.end(); ++ac2){
+                    if ((!is_comb && ac2->first.first == -1) || (!is_comb && ac2->first.first == comb.second)){
+                        
+                        double expected;
+                        if (!is_comb){
+                            expected = adjust_p_err(ac1->first.second / 2.0, e_r, e_a);
+                        }
+                        else{
+                            expected = adjust_p_err((ac1->first.second + ac2->first.second)/4.0, e_r, e_a);
+                        }
+                        
+                        double ref = ac2->second.first;
+                        double alt = ac2->second.second;
+
+                        n.push_back(ref+alt);
+                        k.push_back(alt);
+                        weights.push_back(weight);
+                        if (!solve_for_c){
+                            c.push_back(this_c);
+                        }
+                        p_e.push_back(expected);
+                        vector<double> mixfrac_row;
+                        for (int i = 0; i < n_samples; ++i){
+                            if (ac2->first.first == -1){
+                                mixfrac_row.push_back(expfracs[ac1->first][i]);
+                            }
+                            else{
+                                if (ef_all_avg && ac1->first.first == i){
+                                    mixfrac_row.push_back(adjust_p_err(ac1->first.second / 2.0, e_r, e_a));
+                                }
+                                else if (ef_all_avg && ac2->first.first == i){
+                                    mixfrac_row.push_back(adjust_p_err(ac2->first.second / 2.0, e_r, e_a));
+                                }
+                                else{
+                                    mixfrac_row.push_back(0.5 * expfracs[ac1->first][i] + 
+                                        0.5 * expfracs[ac2->first][i]);
+                                }
+                            }
+                        }
+
+                        if (inter_species){
+                            // Reference alleles
+                            mixfrac_row.push_back(adjust_p_err(0.0, e_r, e_a));
+                        }
+
+                        mixfracs.push_back(mixfrac_row);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Starting proportions should be those previously set
+    vector<double> startprops;
+    for (map<int, double>::iterator cp = contam_prof.begin(); cp != contam_prof.end(); ++cp){
+        if (cp->first != -1){
+            startprops.push_back(cp->second);
+        }
+    }
+    if (contam_prof.count(-1) > 0){
+        startprops.push_back(contam_prof[-1]);
+    }
+
+    solver.add_mixcomp(mixfracs);
+    solver.add_mixcomp_fracs(startprops);
+    solver.add_data("n", n);
+    solver.add_data("k", k);
+    solver.add_data("p_e", p_e);
+    solver.add_weights(weights);
+    if (solve_for_c){
+        solver.constrain_01(0);
+    }
+    
+    vector<double> ll_trials;
+    vector<vector<double> > cp_trials;
+    vector<double> c_trials;
+
+    //solver.solve();
+    solver.explore_starting_mixcomps();
+
+    if (solve_for_c){
+        // First time. Try a few starting conditions and get the maximum LL.
+        /*
+        double llmax = solver.log_likelihood;
+        int idxmax = 0;
+        cp_trials.push_back(solver.results_mixcomp);
+        c_trials.push_back(solver.results[0]);
+
+        // Try an even mixture
+        vector<double> mceven;
+        for (int i = 0; i < n_samples; ++i){
+            mceven.push_back(1.0/(double)n_samples);
+        }
+        solver.add_mixcomp_fracs(mceven);
+        solver.solve();
+        if (solver.log_likelihood > llmax){
+            llmax = solver.log_likelihood;
+            idxmax = cp_trials.size();
+        }
+        cp_trials.push_back(solver.results_mixcomp);
+        c_trials.push_back(solver.results[0]);
+        */
+        // Try some random trials
+        /*
+        for (int x = 0; x < n_mixprop_trials; ++x){
+            solver.randomize_mixcomps();
+            solver.solve();
+            if (solver.log_likelihood > llmax){
+                llmax = solver.log_likelihood;
+                idxmax = cp_trials.size();
+            }
+            cp_trials.push_back(solver.results_mixcomp);
+            c_trials.push_back(solver.results[0]);
+        }
+        */
+        //solver.explore_starting_mixcomps();
+        fprintf(stderr, "LL %f c = %f\n", solver.log_likelihood, solver.results[0]);
+        contam_prof.clear();
+        for (int i = 0; i < solver.results_mixcomp.size(); ++i){
+            fprintf(stderr, "  %d) %f\n", i, solver.results_mixcomp[i]);
+            int key = i;
+            if (i >= n_samples){
+                key = -1;
+            }
+            contam_prof.insert(make_pair(key, solver.results_mixcomp[i]));
+        }
+        /*
+        fprintf(stderr, "LL %f c = %f\n", llmax, c_trials[idxmax]);
+        contam_prof.clear();
+        for (int i = 0; i < cp_trials[idxmax].size(); ++i){
+            int key = i;
+            if (i >= n_samples){
+                key = -1;
+            }
+            fprintf(stderr, "  %d) %f\n", key, cp_trials[idxmax][i]);
+            contam_prof.insert(make_pair(key, cp_trials[idxmax][i]));
+        }
+        exit(0);
+        */
+    }
+    else{
+        fprintf(stderr, "LL %f\n", solver.log_likelihood);
+        contam_prof.clear();
+        for (int i = 0; i < solver.results_mixcomp.size(); ++i){
+            fprintf(stderr, "  %d) %f\n", i, solver.results_mixcomp[i]);
+            int key = i;
+            if (i > n_samples){
+                key = -1;
+            }
+            contam_prof.insert(make_pair(key, solver.results_mixcomp[i]));
+        }
+    }
+    
+    for (int i = 0; i < n_samples; ++i){
+        for (int nalt = 0; nalt <= 2; ++nalt){
+            pair<int, int> key = make_pair(i, nalt);
+            if (amb_mu.count(key) == 0){
+                map<pair<int, int>, double> m;
+                amb_mu.insert(make_pair(key, m));
+            }
+            pair<int, int> nullkey = make_pair(-1,-1);
+            if (amb_mu[key].count(nullkey) == 0){
+                amb_mu[key].insert(make_pair(nullkey, 0));
+            }
+            double val = 0.0;
+            for (map<int, double>::iterator cp = contam_prof.begin(); cp != contam_prof.end(); ++cp){
+                if (cp->first == -1){
+                    val += cp->second * 0.0;
+                }
+                else{
+                    val += cp->second * expfracs[key][cp->first];
+                }
+            }
+            amb_mu[key][nullkey] = val;
+
+            for (int j = i + 1; j < n_samples; ++j){
+                for (int nalt2 = 0; nalt2 <= 2; ++nalt2){
+                    pair<int, int> key2 = make_pair(j, nalt2);
+                    if (amb_mu[key].count(key2) == 0){
+                        amb_mu[key].insert(make_pair(key2, 0));
+                    }
+                    double val = 0.0;
+                    for (map<int, double>::iterator cp = contam_prof.begin(); cp != contam_prof.end(); ++cp){
+                        if (cp->first == -1){
+                            val += cp->second * adjust_p_err(0.0, e_r, e_a);
+                        }
+                        else{
+                            if (ef_all_avg && cp->first == key.first){
+                                val += cp->second * adjust_p_err((double)key.second / 2.0, e_r, e_a);
+                            }
+                            else if (ef_all_avg && cp->first == key2.first){
+                                val += cp->second * adjust_p_err((double)key2.second / 2.0, e_r, e_a);
+                            }
+                            else{
+                                val += cp->second *
+                                    (0.5*expfracs[key][cp->first] + 0.5*expfracs[key2][cp->first]);
+                            }
+                        }
+                    }
+                    amb_mu[key][key2] = val;
+                }
+            }
+        }
+    }
+    if (solve_for_c){
+        init_c = solver.results[0];
+    }
+    return solver.log_likelihood;
+}
+
+void contamFinder::test_new(double init_c){
+    // Init contam prof
+    contam_prof.clear();
+    if (!inter_species){
+        double tot = 0.0;
+        map<int, double> props;
+        for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin(); a != assn.end(); ++a){
+            if (a->second >= n_samples){
+                pair<int, int> comb = idx_to_hap_comb(a->second, n_samples);
+                if (props.count(comb.first) == 0){
+                    props.insert(make_pair(comb.first, 0));
+                }
+                if (props.count(comb.second) == 0){
+                    props.insert(make_pair(comb.second, 0));
+                }
+                props[comb.first]++;
+                props[comb.second]++;
+                tot += 2;
+            }
+            else{
+                if (props.count(a->second) == 0){
+                    props.insert(make_pair(a->second, 0));
+                }
+                props[a->second] += 2;
+                tot += 2;
+            }
+        }
+        for (int i = 0; i < n_samples; ++i){
+            double min = 0.001;
+            if (props.count(i) == 0){
+                tot += min;
+                props.insert(make_pair(i, min));
+            }    
+        }
+        for (int i = 0; i < n_samples; ++i){
+            contam_prof.insert(make_pair(i, props[i] / tot));
+        }
+    }
+    else{
+        for (int i = 0; i < n_samples; ++i){
+            if (inter_species){
+                contam_prof.insert(make_pair(i, 1.0/(double)n_samples));
+            }
+            else{
+                contam_prof.insert(make_pair(i, 1.0/(double)(n_samples+1)));
+            }
+        }
+        if (inter_species){
+            contam_prof.insert(make_pair(-1, 1.0/(double)(n_samples+1)));
+        }
+    }
+    update_amb_prof_mixture(true, init_c);
+}
+
+double contamFinder::est_min_c(){
+    map<pair<int, int>, map<pair<int, int>, double> > diffs;
+    map<pair<int, int>, map<pair<int, int>, double> > counts;
+    
+    omit_hets = false;
+    bool omit_hets_init = false;
+
+    for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin(); a != 
+        assn.end(); ++a){
+        
+        if (a->second >= n_samples){
+            pair<int, int> combo = idx_to_hap_comb(a->second, n_samples);
+            for (int nalt1 = 0; nalt1 <= 2; ++nalt1){
+                pair<int, int> key1 = make_pair(combo.first, nalt1);
+                for (int nalt2 = 0; nalt2 <= 2; ++nalt2){
+                    pair<int, int> key2 = make_pair(combo.second, nalt2);
+                    double ref = indv_allelecounts[a->first][key1][key2].first;
+                    double alt = indv_allelecounts[a->first][key1][key2].second;
+                    if (ref + alt == 0){
+                        continue;
+                    }
+                    double f = alt/(ref+alt);
+                    double p0 = (double)(nalt1 + nalt2)/4.0;
+                    if (diffs.count(key1) == 0){
+                        map<pair<int, int>, double> m;
+                        diffs.insert(make_pair(key1, m));
+                        counts.insert(make_pair(key1, m));
+                    }
+                    if (diffs[key1].count(key2) == 0){
+                        diffs[key1].insert(make_pair(key2, 0));
+                        counts[key1].insert(make_pair(key2, 0));
+                    }
+                    if (!weighted){
+                        diffs[key1][key2] += f;    
+                        counts[key1][key2]++;
+                    }
+                    else{
+                        diffs[key1][key2] += f * assn_llr[a->first];
+                        counts[key1][key2] += assn_llr[a->first];
+                    }
+                }
+            }
+        }
+        else{
+            pair<int, int> nullkey = make_pair(-1, -1);
+            for (int nalt = 0; nalt <= 2; ++nalt){
+                pair<int, int> key = make_pair(a->second, nalt);
+                double ref = indv_allelecounts[a->first][key][nullkey].first;
+                double alt = indv_allelecounts[a->first][key][nullkey].second;
+                if (ref + alt == 0){
+                    continue;
+                }
+                double f = alt/(ref+alt);
+                double p0 = (double)nalt/2.0;
+                if (diffs.count(key) == 0){
+                    map<pair<int, int>, double> m;
+                    diffs.insert(make_pair(key, m));
+                    counts.insert(make_pair(key, m));
+                }
+                if (diffs[key].count(nullkey) == 0){
+                    diffs[key].insert(make_pair(nullkey, 0));
+                    counts[key].insert(make_pair(nullkey, 0));
+                }
+                if (!weighted){
+                    diffs[key][nullkey] += f;
+                    counts[key][nullkey]++;
+                }
+                else{
+                    diffs[key][nullkey] += f*assn_llr[a->first];
+                    counts[key][nullkey] += assn_llr[a->first];
+                }
+            }
+        }
+    }
+
+    double minc_mean = 0.0;
+    double minc_weightsum = 0.0;
+    for (map<pair<int, int>, map<pair<int, int>, double> >::iterator d = diffs.begin();
+        d != diffs.end(); ++d){
+        for (map<pair<int, int>, double>::iterator d2 = d->second.begin(); d2 != d->second.end();
+            ++d2){
+            double expec;
+            if (d2->first.first == -1){
+                expec = d->first.second / 2.0;
+            }
+            else{
+                expec = (d->first.second + d2->first.second)/4.0;
+            }
+            expec = adjust_p_err(expec, e_r, e_a);
+            if (counts[d->first][d2->first] > 0){
+               
+                double inf = d2->second / counts[d->first][d2->first];
+                double minc;
+                if (inf > expec){
+                    // treat p_c = 0
+                    minc = (inf - expec)/(1.0 - expec);
+                }   
+                else{
+                    // treat p_c = 1
+                    minc = (inf - expec)/(0.0 - expec);
+                }
+                //fprintf(stdout, "%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\n", d->first.first, d->first.second,
+                //    d2->first.first, d2->first.second, d2->second / counts[d->first][d2->first], expec, 
+                //    minc, counts[d->first][d2->first]);
+                if (!omit_hets_init || (d->first.second != 1 && d2->first.second != 1)){
+                    minc_mean += minc * counts[d->first][d2->first];
+                    minc_weightsum += counts[d->first][d2->first];
+                }
+            }
+        }
+    }
+    minc_mean /= minc_weightsum;
+    return minc_mean;
+}
+
 /**
  * Find maximum likelihood estimates of all parameters of interest.
  * Return overall log likelihood.
  */
 double contamFinder::fit(){
-   
-    fprintf(stderr, "Get initial parameter estimates...\n"); 
+    //fprintf(stderr, "Computing expected allele matching rates...\n");
+    //compute_expected_fracs_all_id();
+    double minc = this->est_min_c();
+    fprintf(stderr, "minc %f\n", minc);
+    test_new(minc);
+
+    //fprintf(stderr, "Get initial parameter estimates...\n"); 
     // Get initial estimates for global contamination rate and all
     // p_c parameters
-    solve_params_init();
-    fprintf(stderr, "done\n");
-
+    //double llinit = solve_params_init();
+    //fprintf(stderr, "done\n");
     double delta = 999;
     nits = 0;
     double llprev = 0.0;
@@ -1368,9 +2090,12 @@ double contamFinder::fit(){
         // contamination profile
         this->est_contam_cells();
         
+        double dummy = -1;
+        double loglik = this->update_amb_prof_mixture(false, dummy);
+
         // Get best estimate of contamination profile, given current
         // estimates of contamination per cell
-        double loglik = this->update_ambient_profile();
+        //double loglik = this->update_ambient_profile();
         
         if (llprev != 0.0){
             delta = loglik - llprev;
@@ -1388,18 +2113,25 @@ double contamFinder::fit(){
         llprev = loglik;
     } 
     
+    // Allow ambient prof to update without considering individuals of origin
+    this->update_ambient_profile();
+    this->est_contam_cells();
+    this->model_as_mixture();
+
     // Check how low the error rates have dropped after modeling contamination
     pair<double, double> err_final = this->est_error_rates(false);
     fprintf(stderr, "Residual error rates:\n");
     fprintf(stderr, "  Reference alleles: %f\n", err_final.first);
     fprintf(stderr, "  Alt alleles: %f\n", err_final.second);
-
+    
+    /*
     if (model_mixprop){
         fprintf(stderr, "Computing expected allele matching rates...\n");
         this->compute_expected_fracs_all_id();
         fprintf(stderr, "Modeling ambient RNA as mixture of individuals...\n");
         double mixll = this->model_as_mixture();
     }
+    */
 
     return llprev;
 }

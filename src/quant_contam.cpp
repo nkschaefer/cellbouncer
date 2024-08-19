@@ -81,7 +81,7 @@ void help(int code){
     fprintf(stderr, "    --error_alt -E The underlying, true rate of misreading alt as reference\n");
     fprintf(stderr, "        alleles (should only reflect sequencing error if variant calls are\n");
     fprintf(stderr, "        reliable; default 0.001)\n"); 
-    fprintf(stderr, "    --n_mixprop_trials -n If you are inferring mixture proportions (i.e.\n");
+    fprintf(stderr, "    --n_mixprop_trials -N If you are inferring mixture proportions (i.e.\n");
     fprintf(stderr, "        you have not set option -p), then a set number of random initial\n");
     fprintf(stderr, "        guesses will be used in optimization. Default = 10, or set a different\n");
     fprintf(stderr, "        value with this option.\n");
@@ -221,8 +221,8 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: error rates must be between 0 and 1, exclusive.\n");
         exit(1);
     }
-    if (n_mixprop_trials <= 0){
-        fprintf(stderr, "ERROR: --n_mixprop_trials must be > 0\n");
+    if (n_mixprop_trials < 0){
+        fprintf(stderr, "ERROR: --n_mixprop_trials must be >= 0\n");
         exit(1);
     }
     if (idfile_given && idfile_doublet_given){
@@ -241,6 +241,19 @@ int main(int argc, char *argv[]) {
             output_prefix.c_str());
         fprintf(stderr, "same output prefix.\n");
         exit(1);
+    }
+    
+    map<pair<int, int>, map<int, float> > exp_match_fracs;
+    string expfrac_name = output_prefix + ".condf";
+    if (file_exists(expfrac_name)){
+        load_exp_fracs(expfrac_name, exp_match_fracs);
+    }
+    else{
+        fprintf(stderr, "ERROR: no conditional matching probability file found for %s.\n", 
+            output_prefix.c_str());
+        fprintf(stderr, "Please re-run demux_vcf with the same VCF file and output prefix, \
+but specify the -F option to create this file. Then re-run this program.\n");
+        exit(1); 
     }
 
     set<int> allowed_ids;
@@ -314,7 +327,7 @@ all possible individuals\n", idfile_doublet.c_str());
         exit(1);
     }
 
-    contamFinder cf(indv_allelecounts, assn, assn_llr, samples.size());
+    contamFinder cf(indv_allelecounts, assn, assn_llr, exp_match_fracs, samples.size());
     
     cf.set_error_rates(error_ref, error_alt);
     if (inter_species){

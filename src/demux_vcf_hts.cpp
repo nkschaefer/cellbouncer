@@ -43,11 +43,12 @@ int read_vcf(string& filename,
     map<int, map<int, var> >& snps,
     int min_vq,
     bool hdr_only,
+    bool skip_seq2tid,
     bool allow_missing){
     
     // Map sequence names to TIDs for storage
     map<string, int> seq2tid;
-    if (!hdr_only){
+    if (!hdr_only && !skip_seq2tid){
         seq2tid = reader.get_seq2tid();
     }
 
