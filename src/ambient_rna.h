@@ -28,13 +28,14 @@ class contamFinder{
     private:
         
         // Copies of external data structures needed by multiple things
-        robin_hood::unordered_map<unsigned long, int> assn;
-        robin_hood::unordered_map<unsigned long, double> assn_llr;
+        
         robin_hood::unordered_map<unsigned long, 
                 std::map<std::pair<int, int>, 
                     std::map<std::pair<int, int>, 
                         std::pair<float, float> > > > indv_allelecounts;
         std::set<int> allowed_ids; 
+        std::set<int> allowed_ids2;
+
         // Map each ID to the sum of all LLRs of all cells assigned to it
         map<int, double> id_llrsum;
 
@@ -77,11 +78,6 @@ class contamFinder{
         // Prior distribution sigma for contamination rate per cell
         double contam_cell_prior_se;
        
-        // Optionally limit the number of cells used in computing expected alt
-        // allele fraction at each allele type given each possible identity
-        // (very slow with the entire data set) 
-        int max_cells_expfrac;
-
         // Error rate for ref alleles (rate at which they are misread as alt)
         double e_r;
         // Error rate for alt alleles (rate at which they are misread as ref)
@@ -93,10 +89,6 @@ class contamFinder{
         // of reference alleles
         bool inter_species;
 
-        // Should we take the last step of modeling ambient RNA as a mixture of 
-        // known individuals?
-        bool model_mixprop;
-        
         // How many random trials should we do to re-adjust starting proportions
         // when modeling ambient RNA as a mixture of individuals?
         int n_mixprop_trials;
@@ -117,6 +109,8 @@ class contamFinder{
                 std::map<std::pair<int, int>, 
                 std::pair<float, float> > > >& indv_allelecounts);
         
+        void clear_data();
+
         void get_reads_expectations(int ident,
             std::map<std::pair<int, int>, 
                 std::map<std::pair<int, int>, 
@@ -143,9 +137,24 @@ class contamFinder{
         
         double update_amb_prof_mixture(bool est_c, double& global_c); 
         double est_min_c();
+        bool reclassify_cells();
+
         void test_new(double c);
+        
+        bool contam_prof_initialized;
+        bool c_initialized;
+        double c_init;
 
     public:
+        
+        void set_init_contam_prof(std::map<int, double>& cp);
+        void set_init_c(double c);
+
+        // Copy of assignments & LLRs of assignments from demux_vcf. These
+        // may change if cells are re-assigned after contamination
+        // inference
+        robin_hood::unordered_map<unsigned long, int> assn;
+        robin_hood::unordered_map<unsigned long, double> assn_llr;
         
         // Mean alt allele matching frequencies in ambient RNA
         // First key: allele type (individual index, number alt alleles)
@@ -168,18 +177,17 @@ class contamFinder{
             robin_hood::unordered_map<unsigned long, int>& assn,
             robin_hood::unordered_map<unsigned long, double>& assn_llr,
             std::map<std::pair<int, int>, std::map<int, float> >& exp_match_fracs,
-            int n_samples);
+            int n_samples,
+            std::set<int>& allowed_ids,
+            std::set<int>& allowed_ids2);
 
         // Functions to update parameter values
         void set_error_rates(double e_r, double e_a);
         void model_other_species();
         void model_single_species();
         void set_mixprop_trials(int nt);
-        void model_mixture();
-        void skip_model_mixture();
         void set_delta(double d);
         void set_maxiter(int i);
-        void max_cells_for_expfracs(int mc);
         void use_weights();
         void no_weights();
 

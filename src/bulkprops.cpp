@@ -50,6 +50,9 @@ void help(int code){
     fprintf(stderr, "       These identities will be considered, as well as all possible doublet\n");
     fprintf(stderr, "       combinations of them. Expects a text file, with one individual ID per\n");
     fprintf(stderr, "       line, matching individual names in the VCF.\n");
+    fprintf(stderr, "    --n_trials -N Initial guesses will be randomly shuffled a number of times equal\n");
+    fprintf(stderr, "       to this number times the number of samples, in order to avoid reporting a\n");
+    fprintf(stderr, "       suboptimal local maximum. Default = 10\n");
     fprintf(stderr, "----- I/O options -----\n");
     fprintf(stderr, "    --index_jump -j Instead of reading through the entire BAM file \n");
     fprintf(stderr, "       to count reads at variant positions, use the BAM index to \n");
@@ -70,6 +73,7 @@ int main(int argc, char *argv[]) {
        {"index_jump", no_argument, 0, 'j'},
        {"ids", required_argument, 0, 'i'},
        {"qual", required_argument, 0, 'q'},
+       {"n_trials", required_argument, 0, 'N'},
        {0, 0, 0, 0} 
     };
     
@@ -81,6 +85,7 @@ int main(int argc, char *argv[]) {
     int vq = 50;
     string idfile;
     bool idfile_given = false;
+    int n_trials = 10;
 
     int option_index = 0;
     int ch;
@@ -88,7 +93,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:o:q:i:jh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:v:o:q:i:N:jh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -101,6 +106,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'v':
                 vcf_file = optarg;
+                break;
+            case 'N':
+                n_trials = atoi(optarg);
                 break;
             case 'o':
                 output_prefix = optarg;
@@ -128,6 +136,10 @@ int main(int argc, char *argv[]) {
     }
     if (output_prefix.length() == 0){
         fprintf(stderr, "ERROR: output_prefix/-o required\n");
+        exit(1);
+    }
+    if (n_trials < 0){
+        fprintf(stderr, "ERROR: --n_trials/-N must be 0 or greater\n");
         exit(1);
     }
     
@@ -333,9 +345,28 @@ all possible individuals\n", idfile.c_str());
         }
     }
     
+    vector<double> startfrac;
+    for (int i = 0; i < samples.size(); ++i){
+        startfrac.push_back(1.0/(double)samples.size());
+    }    
     optimML::mixcomp_solver solver(expfracs_all, "binom", n, k);
     solver.solve();
     
+    double maxll = solver.log_likelihood;
+    vector<double> maxprops = solver.results;
+    for (int i = 0; i < n_trials*samples.size(); ++i){
+        solver.add_mixcomp_fracs(startfrac);
+        solver.randomize_mixcomps();
+        solver.solve();
+        if (solver.log_likelihood > maxll){
+            maxll = solver.log_likelihood;
+            maxprops = solver.results;
+        }
+    }
+    
+    solver.log_likelihood = maxll;
+    solver.results = maxprops;
+
     string outfn = output_prefix + ".bulkprops";
     FILE* outf = fopen(outfn.c_str(), "w");
     for (int i = 0; i < solver.results.size(); ++i){
