@@ -124,8 +124,10 @@ class contamFinder{
         // Calculate stuff
         double solve_params_init(); 
         void est_contam_cells();
+        void est_contam_cells_global();
+
         // Returns log likelihood
-        double update_ambient_profile();
+        double update_ambient_profile(bool global_c = false);
         std::pair<double, double> est_error_rates(bool init);
         void compute_expected_fracs_all_id();
         double model_as_mixture();
@@ -135,7 +137,7 @@ class contamFinder{
         bool omit_hets;
         double c_init_global;
         
-        double update_amb_prof_mixture(bool est_c, double& global_c); 
+        double update_amb_prof_mixture(bool est_c, double& global_c, bool use_global_c = false); 
         double est_min_c();
         bool reclassify_cells();
 

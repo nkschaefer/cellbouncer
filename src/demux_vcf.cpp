@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <utility>
 #include <math.h>
+#include <float.h>
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
 #include <zlib.h>
@@ -141,6 +142,12 @@ double ll_err(const vector<double>& params, const map<string, double>& data_d,
     double e_r = params[0];
     double e_a = params[1];
     double p = p0 - p0*e_a + (1.0 - p0)*e_r;
+    if (p <= 0){
+        p = DBL_MIN*1e6;
+    }
+    else if (p >= 1){
+        p = 1.0-DBL_MIN*1e6;
+    }
     double ll = dbinom(n, k, p)/log2(exp(1));
     return ll;
 }
@@ -159,6 +166,12 @@ void dll_err(const vector<double>& params, const map<string, double>& data_d,
     double e_r = params[0];
     double e_a = params[1];
     double p = p0 - p0*e_a + (1.0 - p0)*e_r;
+    if (p <= 0){
+        p = DBL_MIN*1e6;
+    }
+    else if (p >= 1.0){
+        p = 1.0-DBL_MIN*1e6;
+    }
     double ll = dbinom(n, k, p)/log2(exp(1));
     
     double dy_dp = (k-n*p)/(p-p*p);

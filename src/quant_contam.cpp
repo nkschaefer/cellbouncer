@@ -43,11 +43,10 @@ void help(int code){
     fprintf(stderr, "===== REQUIRED =====\n");
     fprintf(stderr, "    --output_prefix -o The output prefix used in a prior run of demux_vcf\n");
     fprintf(stderr, "===== OPTIONAL =====\n");
-    fprintf(stderr, "    --repeat -r If you already ran quant_contam once, you can use the updated\n");
-    fprintf(stderr, "       assignments (from the .decontam.assignments) file from the previous run\n");
-    fprintf(stderr, "       as starting assignments in this run. This way, you can run iteratively\n");
-    fprintf(stderr, "       if you suspect contamination was very high and your initial assignments\n");
-    fprintf(stderr, "       may be unreliable because of it.\n");
+    fprintf(stderr, "    --run_once -r Standard behavior is to iteratively estimate contam profile\n");
+    fprintf(stderr, "       and use it to update cell-individual assignments, then repeat until\n");
+    fprintf(stderr, "       log likelihood converges. With this option, it will do this process\n");
+    fprintf(stderr, "       once and exit.\n");
     fprintf(stderr, "    --ids -i If you limited the individuals to assign when running demux_vcf\n");
     fprintf(stderr, "       (i.e. your VCF contained extra individuals not in the experiment),\n");
     fprintf(stderr, "       provide the filtered list of individuals here. Should be a text file\n");
@@ -113,7 +112,7 @@ int main(int argc, char *argv[]) {
        {"cellranger", no_argument, 0, 'C'},
        {"seurat", no_argument, 0, 'S'},
        {"underscore", no_argument, 0, 'U'},
-       {"repeat", no_argument, 0, 'r'},
+       {"run_once", no_argument, 0, 'r'},
        {0, 0, 0, 0} 
     };
     
@@ -134,7 +133,7 @@ int main(int argc, char *argv[]) {
     bool cellranger = false;
     bool seurat = false;
     bool underscore = false;
-    bool repeat = false;
+    bool run_once = false;
 
 
     int option_index = 0;
@@ -196,7 +195,7 @@ int main(int argc, char *argv[]) {
                 underscore = true;
                 break;
             case 'r':
-                repeat = true;
+                run_once = true;
                 break;
             default:
                 help(0);
@@ -273,9 +272,6 @@ all possible individuals\n", idfile_doublet.c_str());
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     
     string assn_name = output_prefix + ".assignments";
-    if (repeat){
-        assn_name = output_prefix + ".decontam.assignments";
-    }
     if (file_exists(assn_name)){
         fprintf(stderr, "Loading assignments...\n");
         load_assignments_from_file(assn_name, assn, assn_llr, samples);
@@ -300,17 +296,9 @@ all possible individuals\n", idfile_doublet.c_str());
         }
     }
     else{
-        if (repeat){
-            fprintf(stderr, "ERROR: file %s not found. Did you set --repeat/-r without running a first\n",
-                assn_name.c_str());
-            fprintf(stderr, "time? If so, run without -r, then run again with -r and the same other args.\n");
-            exit(1);
-        }
-        else{
-            fprintf(stderr, "ERROR: no assignments found for %s. Please run demux_vcf with same\n", 
-                output_prefix.c_str());
-            fprintf(stderr, "output prefix.\n");
-        }
+        fprintf(stderr, "ERROR: no assignments found for %s. Please run demux_vcf with same\n", 
+            output_prefix.c_str());
+        fprintf(stderr, "output prefix.\n");
         exit(1); 
     }
     
@@ -343,6 +331,7 @@ all possible individuals\n", idfile_doublet.c_str());
         contamFinder cf(indv_allelecounts, assn, assn_llr, exp_match_fracs, samples.size(),
             allowed_ids, allowed_ids2);
         
+        // Initialize to whatever was the final estimate last time 
         if (nits > 0){
             cf.set_init_contam_prof(contam_prof);
         }
@@ -353,9 +342,10 @@ all possible individuals\n", idfile_doublet.c_str());
                 c != contam_rate.end(); ++c){
                 meanc += cfrac * c->second;
             }
-            fprintf(stderr, "MEANC %f\n", meanc);
             cf.set_init_c(meanc);
         } 
+
+        // Do standard initialization
         cf.set_error_rates(error_ref, error_alt);
         if (inter_species){
             cf.model_other_species();
@@ -367,6 +357,7 @@ all possible individuals\n", idfile_doublet.c_str());
         
         cf.fit(); 
         double ll = cf.compute_ll();
+
         // Even when LL dips, that indicates the last round of 
         // assignments were suboptimal. The contamination
         // inferences, etc. are based on previous assignments,
@@ -374,20 +365,29 @@ all possible individuals\n", idfile_doublet.c_str());
         contam_prof = cf.contam_prof;
         contam_rate = cf.contam_rate;
         contam_rate_se = cf.contam_rate_se;
-        if (llprev == 0 || ll > llprev){
+        
+        if (run_once){
+            // Break out of cycle
             assn = cf.assn;
             assn_llr = cf.assn_llr;
-        }
-        fprintf(stderr, "overall LL: %f", ll);
-        if (llprev != 0){
-            delta = ll-llprev;
-            fprintf(stderr, " delta = %f\n", delta);
+            delta = 0;
         }
         else{
-            fprintf(stderr, "\n");
+            if (llprev == 0 || ll > llprev){
+                assn = cf.assn;
+                assn_llr = cf.assn_llr;
+            }
+            fprintf(stderr, "overall LL: %f", ll);
+            if (llprev != 0){
+                delta = ll-llprev;
+                fprintf(stderr, " delta = %f\n", delta);
+            }
+            else{
+                fprintf(stderr, "\n");
+            }
+            llprev = ll;
+            nits++;
         }
-        llprev = ll;
-        nits++;
     }
 
     // Write contamination profile to disk

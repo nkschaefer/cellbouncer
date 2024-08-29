@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <utility>
 #include <math.h>
+#include <cfloat>
 #include <mixtureDist/functions.h>
 #include <optimML/brent.h>
 #include <optimML/multivar_ml.h>
@@ -231,7 +232,6 @@ void dll_ambmu2(const vector<double>& params, const map<string, double>& data_d,
  */
 double ll_err_rates(const vector<double>& params, const map<string, double>& data_d, 
     const map<string, int>& data_i){
-    
     double e_r = params[0];
     double e_a = params[1];
     double p_c = data_d.at("p_c");
@@ -242,6 +242,13 @@ double ll_err_rates(const vector<double>& params, const map<string, double>& dat
 
     double p_e_a = adjust_p_err(p_e, e_r, e_a);
     double binom_p = (1-c)*p_e_a + c*p_c;
+    if (binom_p < DBL_MIN*1e6){
+        binom_p = DBL_MIN*1e6;
+    }
+    else if (binom_p > 1.0-DBL_MIN*1e6){
+        binom_p = 1.0-DBL_MIN*1e6;
+    }
+    
     return logbinom(n, k, binom_p);
 }
 
@@ -261,11 +268,19 @@ void dll_err_rates(const vector<double>& params, const map<string, double>& data
 
     double p_e_a = adjust_p_err(p_e, e_r, e_a);
     double binom_p = (1-c)*p_e_a + c*p_c;
-    
+    if (binom_p < DBL_MIN*1e6){
+        binom_p = DBL_MIN*1e6;
+    }
+    else if (binom_p > 1.0-DBL_MIN*1e6){
+        binom_p = 1.0-DBL_MIN*1e6;
+    }
     double dy_dp = (k-n*binom_p)/(binom_p - binom_p*binom_p);
     
     results[0] = dy_dp * (1 - p_e + c*(p_e - p_c));
     results[1] = dy_dp * (c*(p_e - p_c) - p_e);
+    
+    //fprintf(stderr, "p_c %f p_e %f n %f k %f c %f | %f %f\n", p_c, p_e, n, k, c, params[0], params[1]); 
+    //fprintf(stderr, " -- dy_dp %f [0] %f [1] %f\n", dy_dp, (1-p_e + c*(p_e-p_c)), (c*(p_e-p_c) - p_e));
 }
 
 /**
@@ -741,7 +756,6 @@ double contamFinder::solve_params_init(){
     solver.add_data("ef_idx", efp_idx);
     solver.add_weights(weights);
     solver.solve();
-    fprintf(stderr, "LL %f\n", solver.log_likelihood);
 
     for (int i = 0; i < efparams.size()-1; ++i){
         double updated = solver.results[i];
@@ -840,11 +854,50 @@ void contamFinder::est_contam_cells(){
         mu_var = welford(cell_c_maps);
     }
     if (mu_var.second > 1e-6){
-        fprintf(stderr, "Contamination rate estimates:\n");
+        if (contam_cell_prior > 0 && contam_cell_prior_se > 0){
+            fprintf(stderr, "Shrunken contamination rate estimates:\n");
+        }
+        else{
+            fprintf(stderr, "Contamination rate estimates:\n");
+        }
         fprintf(stderr, "  Mean: %f Std dev: %f\n", mu_var.first, sqrt(mu_var.second));
         contam_cell_prior = mu_var.first;
         contam_cell_prior_se = sqrt(mu_var.second);
     }
+}
+
+void contamFinder::est_contam_cells_global(){
+    
+    contam_rate.clear();
+    contam_rate_se.clear();
+    
+    vector<double> n;
+    vector<double> k;
+    vector<double> p_e;
+    vector<double> p_c;
+    
+    for (map<unsigned long, vector<int> >::iterator ci = cell_to_idx.begin(); 
+        ci != cell_to_idx.end(); ++ci){
+        
+        for (vector<int>::iterator i = ci->second.begin(); i != ci->second.end(); ++i){
+            n.push_back(n_all[*i]);
+            k.push_back(k_all[*i]);
+            p_e.push_back(adjust_p_err(p_e_all[*i], e_r, e_a));
+            p_c.push_back(amb_mu[type1_all[*i]][type2_all[*i]]);
+        }
+    }
+    
+    optimML::brent_solver c_global(ll_c, dll_dc, d2ll_dc2);
+    c_global.add_data("n", n);
+    c_global.add_data("k", k);
+    c_global.add_data("p_e", p_e);
+    c_global.add_data("p_c", p_c);
+    c_global.constrain_01();
+    c_global.set_maxiter(-1);
+    contam_cell_prior = c_global.solve(0,1);
+    //contam_cell_prior_se = c_global.se;
+    contam_cell_prior_se = -1;
+    fprintf(stderr, "Global contamination rate estimate: %f\n", contam_cell_prior);
 }
 
 /**
@@ -852,7 +905,7 @@ void contamFinder::est_contam_cells(){
  * profile (set of p_c parameters for each type of SNP) based on the current
  * contamination rate estimates.
  */
-double contamFinder::update_ambient_profile(){
+double contamFinder::update_ambient_profile(bool global_c){
     
     vector<pair<int, int> > idx2expfrac1;
     vector<pair<int, int> > idx2expfrac2;
@@ -895,16 +948,20 @@ double contamFinder::update_ambient_profile(){
             efp2ef2.insert(make_pair(ef_param_idx, ei2->first));
             
             for (vector<int>::iterator i = ei2->second.begin(); i != ei2->second.end(); ++i){
-                if (idx_to_cell.count(*i) > 0 && 
-                    contam_rate.count(idx_to_cell[*i]) > 0){ 
+                if (global_c || (idx_to_cell.count(*i) > 0 && 
+                    contam_rate.count(idx_to_cell[*i]) > 0)){ 
                     
                     idx2idx.insert(make_pair(*i, n.size()));    
                     n.push_back(n_all[*i]);
                     k.push_back(k_all[*i]);
                     p_e.push_back(adjust_p_err(p_e_all[*i], e_r, e_a));
                     efp_idx.push_back(ef_param_idx);
-                    c.push_back(contam_rate[idx_to_cell[*i]]);
-                    
+                    if (global_c){
+                        c.push_back(contam_cell_prior);
+                    }
+                    else{
+                        c.push_back(contam_rate[idx_to_cell[*i]]);
+                    }
                     double weight = 1.0;
                     if (weighted){
                         double llr = assn_llr[idx_to_cell[*i]];
@@ -1708,7 +1765,7 @@ void dll_test_new(const vector<double>& params,
  * Returns log likelihood.
  * Edits init_c to updated value (if solve_for_c == true)
  */
-double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c){
+double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c, bool use_global_c){
     vector<double> params;
     if (solve_for_c){
         params.push_back(init_c);
@@ -1744,7 +1801,12 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c){
         
         double this_c;
         if (!solve_for_c){
-            this_c = contam_rate[a->first];
+            if (use_global_c){
+                this_c = contam_cell_prior;
+            }
+            else{
+                this_c = contam_rate[a->first];
+            }
         }
         /*
         vector<pair<float, float> > reads;
@@ -1954,11 +2016,11 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c){
         solver.results_mixcomp = mcs[maxidx];
         
 
-        fprintf(stderr, "LL %f c = %f\n", solver.log_likelihood, solver.results[0]);
+        //fprintf(stderr, "LL %f c = %f\n", solver.log_likelihood, solver.results[0]);
         contam_prof.clear();
         for (int i = 0; i < idx2samp.size(); ++i){
             int samp = idx2samp[i];
-            fprintf(stderr, "  %d) %f\n", samp, solver.results_mixcomp[i]);
+            //fprintf(stderr, "  %d) %f\n", samp, solver.results_mixcomp[i]);
             contam_prof.insert(make_pair(samp, solver.results_mixcomp[i]));
         }
         if (inter_species){
@@ -1980,11 +2042,9 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c){
     }
     else{
         solver.solve();
-        fprintf(stderr, "LL %f\n", solver.log_likelihood);
         contam_prof.clear();
         for (int i = 0; i < idx2samp.size(); ++i){
             int samp = idx2samp[i];
-            fprintf(stderr, "  %d) %f\n", samp, solver.results_mixcomp[i]);
             contam_prof.insert(make_pair(samp, solver.results_mixcomp[i]));
         }
         if (inter_species){
@@ -2481,7 +2541,7 @@ double contamFinder::fit(){
     if (c_init <= 0){
         c_init = this->est_min_c();
     }
-    fprintf(stderr, "Initial guess c = %f\n", c_init);
+    fprintf(stderr, "Initial contamination rate = %f\n", c_init);
     test_new(c_init);
 
     //fprintf(stderr, "Get initial parameter estimates...\n"); 
@@ -2505,15 +2565,16 @@ double contamFinder::fit(){
         
         // Get best estimates of contamination per cell, given current 
         // contamination profile
-        this->est_contam_cells();
+        this->est_contam_cells_global();
         
         double dummy = -1;
-        double loglik = this->update_amb_prof_mixture(false, dummy);
+        double loglik = this->update_amb_prof_mixture(false, dummy, true);
 
         // Get best estimate of contamination profile, given current
         // estimates of contamination per cell
-        //double loglik = this->update_ambient_profile();
-        
+        //double loglik = this->update_ambient_profile(true);
+        //loglik = this->update_amb_prof_mixture(false, dummy);
+
         if (llprev != 0.0){
             delta = loglik - llprev;
             if (delta < 0){
@@ -2530,14 +2591,25 @@ double contamFinder::fit(){
         llprev = loglik;
     } 
     
-    // Allow ambient prof to update without considering individuals of origin
-    this->update_ambient_profile();
-    this->est_contam_cells();
-    double dummy;
-    this->update_amb_prof_mixture(false, dummy);
+    //this->update_ambient_profile(true);
     
+    // Once to set prior params
+    this->est_contam_cells();
+    // Again to use empirical Bayes shrinkage
+    this->est_contam_cells();
+
+    // Allow ambient prof to update without considering individuals of origin
+    this->update_ambient_profile(false);
+    
+    // Update mixture components using per-cell contam estimates
+    double dummy;
+    this->update_amb_prof_mixture(false, dummy, false);
+    
+    //est_contam_cells();
     fprintf(stderr, "Reclassifying cells...\n");
     bool reclassified = this->reclassify_cells();
+    
+
     /*
     if (reclassified){
         est_contam_cells();
@@ -2571,7 +2643,7 @@ double contamFinder::fit(){
        update_amb_prof_mixture(false, dummy);
     }
     */
-
+    fprintf(stderr, "est error rates...\n");
     // Check how low the error rates have dropped after modeling contamination
     pair<double, double> err_final = this->est_error_rates(false);
     fprintf(stderr, "Residual error rates:\n");
