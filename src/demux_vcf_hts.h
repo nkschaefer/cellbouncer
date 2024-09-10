@@ -88,6 +88,12 @@ void process_bam_record_bulk(bam_reader& reader,
     std::map<int, std::map<int, std::pair<float, float> > >& snp_ref_alt,
     std::map<int, std::map<int, float> >& snp_err);
 
+void process_bam_record_bysnp(bam_reader& reader,
+    int snppos,
+    var& vardat,
+    robin_hood::unordered_map<unsigned long, int>& assignments,
+    std::map<int, std::pair<float, float> >& snp_var_counts);
+
 void dump_vcs_counts(robin_hood::unordered_map<unsigned long, 
         std::pair<float, float> >& varcounts_site,
     robin_hood::unordered_map<unsigned long, std::map<std::pair<int, int>, 

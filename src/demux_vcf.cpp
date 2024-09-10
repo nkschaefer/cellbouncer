@@ -251,6 +251,7 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
     solver.constrain_01(1);
     solver.add_normal_prior(0, error_ref, error_sigma, 0.0, 1.0);
     solver.add_normal_prior(1, error_alt, error_sigma, 0.0, 1.0);
+
     solver.solve();
     
     return make_pair(solver.results[0], solver.results[1]);
@@ -946,6 +947,18 @@ all possible individuals\n", idfile_doublet.c_str());
                 }
             }
             
+            // Handle any final SNPs.
+            if (curtid != -1){
+                while (cursnp != snpdat[curtid].end()){
+                    if (snpdat[curtid].count(cursnp->first) > 0){        
+                        dump_vcs_counts(varcounts_site[curtid][cursnp->first], 
+                            indv_allelecounts,
+                            cursnp->second, samples.size());
+                    }
+                    ++nsnp_processed;
+                    ++cursnp;    
+                }
+            }
         }
         else{
             // Visit each SNP and index-jump in the BAM to it.

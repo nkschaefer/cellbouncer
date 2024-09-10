@@ -425,6 +425,53 @@ void process_bam_record_bulk(bam_reader& reader,
 }
 
 /**
+ * Same as above, but for refining individual genotypes at SNPs after
+ * assignments are made.
+ */
+void process_bam_record_bysnp(bam_reader& reader,
+    int snppos,
+    var& vardat,
+    robin_hood::unordered_map<unsigned long, int>& assignments,
+    map<int, pair<float, float> >& snp_var_counts){
+
+    if (!reader.unmapped() && !reader.secondary() && 
+        !reader.dup() && reader.has_cb_z){
+                        
+        // Get BC key
+        bc bc_bits;
+        str2bc(reader.cb_z, bc_bits);
+        unsigned long bc_key = bc_bits.to_ulong();
+        
+        if (assignments.count(bc_key) > 0){
+            
+            // Instead of storing actual read counts, store the probability
+            // that the mapping was correct.
+            float prob_corr = 1.0 - pow(10, -(float)reader.mapq/10.0);
+            
+            if (prob_corr > 0.001){
+                int a = assignments[bc_key];
+                if (snp_var_counts.count(a) == 0){
+                    snp_var_counts.insert(make_pair(a, make_pair(0,0)));
+                }
+                
+                // Note: this function expects positions to be 1-based, but 
+                // BCF/BAM functions store as 0-based
+                char allele = reader.get_base_at(snppos + 1);
+                
+                if (allele != 'N' && allele != '-'){
+                    if (allele == vardat.ref){
+                        snp_var_counts[a].first += prob_corr;
+                    }
+                    else if (allele == vardat.alt){
+                        snp_var_counts[a].second += prob_corr;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
  * Given a set of allele counts at a given site, once we are guaranteed no longer to 
  * see the site in the BAM, we can dump the information from the site-specific
  * data structure into the genome-wide data structure storing counts at different
