@@ -38,6 +38,9 @@ class contamFinder{
 
         // Map each ID to the sum of all LLRs of all cells assigned to it
         map<int, double> id_llrsum;
+        map<int, double> id_llrsum2;
+        map<int, double> id_count;
+        double llrtot;
 
         // Vectors of each data value that we will use repeatedly in optimizations 
         std::vector<double> n_all;
@@ -141,7 +144,7 @@ class contamFinder{
         double est_min_c();
         bool reclassify_cells();
 
-        void test_new(double c);
+        double init_params(double& c);
         
         bool contam_prof_initialized;
         bool c_initialized;
@@ -167,7 +170,8 @@ class contamFinder{
         // Contamination rates & their standard errors per cell
         robin_hood::unordered_map<unsigned long, double> contam_rate;
         robin_hood::unordered_map<unsigned long, double> contam_rate_se;
-        
+        robin_hood::unordered_map<unsigned long, double> contam_rate_ll;
+
         // Most likely mixture of genotypes in ambient RNA
         std::map<int, double> contam_prof;
 
@@ -198,7 +202,7 @@ class contamFinder{
 
         // Run everything
         // Returns log likelihood
-        double fit();
+        void fit();
 
 };
 

@@ -377,7 +377,7 @@ all possible individuals\n", idfile_doublet.c_str());
                 assn = cf.assn;
                 assn_llr = cf.assn_llr;
             }
-            fprintf(stderr, "overall LL: %f", ll);
+            fprintf(stderr, " -- Log likelihood: %f", ll);
             if (llprev != 0){
                 delta = ll-llprev;
                 fprintf(stderr, " delta = %f\n", delta);
