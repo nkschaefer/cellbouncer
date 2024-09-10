@@ -35,6 +35,7 @@ processing can be run more efficiently on a cluster.\n");
     fprintf(stderr, "[OPTIONS]:\n");
     fprintf(stderr, "    --r1 -1 The input file for forward, paired reads\n");
     fprintf(stderr, "    --r2 -2 The input file for reverse, paired reads\n");
+    fprintf(stderr, "    --r3 -3 The third read file in read triplets, i.e. single-cell ATAC-seq\n");
     fprintf(stderr, "    --single -s The input file for unpaired reads\n");
     fprintf(stderr, "    --output_directory -o The output directory for split files\n");
     fprintf(stderr, "    --num_chunks -n The number of smaller read files to create\n");
@@ -95,6 +96,7 @@ int main(int argc, char *argv[]) {
     static struct option long_options[] = {
        {"r1", required_argument, 0, '1'},
        {"r2", required_argument, 0, '2'},
+       {"r3", required_argument, 0, '3'},
        {"single", required_argument, 0, 's'},
        {"output_directory", required_argument, 0, 'o'},
        {"num_chunks", required_argument, 0, 'n'},
@@ -104,8 +106,10 @@ int main(int argc, char *argv[]) {
     // Set default values
     string r1file;
     string r2file;
+    string r3file;
     bool has_r1 = false;
     bool has_r2 = false;
+    bool has_r3 = false;
     bool has_paired = false;
     string sfile;
     bool has_single = false;
@@ -119,7 +123,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "1:2:s:o:n:h", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "1:2:3:s:o:n:h", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -134,6 +138,10 @@ int main(int argc, char *argv[]) {
             case '2':
                 r2file = optarg;
                 has_r2 = true;
+                break;
+            case '3':
+                r3file = optarg;
+                has_r3 = true;
                 break;
             case 's':
                 sfile = optarg;
@@ -158,7 +166,10 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: at least one of either -1 and -2 or -s must be provided.\n");
         exit(1);
     }
-    
+    if (has_r3 && (!has_r1 || !has_r2)){
+        fprintf(stderr, "ERROR: cannot process R3 without corresponding R1 and R2\n");
+        exit(1);
+    }
     if (num_chunks <= 0){
         fprintf(stderr, "ERROR: num chunks must be a positive integer\n");
         exit(1);
@@ -178,10 +189,11 @@ int main(int argc, char *argv[]) {
     }
     
     // Define output files
-    gzFile outfiles[num_chunks*2 + 1];
+    gzFile outfiles[num_chunks*3 + 1];
     
     string base1;
     string base2;
+    string base3;
     string base_single;
     
     if (has_paired){
@@ -189,6 +201,10 @@ int main(int argc, char *argv[]) {
         base1 = filename_noext(base1);
         base2 = filename_nopath(r2file);
         base2 = filename_noext(base2);
+        if (has_r3){
+            base3 = filename_nopath(r3file);
+            base3 = filename_noext(base3);
+        }
     }
     else{
         base_single = filename_nopath(sfile);
@@ -201,15 +217,36 @@ int main(int argc, char *argv[]) {
             char fn2[150];
             sprintf(&fn1[0], "%s/%s.%d.fastq.gz", output_directory.c_str(), base1.c_str(), i+1);
             sprintf(&fn2[0], "%s/%s.%d.fastq.gz", output_directory.c_str(), base2.c_str(), i+1);
-            outfiles[i*2] = gzopen(fn1, "w");
-            outfiles[i*2+1] = gzopen(fn2, "w");
-            if (!outfiles[i*2]){
-                fprintf(stderr, "ERROR opening %s for writing.\n", fn1);
-                exit(1);
+            if (has_r3){
+                char fn3[150];
+                sprintf(&fn3[0], "%s/%s.%d.fastq.gz", output_directory.c_str(), base3.c_str(), i+1);
+                outfiles[i*3] = gzopen(fn1, "w");
+                outfiles[i*3+1] = gzopen(fn2, "w");
+                outfiles[i*3+2] = gzopen(fn3, "w");
+                if (!outfiles[i*3]){
+                    fprintf(stderr, "ERROR opening %s for writing.\n", fn1);
+                    exit(1);
+                }
+                if (!outfiles[i*3+1]){
+                    fprintf(stderr, "ERROR opening %s for writing.\n", fn2);
+                    exit(1);
+                }
+                if (!outfiles[i*3+2]){
+                    fprintf(stderr, "ERROR opening %s for writing.\n", fn3);
+                    exit(1);
+                }
             }
-            if (!outfiles[i*2+1]){
-                fprintf(stderr, "ERROR opening %s for writing.\n", fn2);
-                exit(1);
+            else{
+                outfiles[i*2] = gzopen(fn1, "w");
+                outfiles[i*2+1] = gzopen(fn2, "w");
+                if (!outfiles[i*2]){
+                    fprintf(stderr, "ERROR opening %s for writing.\n", fn1);
+                    exit(1);
+                }
+                if (!outfiles[i*2+1]){
+                    fprintf(stderr, "ERROR opening %s for writing.\n", fn2);
+                    exit(1);
+                }
             }
         }
         else{
@@ -227,11 +264,14 @@ int main(int argc, char *argv[]) {
     // Prep input file(s).
     int f_progress;
     int r_progress;
+    int f3_progress;
     gzFile f_fp;
     gzFile r_fp;
+    gzFile r3_fp;
     gzFile s_fp;
     kseq_t* seq_f;
     kseq_t* seq_r;
+    kseq_t* seq_r3;
     if (has_paired){
         f_fp = gzopen(r1file.c_str(), "r");
         if (!f_fp){
@@ -245,6 +285,14 @@ int main(int argc, char *argv[]) {
         }
         seq_f = kseq_init(f_fp);
         seq_r = kseq_init(r_fp);
+        if (has_r3){
+            r3_fp = gzopen(r3file.c_str(), "r");
+            if (!r3_fp){
+                fprintf(stderr, "ERROR opening %s for reading\n", r3file.c_str());
+                exit(1);
+            }
+            seq_r3 = kseq_init(r3_fp);
+        }
     }
 
     else{
@@ -259,7 +307,12 @@ int main(int argc, char *argv[]) {
     int cur_chunk_idx = 0;
     while ((f_progress = kseq_read(seq_f)) >= 0){
         
-        write_fastq(seq_f, outfiles[cur_chunk_idx*2]);
+        if (has_r3){
+            write_fastq(seq_f, outfiles[cur_chunk_idx*3]);
+        }
+        else{
+            write_fastq(seq_f, outfiles[cur_chunk_idx*2]);
+        }
 
         if (has_paired){
             r_progress = kseq_read(seq_r);
@@ -267,7 +320,18 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "ERROR: read order no longer matching at seq %s in R1 file\n", seq_f->name.s);
                 exit(1);
             }    
-            write_fastq(seq_r, outfiles[cur_chunk_idx*2+1]);
+            if (has_r3){
+                write_fastq(seq_r, outfiles[cur_chunk_idx*3+1]);
+                f3_progress = kseq_read(seq_r3);
+                if (f3_progress < 0){
+                    fprintf(stderr, "ERROR: read order no longer matching at seq %s in R3 file\n", seq_r3->name.s);
+                    exit(1);
+                }
+                write_fastq(seq_r3, outfiles[cur_chunk_idx*3+2]);
+            }
+            else{
+                write_fastq(seq_r, outfiles[cur_chunk_idx*2+1]);
+            }
         }
         
         cur_chunk_idx++;
@@ -282,9 +346,19 @@ int main(int argc, char *argv[]) {
     // Close output files.
     if (has_paired){
         kseq_destroy(seq_r);
+        if (has_r3){
+            kseq_destroy(seq_r3);
+        }
         for (int i = 0; i < num_chunks; ++i){
-            gzclose(outfiles[i*2]);
-            gzclose(outfiles[i*2 + 1]);
+            if (has_r3){
+                gzclose(outfiles[i*3]);
+                gzclose(outfiles[i*3 + 1]);
+                gzclose(outfiles[i*3 + 2]);
+            }
+            else{
+                gzclose(outfiles[i*2]);
+                gzclose(outfiles[i*2 + 1]);
+            }
         }
     }
     else{
