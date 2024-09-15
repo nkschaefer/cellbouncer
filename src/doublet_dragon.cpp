@@ -131,14 +131,17 @@ double loglik(const vector<double>& params,
     double k = (double)data_i.at("k");
     int p_idx = data_i.at("p_idx");
     int p_idx2 = data_i.at("p_idx2");
-    int grp_start = data_i.at("grp_start");
-    int grp_end = data_i.at("grp_end");
+    //int grp_start = data_i.at("grp_start");
+    //int grp_end = data_i.at("grp_end");
     
+    /*
     double grptot = 0;
     for (int i = grp_start; i <= grp_end; ++i){
         grptot += expit(params[i]);
     }
     double p1 = expit(params[p_idx]) / grptot;
+    */
+    double p1 = params[p_idx];
 
     double p;
     if (p_idx2 == -1){
@@ -147,7 +150,8 @@ double loglik(const vector<double>& params,
     }
     else{
         // Doublet
-        double p2 = expit(params[p_idx2]) / grptot;
+        //double p2 = expit(params[p_idx2]) / grptot;
+        double p2 = params[p_idx2];
         // Account for two ways of sampling this doublet
         p = 2*d*p1*p2;
     }
@@ -164,14 +168,17 @@ void dloglik_dx(const vector<double>& params,
     double k = (double)data_i.at("k");
     int p_idx = data_i.at("p_idx");
     int p_idx2 = data_i.at("p_idx2");
-    int grp_start = data_i.at("grp_start");
-    int grp_end = data_i.at("grp_end");
-    
+    //int grp_start = data_i.at("grp_start");
+    //int grp_end = data_i.at("grp_end");
+    /*
     double grptot = 0;
     for (int i = grp_start; i <= grp_end; ++i){
         grptot += expit(params[i]);
     }
     double p1 = expit(params[p_idx]) / grptot;
+    */
+    double p1 = params[p_idx];
+    double p2;
 
     double p;
     if (p_idx2 == -1){
@@ -180,25 +187,28 @@ void dloglik_dx(const vector<double>& params,
     }
     else{
         // Doublet
-        double p2 = expit(params[p_idx2])/grptot;
+        //double p2 = expit(params[p_idx2])/grptot;
+        p2 = params[p_idx2];
         p = 2.0*d*p1*p2;
     }
 
     double dy_dp = (k - n*p)/(p - p*p);
-    
+    /*
     double e_negx1 = exp(-params[p_idx]);
     double e_negx1_p1_2 = pow(e_negx1 + 1, 2);
     double e_negx1_p1_3 = e_negx1_p1_2 * (e_negx1 + 1);
     double der_comp_1 = e_negx1 / (e_negx1_p1_2 * grptot) - e_negx1 / (e_negx1_p1_3 *grptot *grptot);
-
+    */
     if (p_idx2 == -1){
-        double a = expit(params[p_idx])/grptot;
-        double a2 = a*a;
-        results[0] += dy_dp * (-a + a2);
-
-        results[p_idx] += dy_dp * (1.0 - d + 2*d*a) * der_comp_1;
+        //double a = expit(params[p_idx])/grptot;
+        //double a2 = a*a;
+        //results[0] += dy_dp * (-a + a2);
+        //results[p_idx] += dy_dp * (1.0 - d + 2*d*a) * der_comp_1;
+        results[0] += dy_dp * (-p1 + p1*p1);
+        results[p_idx] += dy_dp * (2*d*p1 + 1 - d);
     }
     else{
+        /*
         double a = expit(params[p_idx])/grptot;
         double b = expit(params[p_idx2])/grptot;
         results[0] += 2.0 * dy_dp * (a*b);
@@ -210,6 +220,10 @@ void dloglik_dx(const vector<double>& params,
         double der_comp_2 = e_negx2 / (e_negx2_p1_2 * grptot) - e_negx2/ ( e_negx2_p1_3 * grptot * grptot);
 
         results[p_idx2] += 2.0 * dy_dp * (d*a) * der_comp_2;
+        */
+        results[0] += dy_dp*(2*p1*p2);
+        results[p_idx] += dy_dp*(2*d*p2);
+        results[p_idx2] += dy_dp*(2*d*p1);
     }
 }
 
@@ -243,30 +257,28 @@ int main(int argc, char *argv[]) {
     vector<int> k;
     vector<int> p_idx;
     vector<int> p_idx2;
-    vector<int> grp_start;
-    vector<int> grp_end;
+    vector<int> grp_idx;
 
     vector<double> weights;
     
     vector<double> params;
     params.push_back(0.01); // doublet rate
     
-    vector<int> constr_01 = {0};
+    map<pair<int, int>, string> idx2name;
+    map<string, pair<int, int> > name2idx;
     
-    map<int, string> idx2name;
-    map<string, int> name2idx;
-    
-    map<int, int> idx2group;
-    vector<set<string> > groups;
-
-    map<int, int> params_div;
+    vector<vector<string> > grp_names;
+    vector<vector<double> > grp_props;
+    // To set initial values: above will be sums and below will be counts - 
+    // take means
+    vector<vector<double> > grp_props_denom;
 
     map<string, map<string, int> > file2singlets;
     map<string, map<string, int> > file2doublets;
     map<string, int> file2grp;
 
     map<string, int> file_tot;
-
+    
     for (int i = 2; i < argc; ++i){
         map<string, int> counts_singlet;
         map<string, int> counts_doublet;
@@ -309,53 +321,70 @@ int main(int argc, char *argv[]) {
             
             int p_idx_this;
             if (name2idx.count(cs->first) > 0){
+                
+                // This individual already exists as part of a set.
+
+                pair<int, int> grp_and_idx = name2idx[cs->first];
+
+                if (grp_idx_this != -1 && grp_and_idx.first != grp_idx_this){
+                    fprintf(stderr, "ERROR: %s contains individuals from two different sets.\n",
+                        fn.c_str());
+                    fprintf(stderr, "Set 1:\n");
+                    for (vector<string>::iterator x = grp_names[grp_idx_this].begin(); x !=
+                        grp_names[grp_idx_this].end(); ++x){
+                        fprintf(stderr, "%s\n", x->c_str());
+                    }
+                    fprintf(stderr, "Set 2:\n");
+                    for (vector<string>::iterator x = grp_names[grp_and_idx.first].begin(); 
+                        x != grp_names[grp_and_idx.first].end(); ++x){
+                        fprintf(stderr, "%s\n", x->c_str());
+                    }
+                    fprintf(stderr, "Overlapping name: %s\n", cs->first.c_str());
+                    exit(1);
+                }
 
                 // If name matches an already-existing name, treat them as the
                 // same variable.
-                p_idx_this = name2idx[cs->first];
+                grp_idx_this = grp_and_idx.first;
+                p_idx_this = grp_and_idx.second;
 
                 // Make the initial value the mean initial value across all data sets
-                if (params_div.count(p_idx_this) == 0){
-                    params_div.insert(make_pair(p_idx_this, 1));
-                }
-                params_div[p_idx_this]++;
-                params[p_idx_this] += ((double)cs->second / (double)tot_singlet);
+                grp_props[grp_idx_this][p_idx_this] += ((double)cs->second / (double)tot_singlet);
+                grp_props_denom[grp_idx_this][p_idx_this]++;
+
+            }
+            else if (grp_idx_this != -1){
+                // This file already corresponds to a group, but this individual has not yet been
+                // added to it.
+                p_idx_this = grp_props[grp_idx_this].size();
+                grp_props[grp_idx_this].push_back((double)cs->second / (double)tot_singlet);
+                grp_props_denom[grp_idx_this].push_back(1.0);
+                grp_names[grp_idx_this].push_back(cs->first);
                 
-                if (grp_idx_this != -1 && idx2group[p_idx_this] != grp_idx_this){
-                    fprintf(stderr, "ERROR: individual name %s appears in multiple, non-matching sets \
-of individuals.\n", cs->first.c_str());
-                    exit(1);
-                } 
-                grp_idx_this = idx2group[p_idx_this];
+                name2idx.insert(make_pair(cs->first, make_pair(grp_idx_this, p_idx_this)));
+                idx2name.insert(make_pair(make_pair(grp_idx_this, p_idx_this), cs->first));
             }
             else{
-                p_idx_this = params.size();
-                params.push_back((double)cs->second / (double)tot_singlet);
-                constr_01.push_back(p_idx_this);
-                name2idx.insert(make_pair(cs->first, p_idx_this));
-                idx2name.insert(make_pair(p_idx_this, cs->first));
+                // A new group needs to be created.
+                grp_idx_this = grp_props.size();
+                p_idx_this = 0;
+                vector<double> grp_prop_new = { (double)cs->second / (double)tot_singlet };
+                vector<double> grp_denom_new = { 1.0 };
+                vector<string> grp_name_new = { cs->first };
                 
-                if (grp_idx_this == -1){
-                    grp_idx_this = groups.size();
-                    set<string> s;
-                    groups.push_back(s);
-                    groups[groups.size()-1].insert(cs->first);
-                    if (idx2group.count(p_idx_this) == 0){
-                        idx2group.insert(make_pair(p_idx_this, grp_idx_this));
-                    }
-                }
-                else{
-                    groups[grp_idx_this].insert(cs->first);
-                    if (idx2group.count(p_idx_this) == 0){
-                        idx2group.insert(make_pair(p_idx_this, grp_idx_this));
-                    }
-                }
+                grp_props.push_back(grp_prop_new);
+                grp_props_denom.push_back(grp_denom_new);
+                grp_names.push_back(grp_name_new);
+                
+                name2idx.insert(make_pair(cs->first, make_pair(grp_idx_this, p_idx_this)));
+                idx2name.insert(make_pair(make_pair(grp_idx_this, p_idx_this), cs->first));
             }
                     
             n.push_back(totcells);
             k.push_back(cs->second);
             p_idx.push_back(p_idx_this);
             p_idx2.push_back(-1);
+            grp_idx.push_back(grp_idx_this);
             weights.push_back(weights_this[cs->first]);
         }
         for (map<string, int>::iterator cd = counts_doublet.begin();
@@ -375,63 +404,70 @@ of individuals.\n", cs->first.c_str());
                 fprintf(stderr, "ERROR: no singlets for ID %s (%s)\n", id2.c_str(), argv[i]);
                 exit(1);
             }
+            
+            pair<int, int> grp_and_idx1 = name2idx[id1];
+            pair<int, int> grp_and_idx2 = name2idx[id2];
+
+            if (grp_and_idx1.first != grp_and_idx2.first){
+                fprintf(stderr, "ERROR: doublet %s corresponds to singlets from two different sets\n",
+                    cd->first.c_str());
+                exit(1);
+            }
+            else if (grp_and_idx1.first != grp_idx_this || grp_and_idx2.first != grp_idx_this){
+                fprintf(stderr, "ERROR: file %s has individuals from multiple sets\n", fn.c_str());
+                exit(1);
+            }
+
             n.push_back(totcells);
             k.push_back(cd->second);
-            p_idx.push_back(name2idx[id1]);
-            p_idx2.push_back(name2idx[id2]);
+            p_idx.push_back(grp_and_idx1.second);
+            p_idx2.push_back(grp_and_idx2.second);
+            grp_idx.push_back(grp_and_idx1.first);
             weights.push_back(weights_this[cd->first]);
         }
         file2grp.insert(make_pair(fn, grp_idx_this));
     }
-
-    // Use means of initial guesses for each singlet proportion that was 
-    // present in multiple data sets.
-    for (map<int, int>::iterator pd = params_div.begin(); pd != params_div.end(); ++pd){
-        params[pd->first] /= (double)pd->second;
+    
+    // Transform starting props into means, and then normalize per group.
+    for (int i = 0; i < grp_props.size(); ++i){
+        double grptot = 0.0;
+        for (int j = 0; j < grp_props[i].size(); ++j){
+            grp_props[i][j] /= grp_props_denom[i][j];
+            grptot += grp_props[i][j];
+        }
+        for (int j = 0; j < grp_props[i].size(); ++j){
+            grp_props[i][j] /= grptot;
+        }
     }
     
+    // Transform group indices into overall indices in the final parameter vector
+    vector<int> grpstart;
+    int idx_global = 1; // account for first being doublet rate
+    for (int i = 0; i < grp_props.size(); ++i){
+        grpstart.push_back(idx_global);
+        idx_global += grp_props[i].size();
+    }
     for (int i = 0; i < p_idx.size(); ++i){
-        int gi = idx2group[p_idx[i]];
-        int gimax = -1;
-        int gimin = -1;
-        for (set<string>::iterator g = groups[gi].begin(); g != groups[gi].end(); ++g){
-            int ni = name2idx[*g];
-            if (gimax == -1 || ni > gimax){
-                gimax = ni;
-            }
-            if (gimin == -1 || ni < gimin){
-                gimin = ni;
-            }
-        }
-        grp_start.push_back(gimin);
-        grp_end.push_back(gimax);
-    }
-
-    // Make sure groups sum to 1 (and transform them)
-    for (vector<set<string> >::iterator grp = groups.begin(); grp != groups.end(); ++grp){
-        double tot = 0.0;
-        for (set<string>::iterator member = grp->begin(); member != grp->end(); ++member){
-            int idx = name2idx[*member];
-            tot += params[idx];
-        }
-        for (set<string>::iterator member = grp->begin(); member != grp->end(); ++member){
-            int idx = name2idx[*member];
-            params[idx] /= tot;
-            params[idx] = logit(params[idx]);
+        int gi = grp_idx[i];
+        // Current index is index into group. Convert to global index
+        p_idx[i] += grpstart[gi];
+        if (p_idx2[i] != -1){
+            p_idx2[i] += grpstart[gi];
         }
     }
-    
+   
     optimML::multivar_ml_solver solver(params, loglik, dloglik_dx);
-    
-    // Constrain doublet rate; handle other constraints in the LL/gradient functions
+    // Constrain doublet rate
     solver.constrain_01(0);
+    // Add in parameter groups
+    for (int i = 0; i < grp_props.size(); ++i){
+        solver.add_param_grp(grp_props[i]);
+    } 
     
     solver.add_data("n", n);
     solver.add_data("k", k);
     solver.add_data("p_idx", p_idx);
     solver.add_data("p_idx2", p_idx2);
-    solver.add_data("grp_start", grp_start);
-    solver.add_data("grp_end", grp_end);
 
     solver.add_weights(weights);
     solver.solve();
@@ -447,17 +483,24 @@ of individuals.\n", cs->first.c_str());
     double doublet_rate = solver.results[0];
     map<string, double> indv_freq;
     double ifsum = 0.0;
-    for (map<string, int>::iterator ni = name2idx.begin(); ni != name2idx.end(); ++ni){
-        indv_freq.insert(make_pair(ni->first, expit(solver.results[ni->second])));
+    for (map<string, pair<int, int> >::iterator ni = name2idx.begin(); ni != name2idx.end(); ++ni){
+        int solver_idx = grpstart[ni->second.first] + ni->second.second;
+        indv_freq.insert(make_pair(ni->first, solver.results[solver_idx]));
         fprintf(stderr, "%s\t%f\n", ni->first.c_str(), indv_freq[ni->first]);
     }
-    for (int gi = 0; gi < groups.size(); ++gi){
-        for (set<string>::iterator member = groups[gi].begin(); member != groups[gi].end(); 
-            ++member){
-            fprintf(out_all, "group_%d\t%s\t%f\n", gi, member->c_str(),
-                indv_freq[*member]);  
+    for (int gi = 0; gi < grp_names.size(); ++gi){
+        // Sort alphabetically
+        vector<pair<string, int> > grpnamesort;
+        for (int ii = 0; ii < grp_names[gi].size(); ++ii){
+            grpnamesort.push_back(make_pair(grp_names[gi][ii], ii));
+        }
+        sort(grpnamesort.begin(), grpnamesort.end());
+        for (int j = 0; j < grpnamesort.size(); ++j){
+            fprintf(out_all, "group_%d\t%s\t%f\n", gi, grpnamesort[j].first.c_str(),
+                indv_freq[grpnamesort[j].first]);
         }
     }
+    
     fprintf(stderr, "Global doublet rate: %f\n", doublet_rate);
     fprintf(out_all, "all\tdoublet_rate\t%f\n", doublet_rate);
     fprintf(stderr, "Multinomial log likelihoods:\n");
@@ -477,7 +520,9 @@ of individuals.\n", cs->first.c_str());
         vector<string> singlets_vec;
 
         // Go through singlets
-        for (set<string>::iterator s = groups[grp_idx].begin(); s != groups[grp_idx].end(); ++s){
+        for (vector<string>::iterator s = grp_names[grp_idx].begin(); 
+            s != grp_names[grp_idx].end(); ++s){
+            
             singlets_vec.push_back(*s);
             double p1 = indv_freq[*s];
             double p = (1.0-doublet_rate)*p1 + doublet_rate*p1*p1;
