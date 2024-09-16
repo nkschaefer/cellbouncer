@@ -17,11 +17,14 @@
 #include <cstdlib>
 #include <utility>
 #include <math.h>
+#include <random>
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
 #include <zlib.h>
 #include <htswrapper/bam.h>
 #include <optimML/mixcomp.h>
+#include <optimML/multivar_ml.h>
+#include <mixtureDist/functions.h>
 #include "common.h"
 #include "demux_vcf_hts.h"
 #include "demux_vcf_io.h"
@@ -44,6 +47,11 @@ void help(int code){
     fprintf(stderr, "       will be considered, and phasing will be ignored.\n");
     fprintf(stderr, "    --output_prefix -o Base name for output files. Will create [output_prefix].bulkprops\n");
     fprintf(stderr, "===== OPTIONAL =====\n");
+    fprintf(stderr, "    --bootstrap -B If you wish to compute the variance of the estimate of\n");
+    fprintf(stderr, "       pool composition, set a number of bootstrap replicates to perform here.\n");
+    fprintf(stderr, "       After all replicates are computed, a Dirichlet distribution will be fit\n");
+    fprintf(stderr, "       and MLE Dirichlet parameters will be written to the output file as a third\n");
+    fprintf(stderr, "       column. Default = 100\n");
     fprintf(stderr, "    --qual -q Minimum variant quality to consider (default 50)\n");
     fprintf(stderr, "    --ids -i If the VCF file contains individuals that you do not\n");
     fprintf(stderr, "       expect to see in your sample, specify individuals to include here.\n");
@@ -51,8 +59,11 @@ void help(int code){
     fprintf(stderr, "       combinations of them. Expects a text file, with one individual ID per\n");
     fprintf(stderr, "       line, matching individual names in the VCF.\n");
     fprintf(stderr, "    --n_trials -N Initial guesses will be randomly shuffled a number of times equal\n");
-    fprintf(stderr, "       to this number times the number of samples, in order to avoid reporting a\n");
-    fprintf(stderr, "       suboptimal local maximum. Default = 10\n");
+    fprintf(stderr, "       to this number, in order to avoid reporting a local maximum, Default = 0\n");
+    fprintf(stderr, "    --error_rate -e Sequencing error rate (will attempt to calculate from data if \n");
+    fprintf(stderr, "       not provided.\n");
+    fprintf(stderr, "    --window -w Re-compute fractions across all windows of this number of SNPs.\n");
+    fprintf(stderr, "       <= 0 disables; default = 0. Not compatible with bootstrapping.\n");
     fprintf(stderr, "----- I/O options -----\n");
     fprintf(stderr, "    --index_jump -j Instead of reading through the entire BAM file \n");
     fprintf(stderr, "       to count reads at variant positions, use the BAM index to \n");
@@ -62,6 +73,158 @@ void help(int code){
     fprintf(stderr, "\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
+}
+
+/**
+ * Finds MLE of mixture proportions, given counts and expectations
+ */
+void infer_props_aux(vector<double>& n,
+    vector<double>& k,
+    vector<vector<double> >& expfracs_all,
+    int n_samples,
+    int n_trials,
+    double& maxll,
+    vector<double>& maxprops){
+
+    vector<double> startfrac;
+    for (int i = 0; i < n_samples; ++i){
+        startfrac.push_back(1.0/(double)n_samples);
+    }    
+    optimML::mixcomp_solver solver(expfracs_all, "binom", n, k);
+    solver.solve();
+    
+    maxll = solver.log_likelihood;
+    maxprops = solver.results;
+    for (int i = 0; i < n_trials; ++i){
+        solver.add_mixcomp_fracs(startfrac);
+        solver.randomize_mixcomps();
+        solver.solve();
+        if (solver.log_likelihood > maxll){
+            maxll = solver.log_likelihood;
+            maxprops = solver.results;
+        }
+    }
+}
+
+
+
+bool infer_props(map<int, map<int, pair<float, float> > >& snp_ref_alt,
+    map<int, map<int, var> >& snpdat,
+    double err_rate,
+    int n_trials,
+    int n_samples,
+    double& nreads,
+    double& maxll,
+    vector<double>& maxprops,
+    vector<double>& dirichlet_mle,
+    int bootstrap){
+    
+    nreads = 0;
+    
+    // Transform data into counts & expectations
+    vector<double> n;
+    vector<double> k;
+    vector<vector<double> > expfracs_all;
+
+    for (map<int, map<int, pair<float, float> > >::iterator s = snp_ref_alt.begin(); s != snp_ref_alt.end();
+        ++s){
+        for (map<int, pair<float, float> >::iterator s2 = s->second.begin(); s2 != s->second.end(); ++s2){
+            
+            bool miss = false;
+            vector<double> expfracs;
+
+            for (int i = 0; i < n_samples; ++i){
+                if (snpdat[s->first][s2->first].haps_covered[i]){
+                    int nalt = 0;
+                    if (snpdat[s->first][s2->first].haps1[i]){
+                        nalt++;
+                    }
+                    if (snpdat[s->first][s2->first].haps2[i]){
+                        nalt++;
+                    }
+                    double expfrac = (double)nalt/2.0;
+                    // Account for error rate
+                    if (expfrac == 0){
+                        expfrac += err_rate;
+                    }
+                    else if (expfrac == 1.0){
+                        expfrac -= err_rate;
+                    }
+                    expfracs.push_back(expfrac);
+                }
+                else{
+                    miss = true;
+                    break;
+                }
+            }
+
+            if (!miss){
+                nreads += s2->second.first + s2->second.second;
+                n.push_back(s2->second.first + s2->second.second);
+                k.push_back(s2->second.second);
+                expfracs_all.push_back(expfracs);          
+            } 
+        }
+    }
+    
+    if (expfracs_all.size() == 0){
+        return false;
+    }
+    
+    infer_props_aux(n, k, expfracs_all, n_samples, n_trials, maxll, maxprops);
+    
+    if (bootstrap > 0){
+        // Resample.
+        // Init random number generator - use static variables so it only 
+        // happens once
+        static bool init = false;
+        static random_device dev;
+        static mt19937 rand_gen;
+        static uniform_int_distribution<int> uni_dist;
+        if (!init){
+            rand_gen = mt19937(dev());
+            uni_dist = uniform_int_distribution<int>(0, n.size()-1);
+            init = true;
+        }
+        
+        vector<vector<double> > props_bootstrap;
+        vector<vector<double> > dirprops;
+        for (int i = 0; i < n_samples; ++i){
+            vector<double> v;
+            dirprops.push_back(v);
+        }
+
+        for (int b = 0; b < bootstrap; ++b){
+            fprintf(stderr, "Bootstrap sample %d...\r", b+1);
+
+            // Sample with replacement.
+            vector<double> n_bootstrap;
+            vector<double> k_bootstrap;
+            vector<vector<double> > expfrac_bootstrap;
+            for (int x = 0; x < n.size(); ++x){
+                int r = uni_dist(rand_gen); 
+                n_bootstrap.push_back(n[r]);
+                k_bootstrap.push_back(k[r]);
+                expfrac_bootstrap.push_back(expfracs_all[r]);
+            }
+            vector<double> p_bootstrap;
+            double ll_bootstrap;
+            // Solve
+            infer_props_aux(n_bootstrap, k_bootstrap, expfrac_bootstrap,
+                n_samples, n_trials, ll_bootstrap, p_bootstrap);
+
+            props_bootstrap.push_back(p_bootstrap);
+            for (int j = 0; j < n_samples; ++j){
+                dirprops[j].push_back(p_bootstrap[j]);
+            }
+        }
+        fprintf(stderr, "\n");
+        
+        // Find MLE concentration parameters of Dirichlet (in common.cpp)
+        fit_dirichlet(maxprops, dirprops, dirichlet_mle);
+        
+    }
+    return true;
 }
 
 int main(int argc, char *argv[]) {    
@@ -74,6 +237,8 @@ int main(int argc, char *argv[]) {
        {"ids", required_argument, 0, 'i'},
        {"qual", required_argument, 0, 'q'},
        {"n_trials", required_argument, 0, 'N'},
+       {"window", required_argument, 0, 'w'},
+       {"bootstrap", required_argument, 0, 'B'},
        {0, 0, 0, 0} 
     };
     
@@ -85,7 +250,11 @@ int main(int argc, char *argv[]) {
     int vq = 50;
     string idfile;
     bool idfile_given = false;
-    int n_trials = 10;
+    int n_trials = 0;
+    double err_prior = -1;
+    int window = 0;
+    int bootstrap = 100;
+    bool bootstrap_given = false;
 
     int option_index = 0;
     int ch;
@@ -93,7 +262,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:o:q:i:N:jh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:e:v:o:q:i:N:w:B:jh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -104,11 +273,17 @@ int main(int argc, char *argv[]) {
             case 'b':
                 bamfile = optarg;
                 break;
+            case 'e':
+                err_prior = atof(optarg);
+                break;
             case 'v':
                 vcf_file = optarg;
                 break;
             case 'N':
                 n_trials = atoi(optarg);
+                break;
+            case 'w':
+                window = atoi(optarg);
                 break;
             case 'o':
                 output_prefix = optarg;
@@ -122,6 +297,10 @@ int main(int argc, char *argv[]) {
                 break;
             case 'j':
                 stream = false;
+                break;
+            case 'B':
+                bootstrap = atoi(optarg);
+                bootstrap_given = true;
                 break;
             default:
                 help(0);
@@ -141,6 +320,14 @@ int main(int argc, char *argv[]) {
     if (n_trials < 0){
         fprintf(stderr, "ERROR: --n_trials/-N must be 0 or greater\n");
         exit(1);
+    }
+    if (window > 0 && bootstrap > 0 && bootstrap_given){
+        fprintf(stderr, "ERROR: --window/-w and --bootstrap/-B arguments are mutually exclusive.\n");
+        exit(1);
+    }
+    else if (window > 0 && bootstrap > 0){
+        // Bootstrap is on by default. Disable it.
+        bootstrap = 0;
     }
     
     // Init BAM reader
@@ -277,102 +464,139 @@ all possible individuals\n", idfile.c_str());
     fprintf(stderr, "Processed %d of %d SNPs\n", nsnp_processed, nsnps);
     
     // Calculate error rate
-    int nsnp_data = 0;
-    for (map<int, map<int, float> >::iterator s = snp_err.begin(); s != snp_err.end(); ++s){
-        for (map<int, float>::iterator s2 = s->second.begin(); s2 != s->second.end(); ++s2){
-            nsnp_data++;
-        }
-    }
-    double frac = 1.0/(double)nsnp_data;
     double err_rate = 0.0;
-    for (map<int, map<int, float> >::iterator s = snp_err.begin(); s != snp_err.end(); ++s){
-        for (map<int, float>::iterator s2 = s->second.begin(); s2 != s->second.end(); ++s2){
-            double ref = snp_ref_alt[s->first][s2->first].first;
-            double alt = snp_ref_alt[s->first][s2->first].second;
-            if (ref + alt + s2->second > 0){
-                double ef = s2->second / (s2->second + ref + alt);
-                err_rate += frac*ef;
+    if (err_prior > 0 && err_prior < 1){
+        err_rate = err_prior;
+    }
+    else{
+        int nsnp_data = 0;
+        for (map<int, map<int, float> >::iterator s = snp_err.begin(); s != snp_err.end(); ++s){
+            for (map<int, float>::iterator s2 = s->second.begin(); s2 != s->second.end(); ++s2){
+                nsnp_data++;
+            }
+        }
+        double frac = 1.0/(double)nsnp_data;
+        err_rate = 0.0;
+        for (map<int, map<int, float> >::iterator s = snp_err.begin(); s != snp_err.end(); ++s){
+            for (map<int, float>::iterator s2 = s->second.begin(); s2 != s->second.end(); ++s2){
+                double ref = snp_ref_alt[s->first][s2->first].first;
+                double alt = snp_ref_alt[s->first][s2->first].second;
+                if (ref + alt + s2->second > 0){
+                    double ef = s2->second / (s2->second + ref + alt);
+                    err_rate += frac*ef;
+                }
             }
         }
     }
     if (err_rate == 0.0 || isnan(err_rate)){
+        fprintf(stderr, "TRUE\n");
         err_rate = 0.001;
     }
     fprintf(stderr, "Approximate error rate = %f\n", err_rate);
-
-    // Now solve mix prop problem
-    vector<double> n;
-    vector<double> k;
-    vector<vector<double> > expfracs_all;
-
-    for (map<int, map<int, pair<float, float> > >::iterator s = snp_ref_alt.begin(); s != snp_ref_alt.end();
-        ++s){
-        for (map<int, pair<float, float> >::iterator s2 = s->second.begin(); s2 != s->second.end(); ++s2){
-            
-            bool miss = false;
-            vector<double> expfracs;
-
-            for (int i = 0; i < samples.size(); ++i){
-                if (snpdat[s->first][s2->first].haps_covered[i]){
-                    int nalt = 0;
-                    if (snpdat[s->first][s2->first].haps1[i]){
-                        nalt++;
-                    }
-                    if (snpdat[s->first][s2->first].haps2[i]){
-                        nalt++;
-                    }
-                    double expfrac = (double)nalt/2.0;
-                    // Account for error rate
-                    if (expfrac == 0){
-                        expfrac += err_rate;
-                    }
-                    else if (expfrac == 1.0){
-                        expfrac -= err_rate;
-                    }
-                    expfracs.push_back(expfrac);
-                }
-                else{
-                    miss = true;
-                    break;
-                }
-            }
-
-            if (!miss){
-                n.push_back(s2->second.first + s2->second.second);
-                k.push_back(s2->second.second);
-                expfracs_all.push_back(expfracs);          
-            } 
-        }
-    }
     
-    vector<double> startfrac;
-    for (int i = 0; i < samples.size(); ++i){
-        startfrac.push_back(1.0/(double)samples.size());
-    }    
-    optimML::mixcomp_solver solver(expfracs_all, "binom", n, k);
-    solver.solve();
-    
-    double maxll = solver.log_likelihood;
-    vector<double> maxprops = solver.results;
-    for (int i = 0; i < n_trials*samples.size(); ++i){
-        solver.add_mixcomp_fracs(startfrac);
-        solver.randomize_mixcomps();
-        solver.solve();
-        if (solver.log_likelihood > maxll){
-            maxll = solver.log_likelihood;
-            maxprops = solver.results;
-        }
-    }
-    
-    solver.log_likelihood = maxll;
-    solver.results = maxprops;
-
     string outfn = output_prefix + ".bulkprops";
     FILE* outf = fopen(outfn.c_str(), "w");
-    for (int i = 0; i < solver.results.size(); ++i){
-        fprintf(outf, "%s\t%f\n", samples[i].c_str(), solver.results[i]);
+    
+    if (window > 0){
+        fprintf(stdout, "chrom\tstart\tend\tnreads");
+        map<string, int> samplesort;
+        for (int i = 0; i < samples.size(); ++i){
+            samplesort.insert(make_pair(samples[i], i));
+        }
+        for (map<string, int>::iterator s = samplesort.begin(); s != samplesort.end(); ++s){
+            fprintf(stdout, "\t%s", s->first.c_str());
+        }
+        fprintf(stdout, "\n");
+
+        int winstart = -1;
+        map<int, map<int, pair<float, float> > > snpcounts_win;
+        for (map<int, map<int, pair<float, float> > >::iterator x = snp_ref_alt.begin();
+            x != snp_ref_alt.end(); ++x){
+            map<int, pair<float, float> > m;
+            snpcounts_win.insert(make_pair(x->first, m));
+            for (map<int, pair<float, float> >::iterator y = x->second.begin(); y != 
+                x->second.end(); ++y){
+                if (y->second.first + y->second.second > 0){
+                    snpcounts_win[x->first].insert(make_pair(y->first, y->second));
+                    if (winstart == -1){
+                        winstart = y->first;
+                    }
+                    int winend = y->first;
+                    if (snpcounts_win[x->first].size() == window){
+                        double ll;
+                        vector<double> props;
+                        double nreads;
+                        vector<double> dummy;
+                        bool success = infer_props(snpcounts_win, snpdat, 
+                            err_rate, n_trials, samples.size(), nreads, ll, props, dummy, bootstrap);
+                        if (success){
+                            fprintf(stdout, "%s\t%d\t%d\t%f", tid2chrom[x->first].c_str(),
+                                winstart, winend+1, nreads);
+                            for (map<string, int>::iterator s = samplesort.begin(); s != 
+                                samplesort.end(); ++s){
+                                fprintf(stdout, "\t%f", props[s->second]);
+                            }
+                            fprintf(stdout, "\n");
+                        }
+                        snpcounts_win[x->first].erase(snpcounts_win[x->first].begin()->first);
+                        winstart = -1;
+                        if (snpcounts_win[x->first].size() > 0){
+                            winstart = snpcounts_win[x->first].begin()->first;
+                        }
+
+                        //snpcounts_win[x->first].clear();
+                        //winstart = -1;
+                    }
+                }
+            }
+            // Finish up with this chromosome.
+            if (snpcounts_win[x->first].size() > 0){
+                int winend = snpcounts_win[x->first].rbegin()->first;
+                double ll;
+                vector<double> props;
+                double nreads;
+                vector<double> dummy;
+                bool success = infer_props(snpcounts_win, snpdat, err_rate, 
+                    n_trials, samples.size(), nreads, ll, props, dummy, bootstrap);
+                snpcounts_win.erase(x->first);
+                if (success){
+                    fprintf(stdout, "%s\t%d\t%d\t%f", tid2chrom[x->first].c_str(),
+                        winstart, winend+1, nreads);
+                    for (map<string, int>::iterator s = samplesort.begin(); s != 
+                        samplesort.end(); ++s){
+                        fprintf(stdout, "\t%f", props[s->second]);
+                    }
+                    fprintf(stdout, "\n");
+                }
+                winstart = -1;
+            }
+        }
+    }
+    else{
+        vector<double> props;
+        double ll;
+        double nreads;
+        vector<double> dirichlet_params;
+        infer_props(snp_ref_alt, snpdat, err_rate, n_trials, samples.size(), 
+            nreads, ll, props, dirichlet_params, bootstrap);
+        
+        int si = 0;
+        map<string, int> samplesort;
+        for (int i = 0; i < samples.size(); ++i){
+            samplesort.insert(make_pair(samples[i], i));
+        }
+
+        for (map<string, int>::iterator s = samplesort.begin(); s != samplesort.end(); ++s){
+            if (bootstrap > 0){
+                fprintf(outf, "%s\t%f\t%f\n", s->first.c_str(), props[s->second], 
+                    dirichlet_params[s->second]);
+            }
+            else{
+                fprintf(outf, "%s\t%f\n", s->first.c_str(), props[s->second]);
+            }
+        }
     }
     fclose(outf);
-
+    
     return 0;
 }

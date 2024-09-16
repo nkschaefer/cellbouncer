@@ -17,6 +17,7 @@
 #include <mixtureDist/functions.h>
 #include <htswrapper/bc.h>
 #include <htswrapper/gzreader.h>
+#include <optimML/multivar_ml.h>
 
 /**
  * Contains functions used by more than one program in this
@@ -745,4 +746,106 @@ void parse_mex(const string& barcodesfile,
     }
     fprintf(stderr, "Loaded %ld barcodes and %d features\n", barcodes.size(), nfeatures_match);
 
+}
+
+/**
+ * Log likelihood of dirichlet distribution
+ *
+ * Format expected by optimML::multivar_ml_solver for finding MLE parameters
+ */
+double ll_dirichlet(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i){
+   
+    char buf[30];
+    string bufstr;
+    double term1 = 0.0;
+    double term2 = 0.0;
+    double term3 = 0.0;
+    for (int i = 0; i < params.size(); ++i){
+        sprintf(&buf[0], "f_%d", i);
+        bufstr = buf;
+        double f = data_d.at(bufstr);
+        term1 += params[i];
+        term2 += lgammaf(params[i]);
+        term3 += (params[i] - 1.0)*log(f);
+    }
+    
+    return lgammaf(term1) - term2 + term3;
+}
+
+/**
+ * Derivative of log likelihood of dirichlet distribution wrt each concentration
+ * parameter.
+ *
+ * Format expected by optimML::multivar_ml_solver for finding MLE parameters
+ */
+void dll_dirichlet(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i,
+    vector<double>& results){
+    
+    char buf[30];
+    string bufstr;
+    double term1 = 0.0;
+    for (int i = 0; i < params.size(); ++i){
+        sprintf(&buf[0], "f_%d", i);
+        bufstr = buf;
+        double f = data_d.at(bufstr);
+        term1 += params[i];
+        results[i] -= digamma(params[i]) + log(f);
+    }
+    for (int i = 0; i < params.size(); ++i){
+        results[i] += digamma(term1);
+    }
+}
+
+/**
+ * Given the maximum likelihood parameters of a mixture component
+ * problem - where we are inferring the proportion of a mixture
+ * made up of each of a set of individuals that must each be 0 < x < 1
+ * and sum to 1, which has been bootstrapped, fits a Dirichlet
+ * distribution to the bootstrap samples and provides the MLE
+ * Dirichlet concentration parameters.
+ *
+ * Parameters:
+ *   mle_fracs: maximum likelihood estimates of mixture components
+ *   dirprops: Vector of length == mle_fracs.size()
+ *      each sub-vector contains every bootstrap sample of that specific
+ *      mixture component.
+ *   dirichlet_mle: vector to store result concentration parameters.
+ *      Will be modified by reference.
+ */
+void fit_dirichlet(vector<double>& mle_fracs,
+    vector<vector<double> >& dirprops,
+    vector<double>& dirichlet_mle){
+    
+    // How many mixture components are there?
+    int n_samples = mle_fracs.size();
+    
+    // Ensure result vector is empty
+    dirichlet_mle.clear();
+
+    // Come up with initial guesses for each concentration parameter.
+    vector<double> dir_init;
+    // Initialize to max likelihood params with n=1 observation
+    for (int j = 0; j < n_samples; ++j){
+        dir_init.push_back(mle_fracs[j]);
+    }
+    
+    // Create solver
+    optimML::multivar_ml_solver dirsolver(dir_init, ll_dirichlet, dll_dirichlet);
+    char buf[30];
+    string bufstr;
+    for (int j = 0; j < n_samples; ++j){
+        // Concentration parameters must be positive
+        dirsolver.constrain_pos(j);
+        sprintf(&buf[0], "f_%d", j);
+        bufstr = buf;
+        dirsolver.add_data(bufstr, dirprops[j]);
+    }
+    dirsolver.solve();
+    for (int j = 0; j < n_samples; ++j){
+        dirichlet_mle.push_back(dirsolver.results[j]);
+    }
 }
