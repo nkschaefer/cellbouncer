@@ -691,22 +691,27 @@ void write_summary(FILE* outf,
  */
 void dump_contam_prof(FILE* outf,
     map<int, double>& contam_prof,
+    map<int, double>& contam_prof_conc,
     vector<string>& samples){
     
-    vector<pair<double, string> > cpsort;
+    vector<pair<string, int> > cpsort;
     for (map<int, double>::iterator cp = contam_prof.begin(); cp != contam_prof.end(); ++cp){
-        string name;
         if (cp->first < 0){
-            name = "other_species";
+            cpsort.push_back(make_pair("other_species", cp->first));
         }
         else{
-            name = idx2name(cp->first, samples);
+            cpsort.push_back(make_pair(samples[cp->first], cp->first));
         }
-        cpsort.push_back(make_pair(-cp->second, name));
-    }
+    } 
     sort(cpsort.begin(), cpsort.end());
     for (int i = 0; i < cpsort.size(); ++i){
-        fprintf(outf, "%s\t%f\n", cpsort[i].second.c_str(), -cpsort[i].first);
+        if (contam_prof_conc.count(cpsort[i].second) > 0){
+            fprintf(outf, "%s\t%f\t%f\n", cpsort[i].first.c_str(), contam_prof[cpsort[i].second], 
+                contam_prof_conc[cpsort[i].second]);
+        }
+        else{
+            fprintf(outf, "%s\t%f\n", cpsort[i].first.c_str(), contam_prof[cpsort[i].second]);
+        }
     }
 }
 

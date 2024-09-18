@@ -41,6 +41,9 @@ class contamFinder{
         map<int, double> id_llrsum2;
         map<int, double> id_count;
         double llrtot;
+        
+        // What is the expected doublet rate (for reclassifying cells)?
+        double doublet_rate;
 
         // Vectors of each data value that we will use repeatedly in optimizations 
         std::vector<double> n_all;
@@ -64,17 +67,6 @@ class contamFinder{
         //  Second key: true identity
         //    Value: Expected rate of matching alt alleles at sites of this type
         std::map<std::pair<int, int>, std::map<int, float> > expfracs; 
-        
-
-        map<pair<int, int>, map<pair<int, int>, double> > amb_tot;
-        
-        // Store backup copy of above during each iteration, in case overall log likelihood 
-        // decreases 
-        std::map<std::pair<int, int>, std::map<std::pair<int, int>, double> > amb_mu_prev;
-        
-        // Other backup copies kept for same reason
-        robin_hood::unordered_map<unsigned long, double> contam_rate_prev;
-        robin_hood::unordered_map<unsigned long, double> contam_rate_prev_se;
         
         // Prior distribution mean for contamination rate per cell
         double contam_cell_prior;
@@ -125,27 +117,28 @@ class contamFinder{
             std::vector<std::pair<int, int> >& type2);
         
         // Calculate stuff
-        double solve_params_init(); 
         void est_contam_cells();
         void est_contam_cells_global();
 
         // Returns log likelihood
         double update_ambient_profile(bool global_c = false);
         std::pair<double, double> est_error_rates(bool init);
-        void compute_expected_fracs_all_id();
-        double model_as_mixture();
         
-        void test();
-        double test_aux(double c);
-        bool omit_hets;
         double c_init_global;
         
+        void compile_amb_prof_dat(bool solve_for_c, 
+            bool use_global_c,
+            std::vector<std::vector<double> >& mixfracs,
+            std::vector<double>& weights,
+            std::vector<double>& n,
+            std::vector<double>& k,
+            std::vector<double>& p_e,
+            std::vector<double>& c);
+
         double update_amb_prof_mixture(bool est_c, double& global_c, bool use_global_c = false); 
         double est_min_c();
         bool reclassify_cells();
-
         double init_params(double& c);
-        
         bool contam_prof_initialized;
         bool c_initialized;
         double c_init;
@@ -154,6 +147,8 @@ class contamFinder{
         
         void set_init_contam_prof(std::map<int, double>& cp);
         void set_init_c(double c);
+        
+        void set_doublet_rate(double d);
 
         // Copy of assignments & LLRs of assignments from demux_vcf. These
         // may change if cells are re-assigned after contamination
@@ -196,6 +191,10 @@ class contamFinder{
         void set_maxiter(int i);
         void use_weights();
         void no_weights();
+        
+        // Get variance on contamination profile by bootstrapping it and fitting
+        // a Dirichlet distribution
+        void bootstrap_amb_prof(int n_boots, std::map<int, double>& contam_prof_cont);
 
         // Get log likelihood of data under current parameters
         double compute_ll();
@@ -203,7 +202,6 @@ class contamFinder{
         // Run everything
         // Returns log likelihood
         void fit();
-
 };
 
 #endif

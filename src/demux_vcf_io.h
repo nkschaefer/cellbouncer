@@ -89,6 +89,7 @@ void write_summary(FILE* outf,
 
 void dump_contam_prof(FILE* outf,
     std::map<int, double>& contam_prof,
+    std::map<int, double>& contam_prof_conc,
     std::vector<std::string>& samples);
 
 void dump_contam_rates(FILE* outf,

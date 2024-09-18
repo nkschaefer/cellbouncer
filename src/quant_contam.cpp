@@ -43,6 +43,23 @@ void help(int code){
     fprintf(stderr, "===== REQUIRED =====\n");
     fprintf(stderr, "    --output_prefix -o The output prefix used in a prior run of demux_vcf\n");
     fprintf(stderr, "===== OPTIONAL =====\n");
+    fprintf(stderr, "    --bootstrap -b Number of bootstrap replicates to run in order to get\n");
+    fprintf(stderr, "       variance on mixture proportions of individuals in the ambient RNA\n");
+    fprintf(stderr, "       pool. Default = 100.\n");
+    fprintf(stderr, "    --doublet_rate -D Expected probability of doublet droplets (for re-IDing\n");
+    fprintf(stderr, "       cells). Default = no expectation. Note that this parameter differs from the\n");
+    fprintf(stderr, "       one in demux_vcf: in that program, 0.5 = effectively no prior. In this\n");
+    fprintf(stderr, "       program, by default no assumption is made about relative frequencies\n");
+    fprintf(stderr, "       of different types of singlets and doublets. If you set this parameter,\n");
+    fprintf(stderr, "       however, it will compute the overall frequency of each individual in the\n");
+    fprintf(stderr, "       data set (as if bulk), and then use this parameter to determine the expected\n");
+    fprintf(stderr, "       frequency of each identity (i.e. if ID1 is 5%% of bulk data, ID2 is 10%%, and\n");
+    fprintf(stderr, "       D = 0.1, then expected ID1 singlets are 0.9*0.05 + 0.1*0.05*0.05, ID2 singlets\n");
+    fprintf(stderr, "       are 0.9*0.1*0.1 + 0.1*0.1*0.1, and ID1+ID2 doublets are 2*0.1*0.05*0.1.\n");
+    fprintf(stderr, "       It will then adjust LLRs to encourage identifying the expected proportion of\n");
+    fprintf(stderr, "       each identity. This is most useful in high-contamination data sets where\n");
+    fprintf(stderr, "       contamination throws off IDs. If you see many more doublets than expected, \n");
+    fprintf(stderr, "       set this parameter; if unsure, ignore.\n");
     fprintf(stderr, "    --run_once -r Standard behavior is to iteratively estimate contam profile\n");
     fprintf(stderr, "       and use it to update cell-individual assignments, then repeat until\n");
     fprintf(stderr, "       log likelihood converges. With this option, it will do this process\n");
@@ -102,6 +119,7 @@ int main(int argc, char *argv[]) {
        {"other_species", required_argument, 0, 's'},
        {"error_ref", required_argument, 0, 'e'},
        {"error_alt", required_argument, 0, 'E'},
+       {"doublet_rate", required_argument, 0, 'D'},
        {"llr", required_argument, 0, 'l'},
        {"n_mixprop_trials", required_argument, 0, 'N'},
        {"no_weights", no_argument, 0, 'w'},
@@ -113,6 +131,7 @@ int main(int argc, char *argv[]) {
        {"seurat", no_argument, 0, 'S'},
        {"underscore", no_argument, 0, 'U'},
        {"run_once", no_argument, 0, 'r'},
+       {"bootstrap", required_argument, 0, 'b'},
        {0, 0, 0, 0} 
     };
     
@@ -134,7 +153,8 @@ int main(int argc, char *argv[]) {
     bool seurat = false;
     bool underscore = false;
     bool run_once = false;
-
+    int bootstrap = 100;
+    double doublet_rate = -1.0;
 
     int option_index = 0;
     int ch;
@@ -142,7 +162,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:e:E:l:N:i:I:n:rsCSUdwh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "o:e:E:l:N:i:I:n:b:D:rsCSUdwh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -163,6 +183,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 's':
                 inter_species = true;
+                break;
+            case 'D':
+                doublet_rate = atof(optarg);
                 break;
             case 'e':
                 error_ref = atof(optarg);
@@ -197,6 +220,9 @@ int main(int argc, char *argv[]) {
             case 'r':
                 run_once = true;
                 break;
+            case 'b':
+                bootstrap = atoi(optarg);
+                break;
             default:
                 help(0);
                 break;
@@ -218,6 +244,14 @@ int main(int argc, char *argv[]) {
     }
     if (idfile_given && idfile_doublet_given){
         fprintf(stderr, "ERROR: only one of -i and -I is allowed.\n");
+        exit(1);
+    }
+    if (bootstrap <= 0){
+        fprintf(stderr, "WARNING: bootstrapping disabled. Ambient RNA pool proportions will \
+be reported without concentration parameters (variance will be unknown).\n");
+    }
+    if (doublet_rate != -1 && (doublet_rate < 0 || doublet_rate > 1)){
+        fprintf(stderr, "ERROR: --doublet_rate/-D must be between 0 and 1, inclusive.\n");
         exit(1);
     }
 
@@ -323,6 +357,7 @@ all possible individuals\n", idfile_doublet.c_str());
     double delta_thresh = 0.1;
     
     map<int, double> contam_prof;
+    map<int, double> contam_prof_conc;
     robin_hood::unordered_map<unsigned long, double> contam_rate;
     robin_hood::unordered_map<unsigned long, double> contam_rate_se;
     int nits = 0;
@@ -331,6 +366,8 @@ all possible individuals\n", idfile_doublet.c_str());
         contamFinder cf(indv_allelecounts, assn, assn_llr, exp_match_fracs, samples.size(),
             allowed_ids, allowed_ids2);
         
+        cf.set_doublet_rate(doublet_rate);
+
         // Initialize to whatever was the final estimate last time 
         if (nits > 0){
             cf.set_init_contam_prof(contam_prof);
@@ -358,24 +395,25 @@ all possible individuals\n", idfile_doublet.c_str());
         cf.fit(); 
         double ll = cf.compute_ll();
 
-        // Even when LL dips, that indicates the last round of 
-        // assignments were suboptimal. The contamination
-        // inferences, etc. are based on previous assignments,
-        // so keep those.
-        contam_prof = cf.contam_prof;
-        contam_rate = cf.contam_rate;
-        contam_rate_se = cf.contam_rate_se;
+        
         
         if (run_once){
             // Break out of cycle
             assn = cf.assn;
             assn_llr = cf.assn_llr;
+            contam_prof = cf.contam_prof;
+            contam_rate = cf.contam_rate;
+            contam_rate_se = cf.contam_rate_se;
+            
             delta = 0;
         }
         else{
             if (llprev == 0 || ll > llprev){
                 assn = cf.assn;
                 assn_llr = cf.assn_llr;
+                contam_prof = cf.contam_prof;
+                contam_rate = cf.contam_rate;
+                contam_rate_se = cf.contam_rate_se;
             }
             fprintf(stderr, " -- Log likelihood: %f", ll);
             if (llprev != 0){
@@ -388,6 +426,17 @@ all possible individuals\n", idfile_doublet.c_str());
             llprev = ll;
             nits++;
         }
+        if (delta <= delta_thresh && bootstrap > 0){
+            // Do bootstrapping
+            cf.assn = assn;
+            cf.assn_llr = assn_llr;
+            cf.contam_prof = contam_prof;
+            cf.contam_rate = contam_rate;
+            cf.contam_rate_se = contam_rate_se;
+            fprintf(stderr, "Computing Dirichlet concentration parameters \
+on mixture proportions...\n");
+            cf.bootstrap_amb_prof(bootstrap, contam_prof_conc);
+        }
     }
 
     // Write contamination profile to disk
@@ -395,7 +444,7 @@ all possible individuals\n", idfile_doublet.c_str());
         string fname = output_prefix + ".contam_prof";
         FILE* outf = fopen(fname.c_str(), "w");
         fprintf(stderr, "Writing contamination profile to disk...\n");
-        dump_contam_prof(outf, contam_prof, samples);
+        dump_contam_prof(outf, contam_prof, contam_prof_conc, samples);
         fclose(outf);
     }
     // Write contamination rate (and standard error) per cell to disk

@@ -351,7 +351,8 @@ void compute_k_comps(map<int, map<int, double> >& llrs,
     vector<int>& ks,
     int n_samples,
     set<int>& allowed_assignments,
-    double doublet_rate){
+    double doublet_rate,
+    map<int, double>* prior_weights){
     
     // Get a table of LLRs between different combination members, conditional on a cell
     // being half another member. In other words, keys/values here are
@@ -399,7 +400,11 @@ void compute_k_comps(map<int, map<int, double> >& llrs,
                     ll2 += llrs[i][comb.second];
                 }
                 double llr = 0.5*ll1 + 0.5*ll2;
-                if (doublet_rate != 0.5 && doublet_rate < 1.0){
+                if (prior_weights != NULL && 
+                    prior_weights->count(i) > 0 && prior_weights->count(k) > 0){
+                    llr += (*prior_weights)[i] - (*prior_weights)[k];
+                }
+                else if (doublet_rate != 0.5 && doublet_rate < 1.0){
                     // i is singlet, k is doublet
                     llr += log2(1.0 - doublet_rate) - log2(doublet_rate);
                 }
@@ -408,7 +413,12 @@ void compute_k_comps(map<int, map<int, double> >& llrs,
             else{
                 // It's already been computed.
                 double llr = llrs[i][k];
-                if (doublet_rate != 0.5 && doublet_rate < 1.0){
+                if (prior_weights != NULL && 
+                    prior_weights->count(i) > 0 && prior_weights->count(k) > 0){
+                    //llr += log2((*prior_weights)[i]) - log2((*prior_weights)[k]);
+                    llr += (*prior_weights)[i] - (*prior_weights)[k];
+                }
+                else if (doublet_rate != 0.5 && doublet_rate < 1.0){
                     llr += log2(1.0 - doublet_rate) - log2(doublet_rate);
                 }
                 tab.insert(i, k, llr);
@@ -596,6 +606,11 @@ void compute_k_comps(map<int, map<int, double> >& llrs,
                 llrcount++;
             }
             double llr = llrsum / llrcount;
+            if (prior_weights != NULL && 
+                prior_weights->count(k1) > 0 && prior_weights->count(k2) > 0){
+                //llr += log2((*prior_weights)[k1]) - log2((*prior_weights)[k2]);
+                llr += (*prior_weights)[k1] - (*prior_weights)[k2];
+            }
             tab.insert(k1, k2, llr);
         }
     }
@@ -627,7 +642,8 @@ bool populate_llr_table(map<pair<int, int>,
     double error_rate_alt,
     bool incl_contam,
     double contam_rate,
-    map<pair<int, int>, map<pair<int, int>, double> >* amb_fracs){
+    map<pair<int, int>, map<pair<int, int>, double> >* amb_fracs,
+    map<int, double>* prior_weights){
     
     for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator y = 
         counts.begin(); y != counts.end(); ++y){
@@ -764,7 +780,13 @@ bool populate_llr_table(map<pair<int, int>,
                 if (allowed_assignments.size() == 0 || 
                     (allowed_assignments.find(x->first) != allowed_assignments.end() &&
                      allowed_assignments.find(y->first) != allowed_assignments.end())){
-                    tab.insert(x->first, y->first, y->second);
+                     
+                     if (prior_weights != NULL && 
+                        prior_weights->count(x->first) > 0 && prior_weights->count(y->first) > 0){
+                        //y->second += log2((*prior_weights)[x->first]) - log2((*prior_weights)[y->first]);
+                        y->second += (*prior_weights)[x->first] - (*prior_weights)[y->first];
+                     }
+                     tab.insert(x->first, y->first, y->second);
                 }
             }
         }
@@ -826,7 +848,7 @@ bool populate_llr_table(map<pair<int, int>,
             // double model comparisons computed. We now need to compute all other possible
             // single vs double model comparisons, as well as double model vs double model comparisons.
             
-            compute_k_comps(llrs, tab, ks, n_samples, allowed_assignments, doublet_rate);
+            compute_k_comps(llrs, tab, ks, n_samples, allowed_assignments, doublet_rate, prior_weights);
             
         }
     }
