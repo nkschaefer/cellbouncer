@@ -149,6 +149,8 @@ make_plot <- function(){
     if (file.exists(cpfile)){
         has_cp_file <- 1
         cp <- read.table(cpfile)
+        # Drop Dirichlet parameters, if computed
+        cp <- cp[,c(1,2)]
         if (length(rownames(cp[which(cp$V2==0),])) > 0){
             cp[which(cp$V2==0),]$V2 <- 1e-8
             cp$V2 <- cp$V2 / sum(cp$V2)

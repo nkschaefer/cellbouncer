@@ -182,8 +182,8 @@ plt <- ggplot(tab) +
         axis.title.y=element_text(size=14, vjust=2), 
         legend.position="top")
 
-ggsave(plt, file=paste(outname, '.pdf', sep=''), width=3, height=4)
-ggsave(plt, file=paste(outname, '.png', sep=''), width=7, height=7, units='in')
+ggsave(plt, file=paste(outname, '.pdf', sep=''), width=8, height=7)
+ggsave(plt, file=paste(outname, '.png', sep=''), width=8, height=7, units='in')
 
 tot_match <- sum(tab[which(as.character(tab$assn1) == as.character(tab$assn2)),]$Freq)
 tot_all <- sum(tab$Freq)
