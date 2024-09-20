@@ -506,9 +506,9 @@ void collapse_sites(hapstr& mask_global,
             }
             
             // First, see if B looks like an error from A's perspective.
-            if (dbinom(cladesize_A, cladesize_B, zero) > 
-                dbinom(cladesize_A, cladesize_B, 0.5) &&
-                dbinom(cladesize_A, cladesize_B, one)){
+            double llAB_zero = dbinom(cladesize_A, cladesize_B, zero);
+            if (llAB_zero > dbinom(cladesize_A, cladesize_B, 0.5) &&
+                llAB_zero > dbinom(cladesize_A, cladesize_B, one)){
                 if (!keep_all_vars){
                     // Remove site? (risky)
                     //mask_global.reset(idx2);
@@ -516,13 +516,14 @@ void collapse_sites(hapstr& mask_global,
                 }
             }
             else{
+                double llAboth_one = dbinom(cladesize_A, cladesize_both, one);
+                double llBboth_one = dbinom(cladesize_B, cladesize_both, one);
+                
                 // Two sites are same haplotype if A&B == A == B
-                if (dbinom(cladesize_A, cladesize_both, one) > 
-                    dbinom(cladesize_A, cladesize_both, 0.5) && 
-                    dbinom(cladesize_A, cladesize_both, zero) &&
-                    dbinom(cladesize_B, cladesize_both, one) > 
-                    dbinom(cladesize_B, cladesize_both, 0.5) && 
-                    dbinom(cladesize_B, cladesize_both, zero)){
+                if (llAboth_one > dbinom(cladesize_A, cladesize_both, 0.5) &&
+                    llAboth_one > dbinom(cladesize_A, cladesize_both, zero) &&
+                    llBboth_one > dbinom(cladesize_B, cladesize_both, 0.5) &&
+                    llBboth_one > dbinom(cladesize_B, cladesize_both, zero)){
                     
                     orig_to_collapsed.insert(make_pair(idx2, idx1));
                     collapsed_to_orig[idx1].insert(idx2);

@@ -128,7 +128,6 @@ int main(int argc, char *argv[]) {
     map<unsigned long, string> barcode_map;
     set<string> barcode_groups;
     parse_barcode_map(assignment_file, barcode_map, barcode_groups, llr_thresh, keep_doublets);
-    
     fprintf(stderr, "Writing %ld new BAM files\n", barcode_groups.size());
     
     map<string, BGZF* > outs;

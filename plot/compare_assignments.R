@@ -187,6 +187,8 @@ ggsave(plt, file=paste(outname, '.png', sep=''), width=8, height=7, units='in')
 
 tot_match <- sum(tab[which(as.character(tab$assn1) == as.character(tab$assn2)),]$Freq)
 tot_all <- sum(tab$Freq)
+tot_all1 <- length(rownames(assn1))
+tot_all2 <- length(rownames(assn2))
 
 t1Smatch <- length(rownames(merged[which(merged$type1=="S" & merged$assn1 == merged$assn2),]))
 t1Stot <- length(rownames(merged[which(merged$type1=="S"),]))
@@ -243,26 +245,30 @@ if (tot_match == 0){
 
     idmap_S <- data.frame(assn1=unique(merged[which(merged$type1=="S"),]$assn1))
     idmap_S <- merge(idmap_S, tab2, by=c("assn1"))
+    
+    idmap <- idmap_S
+    if (length(rownames(merged[which(merged$type1=="D"),])) > 0){
+        idmap_D <- data.frame(assn=unique(merged[which(merged$type1=="D"),]$assn1))
+        idmap_D$id1 <- apply(idmap_D, 1, function(x){ strsplit(x[1], '+', fixed=T)[[1]][1] })
+        idmap_D$id2 <- apply(idmap_D, 1, function(x){ strsplit(x[1], '+', fixed=T)[[1]][2] })
+        colnames(tab2)[1] <- "id1"
+        idmap_D <- merge(idmap_D, tab2, by=c("id1"))
+        colnames(tab2)[1] <- "id2"
+        idmap_D <- merge(idmap_D, tab2, by=c("id2"))
+        idmap_D$assn2.corr.x <- as.character(idmap_D$assn2.corr.x)
+        idmap_D$assn2.corr.y <- as.character(idmap_D$assn2.corr.y)
+        idmap_D$assn2corr.1 <- idmap_D$assn2.corr.x
+        idmap_D$assn2corr.2 <- idmap_D$assn2.corr.y
+        idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2corr.1 <- 
+            idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2.corr.y
+        idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2corr.2 <- 
+            idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2.corr.x
+        idmap_D$assn2.corr <- paste(idmap_D$assn2corr.1 , idmap_D$assn2corr.2, sep='+')
+        idmap_D <- idmap_D[,which(colnames(idmap_D) %in% c("assn", "assn2.corr"))]
+        colnames(idmap_D)[1] <- "assn1"
+        idmap <- rbind(idmap_S, idmap_D)
+    }
 
-    idmap_D <- data.frame(assn=unique(merged[which(merged$type1=="D"),]$assn1))
-    idmap_D$id1 <- apply(idmap_D, 1, function(x){ strsplit(x[1], '+', fixed=T)[[1]][1] })
-    idmap_D$id2 <- apply(idmap_D, 1, function(x){ strsplit(x[1], '+', fixed=T)[[1]][2] })
-    colnames(tab2)[1] <- "id1"
-    idmap_D <- merge(idmap_D, tab2, by=c("id1"))
-    colnames(tab2)[1] <- "id2"
-    idmap_D <- merge(idmap_D, tab2, by=c("id2"))
-    idmap_D$assn2.corr.x <- as.character(idmap_D$assn2.corr.x)
-    idmap_D$assn2.corr.y <- as.character(idmap_D$assn2.corr.y)
-    idmap_D$assn2corr.1 <- idmap_D$assn2.corr.x
-    idmap_D$assn2corr.2 <- idmap_D$assn2.corr.y
-    idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2corr.1 <- 
-        idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2.corr.y
-    idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2corr.2 <- 
-        idmap_D[which(idmap_D$assn2.corr.x > idmap_D$assn2.corr.y),]$assn2.corr.x
-    idmap_D$assn2.corr <- paste(idmap_D$assn2corr.1 , idmap_D$assn2corr.2, sep='+')
-    idmap_D <- idmap_D[,which(colnames(idmap_D) %in% c("assn", "assn2.corr"))]
-    colnames(idmap_D)[1] <- "assn1"
-    idmap <- rbind(idmap_S, idmap_D)
     tab3 <- merge(tab, idmap, by=c("assn1"), all.x=TRUE)    
     
     merged <- merge(merged, idmap, by=c("assn1"), all.x=TRUE)    
@@ -283,6 +289,16 @@ if (tot_match == 0){
 write("", stderr())
 write("===== Agreement: =====", stderr())
 write(paste("Overall = ", tot_match/tot_all, sep=""), stderr())
+write("----- If File 1 = truth -----", stderr())
+prec <- tot_match/tot_all
+recall <- tot_match/tot_all1
+f1 <- 2*(prec*recall)/(prec+recall)
+write(paste("Precision: ", prec, " Recall: ", recall, " F1: ", f1, sep=""), stderr())
+write("----- If File 2 = truth -----", stderr())
+prec <- tot_match/tot_all
+recall <- tot_match/tot_all2
+f1 <- 2*(prec*recall)/(prec+recall)
+write(paste("Precision: ", prec, " Recall: ", recall, " F1: ", f1, sep=""), stderr())
 write("----- File 1 -----", stderr())
 write(paste("Missing (present in 2) = ", nmiss2/length(rownames(assn2))), stderr())
 write(paste("File 1 singlet = ", t1Smatch/t1Stot, sep=""), stderr())
