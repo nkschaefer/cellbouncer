@@ -53,12 +53,10 @@ void dump_cellcounts(gzFile& out_cell,
     std::vector<std::string>& samples);
 
 void load_exp_fracs(std::string& filename,   
-    std::map<std::pair<int, int>, std::map<int, float> >& conditional_match_frac,
-    std::vector<std::string>& samples);
+    std::map<std::pair<int, int>, std::map<int, float> >& conditional_match_frac);
 
 void dump_exp_fracs(FILE* exp_frac_out,
-    std::map<std::pair<int, int>, std::map<int, float> >& conditional_match_frac,
-    std::vector<std::string>& samples);
+    std::map<std::pair<int, int>, std::map<int, float> >& conditional_match_frac);
 
 void dump_assignments(FILE* outf,
     robin_hood::unordered_map<unsigned long, int>& assn_final,
@@ -91,6 +89,7 @@ void write_summary(FILE* outf,
 
 void dump_contam_prof(FILE* outf,
     std::map<int, double>& contam_prof,
+    std::map<int, double>& contam_prof_conc,
     std::vector<std::string>& samples);
 
 void dump_contam_rates(FILE* outf,

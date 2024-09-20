@@ -82,5 +82,9 @@ void parse_mex(const std::string& barcodesfile,
     robin_hood::unordered_map<unsigned long, map<int, long int> >& counts,
     std::vector<std::string>& labels,
     const std::string& featuretype = "");
- 
+
+void fit_dirichlet(std::vector<double>& mle_fracs,
+    std::vector<std::vector<double> >& dirichlet_bootstraps,
+    std::vector<double>& conc_param_results);
+
 #endif
