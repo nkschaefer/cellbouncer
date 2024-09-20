@@ -43,6 +43,27 @@ void help(int code){
     fprintf(stderr, "===== REQUIRED =====\n");
     fprintf(stderr, "    --output_prefix -o The output prefix used in a prior run of demux_vcf\n");
     fprintf(stderr, "===== OPTIONAL =====\n");
+    fprintf(stderr, "    --bootstrap -b Number of bootstrap replicates to run in order to get\n");
+    fprintf(stderr, "       variance on mixture proportions of individuals in the ambient RNA\n");
+    fprintf(stderr, "       pool. Default = 100.\n");
+    fprintf(stderr, "    --doublet_rate -D Expected probability of doublet droplets (for re-IDing\n");
+    fprintf(stderr, "       cells). Default = no expectation. Note that this parameter differs from the\n");
+    fprintf(stderr, "       one in demux_vcf: in that program, 0.5 = effectively no prior. In this\n");
+    fprintf(stderr, "       program, by default no assumption is made about relative frequencies\n");
+    fprintf(stderr, "       of different types of singlets and doublets. If you set this parameter,\n");
+    fprintf(stderr, "       however, it will compute the overall frequency of each individual in the\n");
+    fprintf(stderr, "       data set (as if bulk), and then use this parameter to determine the expected\n");
+    fprintf(stderr, "       frequency of each identity (i.e. if ID1 is 5%% of bulk data, ID2 is 10%%, and\n");
+    fprintf(stderr, "       D = 0.1, then expected ID1 singlets are 0.9*0.05 + 0.1*0.05*0.05, ID2 singlets\n");
+    fprintf(stderr, "       are 0.9*0.1*0.1 + 0.1*0.1*0.1, and ID1+ID2 doublets are 2*0.1*0.05*0.1.\n");
+    fprintf(stderr, "       It will then adjust LLRs to encourage identifying the expected proportion of\n");
+    fprintf(stderr, "       each identity. This is most useful in high-contamination data sets where\n");
+    fprintf(stderr, "       contamination throws off IDs. If you see many more doublets than expected, \n");
+    fprintf(stderr, "       set this parameter; if unsure, ignore.\n");
+    fprintf(stderr, "    --run_once -r Standard behavior is to iteratively estimate contam profile\n");
+    fprintf(stderr, "       and use it to update cell-individual assignments, then repeat until\n");
+    fprintf(stderr, "       log likelihood converges. With this option, it will do this process\n");
+    fprintf(stderr, "       once and exit.\n");
     fprintf(stderr, "    --ids -i If you limited the individuals to assign when running demux_vcf\n");
     fprintf(stderr, "       (i.e. your VCF contained extra individuals not in the experiment),\n");
     fprintf(stderr, "       provide the filtered list of individuals here. Should be a text file\n");
@@ -61,15 +82,6 @@ void help(int code){
     fprintf(stderr, "        be called [output_prefix].contam.dat\n");
     fprintf(stderr, "    --llr -l Log likelihood ratio cutoff to filter assignments from demux_vcf.\n");
     fprintf(stderr, "        This is the fourth column in the .assignments file. Default = 0 (no filter)\n");
-    fprintf(stderr, "    --disable_profile -p In addition to quantifying the ambient RNA contamination\n");
-    fprintf(stderr, "        per cell, default behavior is to model the ambient RNA contamination\n");
-    fprintf(stderr, "        as a mixture of individuals. This involves learning the rate at which\n");
-    fprintf(stderr, "        each individual matches other individuals' homozygous ref, heterozygous,\n");
-    fprintf(stderr, "        and homozygous alt alleles, which is slow. This flag disables this step.\n");
-    fprintf(stderr, "    --max_cells -c If you do not disable the step (using -p above), speed up the\n");
-    fprintf(stderr, "        slow step of modeling by limiting the number of cells assigned to each\n");
-    fprintf(stderr, "        individual that will be used in learning alt allele matching fractions.\n");
-    fprintf(stderr, "        Specify an integer here (default 50), or set <= 0 to use the whole data set.\n");
     fprintf(stderr, "    --other_species -s If profiling the ambient RNA is enabled (no -p option),\n");
     fprintf(stderr, "        and your data came from a pool of multiple species, demultiplexed and each\n");
     fprintf(stderr, "        mapped to its species-specific reference genome and then demultiplexed by\n");
@@ -81,10 +93,10 @@ void help(int code){
     fprintf(stderr, "    --error_alt -E The underlying, true rate of misreading alt as reference\n");
     fprintf(stderr, "        alleles (should only reflect sequencing error if variant calls are\n");
     fprintf(stderr, "        reliable; default 0.001)\n"); 
-    fprintf(stderr, "    --n_mixprop_trials -n If you are inferring mixture proportions (i.e.\n");
-    fprintf(stderr, "        you have not set option -p), then a set number of random initial\n");
-    fprintf(stderr, "        guesses will be used in optimization. Default = 10, or set a different\n");
-    fprintf(stderr, "        value with this option.\n");
+    fprintf(stderr, "    --n_mixprop_trials -N Mixture proportion inference is influenced by initial\n");
+    fprintf(stderr, "        guesses. The first time they are inferred, the starting proportions will be\n");
+    fprintf(stderr, "        randomly shuffled a number of times equal to this number times the number of\n");
+    fprintf(stderr, "        mixture components. Default = 10.\n");
     fprintf(stderr, "    --no_weights -w By default, all observations are weighted by confidence: the log\n");
     fprintf(stderr, "        likelihood ratio of individual ID, divided by the sum of all log likelihood\n");
     fprintf(stderr, "        ratios of assignments of cells to the same individual. This option disables\n");
@@ -104,11 +116,10 @@ int main(int argc, char *argv[]) {
 
     static struct option long_options[] = {
        {"output_prefix", required_argument, 0, 'o'},
-       {"disable_profile", no_argument, 0, 'p'},
        {"other_species", required_argument, 0, 's'},
        {"error_ref", required_argument, 0, 'e'},
        {"error_alt", required_argument, 0, 'E'},
-       {"max_cells", required_argument, 0, 'c'},
+       {"doublet_rate", required_argument, 0, 'D'},
        {"llr", required_argument, 0, 'l'},
        {"n_mixprop_trials", required_argument, 0, 'N'},
        {"no_weights", no_argument, 0, 'w'},
@@ -119,16 +130,16 @@ int main(int argc, char *argv[]) {
        {"cellranger", no_argument, 0, 'C'},
        {"seurat", no_argument, 0, 'S'},
        {"underscore", no_argument, 0, 'U'},
+       {"run_once", no_argument, 0, 'r'},
+       {"bootstrap", required_argument, 0, 'b'},
        {0, 0, 0, 0} 
     };
     
     // Set default values
     string output_prefix = "";
-    bool disable_profile = false;
     bool inter_species = false;
     double error_ref = 0.001;
     double error_alt = 0.001;
-    int max_cells = 50;
     double llr = 0.0;
     int n_mixprop_trials = 10;
     bool weight = true;
@@ -141,6 +152,9 @@ int main(int argc, char *argv[]) {
     bool cellranger = false;
     bool seurat = false;
     bool underscore = false;
+    bool run_once = false;
+    int bootstrap = 100;
+    double doublet_rate = -1.0;
 
     int option_index = 0;
     int ch;
@@ -148,7 +162,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:s:e:E:c:l:N:i:I:n:CSUdwph", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "o:e:E:l:N:i:I:n:b:D:rsCSUdwh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -170,17 +184,14 @@ int main(int argc, char *argv[]) {
             case 's':
                 inter_species = true;
                 break;
+            case 'D':
+                doublet_rate = atof(optarg);
+                break;
             case 'e':
                 error_ref = atof(optarg);
                 break;
             case 'E':
                 error_alt = atof(optarg);
-                break;
-            case 'c':
-                max_cells = atoi(optarg);
-                break;
-            case 'p':
-                disable_profile = true;
                 break;
             case 'l':
                 llr = atof(optarg);
@@ -206,6 +217,12 @@ int main(int argc, char *argv[]) {
             case 'U':
                 underscore = true;
                 break;
+            case 'r':
+                run_once = true;
+                break;
+            case 'b':
+                bootstrap = atoi(optarg);
+                break;
             default:
                 help(0);
                 break;
@@ -221,12 +238,20 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: error rates must be between 0 and 1, exclusive.\n");
         exit(1);
     }
-    if (n_mixprop_trials <= 0){
-        fprintf(stderr, "ERROR: --n_mixprop_trials must be > 0\n");
+    if (n_mixprop_trials < 0){
+        fprintf(stderr, "ERROR: --n_mixprop_trials must be >= 0\n");
         exit(1);
     }
     if (idfile_given && idfile_doublet_given){
         fprintf(stderr, "ERROR: only one of -i and -I is allowed.\n");
+        exit(1);
+    }
+    if (bootstrap <= 0){
+        fprintf(stderr, "WARNING: bootstrapping disabled. Ambient RNA pool proportions will \
+be reported without concentration parameters (variance will be unknown).\n");
+    }
+    if (doublet_rate != -1 && (doublet_rate < 0 || doublet_rate > 1)){
+        fprintf(stderr, "ERROR: --doublet_rate/-D must be between 0 and 1, inclusive.\n");
         exit(1);
     }
 
@@ -241,6 +266,19 @@ int main(int argc, char *argv[]) {
             output_prefix.c_str());
         fprintf(stderr, "same output prefix.\n");
         exit(1);
+    }
+    
+    map<pair<int, int>, map<int, float> > exp_match_fracs;
+    string expfrac_name = output_prefix + ".condf";
+    if (file_exists(expfrac_name)){
+        load_exp_fracs(expfrac_name, exp_match_fracs);
+    }
+    else{
+        fprintf(stderr, "ERROR: no conditional matching probability file found for %s.\n", 
+            output_prefix.c_str());
+        fprintf(stderr, "Please re-run demux_vcf with the same VCF file and output prefix, \
+but specify the -F option to create this file. Then re-run this program.\n");
+        exit(1); 
     }
 
     set<int> allowed_ids;
@@ -313,49 +351,126 @@ all possible individuals\n", idfile_doublet.c_str());
         fprintf(stderr, "output prefix.\n");
         exit(1);
     }
-
-    contamFinder cf(indv_allelecounts, assn, assn_llr, samples.size());
     
-    cf.set_error_rates(error_ref, error_alt);
-    if (inter_species){
-        cf.model_other_species();
-    } 
-    if (disable_profile){
-        cf.skip_model_mixture();
-    }
-    else{
-        cf.max_cells_for_expfracs(max_cells);
-        cf.set_mixprop_trials(n_mixprop_trials);
-    }
-    if (weight){
-        cf.use_weights();
-    }
+    double llprev = 0.0;
+    double delta = 999;
+    double delta_thresh = 0.1;
     
-    cf.fit(); 
+    map<int, double> contam_prof;
+    map<int, double> contam_prof_conc;
+    robin_hood::unordered_map<unsigned long, double> contam_rate;
+    robin_hood::unordered_map<unsigned long, double> contam_rate_se;
+    int nits = 0;
+    while (delta > delta_thresh){
+        fprintf(stderr, "===== ITERATION %d =====\n", nits+1);
+        contamFinder cf(indv_allelecounts, assn, assn_llr, exp_match_fracs, samples.size(),
+            allowed_ids, allowed_ids2);
         
+        cf.set_doublet_rate(doublet_rate);
+
+        // Initialize to whatever was the final estimate last time 
+        if (nits > 0){
+            cf.set_init_contam_prof(contam_prof);
+        }
+        if (nits > 0){
+            double meanc = 0.0;
+            double cfrac = 1.0/(double)contam_rate.size();
+            for (robin_hood::unordered_map<unsigned long, double>::iterator c = contam_rate.begin();
+                c != contam_rate.end(); ++c){
+                meanc += cfrac * c->second;
+            }
+            cf.set_init_c(meanc);
+        } 
+
+        // Do standard initialization
+        cf.set_error_rates(error_ref, error_alt);
+        if (inter_species){
+            cf.model_other_species();
+        } 
+        cf.set_mixprop_trials(n_mixprop_trials);
+        if (weight){
+            cf.use_weights();
+        }
+        
+        cf.fit(); 
+        double ll = cf.compute_ll();
+
+        
+        
+        if (run_once){
+            // Break out of cycle
+            assn = cf.assn;
+            assn_llr = cf.assn_llr;
+            contam_prof = cf.contam_prof;
+            contam_rate = cf.contam_rate;
+            contam_rate_se = cf.contam_rate_se;
+            
+            delta = 0;
+        }
+        else{
+            if (llprev == 0 || ll > llprev){
+                assn = cf.assn;
+                assn_llr = cf.assn_llr;
+                contam_prof = cf.contam_prof;
+                contam_rate = cf.contam_rate;
+                contam_rate_se = cf.contam_rate_se;
+            }
+            fprintf(stderr, " -- Log likelihood: %f", ll);
+            if (llprev != 0){
+                delta = ll-llprev;
+                fprintf(stderr, " delta = %f\n", delta);
+            }
+            else{
+                fprintf(stderr, "\n");
+            }
+            llprev = ll;
+            nits++;
+        }
+        if (delta <= delta_thresh && bootstrap > 0){
+            // Do bootstrapping
+            cf.assn = assn;
+            cf.assn_llr = assn_llr;
+            cf.contam_prof = contam_prof;
+            cf.contam_rate = contam_rate;
+            cf.contam_rate_se = contam_rate_se;
+            fprintf(stderr, "Computing Dirichlet concentration parameters \
+on mixture proportions...\n");
+            cf.bootstrap_amb_prof(bootstrap, contam_prof_conc);
+        }
+    }
+
     // Write contamination profile to disk
-    if (!disable_profile){
+    {
         string fname = output_prefix + ".contam_prof";
         FILE* outf = fopen(fname.c_str(), "w");
         fprintf(stderr, "Writing contamination profile to disk...\n");
-        dump_contam_prof(outf, cf.contam_prof, samples);
+        dump_contam_prof(outf, contam_prof, contam_prof_conc, samples);
         fclose(outf);
     }
-    
     // Write contamination rate (and standard error) per cell to disk
     {
         string fname = output_prefix + ".contam_rate";
         FILE* outf = fopen(fname.c_str(), "w");
-        dump_contam_rates(outf, cf.contam_rate, cf.contam_rate_se, samples,
+        dump_contam_rates(outf, contam_rate, contam_rate_se, samples,
             libname, cellranger, seurat, underscore);
+        fclose(outf);
     }
-    
+    /*
     if (dump_freqs){
         // Write alt allele matching frequencies to a file
         string fname = output_prefix + ".contam.dat";
         FILE* outf = fopen(fname.c_str(), "w");
         dump_amb_fracs(outf, cf.amb_mu);
+        fclose(outf);
     }
-
+    */
+    // Write refined assignments to disk
+    {
+        string fname = output_prefix + ".decontam.assignments";
+        FILE* outf = fopen(fname.c_str(), "w");
+        dump_assignments(outf, assn, assn_llr, samples, libname, 
+            cellranger, seurat, underscore);
+        fclose(outf); 
+    }
     return 0;
 }
