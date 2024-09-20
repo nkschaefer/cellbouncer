@@ -1,6 +1,6 @@
 # demux_mt
 <p>
-<img src="../img/mito.png" width="200px" alt="demux_mt" />
+<img src="../img/demux_mt.png" width="200px" alt="demux_mt" />
 </p>
 
 ## Overview
