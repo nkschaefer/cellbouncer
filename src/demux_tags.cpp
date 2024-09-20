@@ -132,6 +132,10 @@ void help(int code){
     fprintf(stderr, "   --sgRNA -g Specifies that data is from sgRNA capture. This affects how sequence\n");
     fprintf(stderr, "       matching in reads is done and slightly changes the output files. Also makes\n");
     fprintf(stderr, "       the default separator for multiple IDs a comma instead of +.\n");
+    fprintf(stderr, "   --prob -p If you are processing sgRNA capture data (--sgRNA option), this parameter\n");
+    fprintf(stderr, "       sets the minimum probability a guide is present in a cell to be assigned. Because\n");
+    fprintf(stderr, "       of how the algorithm works, this is actually the conditional probability the guide\n");
+    fprintf(stderr, "       is present, conditional on the presence of any likelier guides. Default = 0.5\n");
     fprintf(stderr, "   --filt -f Perform a filtering step to remove cells that do not fit the model well\n");
     fprintf(stderr, "       (these may correspond to high-order multiplets). Default: no filter\n");
     fprintf(stderr, "   --comma -c By default, cells assigned multiple identities will have these\n");
@@ -529,7 +533,8 @@ bool assign_cell(vector<double>& bgprops,
     double& llr,
     double& bgcount,
     bool use_fixed_bg_count, 
-    bool sgrna){
+    bool sgrna,
+    double prob){
     
     // Get expected percent background counts from overall count
     double tot = obsrow[obsrow.size()-1];
@@ -551,6 +556,7 @@ bool assign_cell(vector<double>& bgprops,
 
     // Sort in decreasing order of enrichment of p over expectation in background
     vector<pair<double, int> > dim_enrich_sort;
+   
     for (int j = 0; j < ndim; ++j){
         if (sizes[j] > 0){
             double p = obsrow[j]/tot - bgprops[j];
@@ -558,6 +564,7 @@ bool assign_cell(vector<double>& bgprops,
             obsrowclean.push_back(obsrow[j]);
         }
     }
+
     sort(dim_enrich_sort.begin(), dim_enrich_sort.end());
     double tot_counts = 0;
     set<int> included;
@@ -565,18 +572,52 @@ bool assign_cell(vector<double>& bgprops,
     double var = 0.0;
     vector<double> llsize;
     
+    double llsecond = 0.0;
+    double llmax = 0.0;
+
     double tot_fg = 0.0;
     
+    result.clear();
+
+    // Should we check for the case of 100% background? 
+    if (add_bg){
+        vector<double> params_bg;
+        for (int j = 0; j < ndim; ++j){
+            if (sizes[j] > 0){
+                params_bg.push_back(pbg * bgprops[j]);
+            }
+        }
+        double ll = dmultinom(obsrowclean, params_bg);
+        
+        if (bg_mean != -1 && bg_var != -1){
+            double cbg = obsrow[obsrow.size()-1];
+
+            // Use log-normal distribution
+            double m2 = bg_mean*bg_mean;
+            double sigma = sqrt(log(bg_var/m2 + 1.0));
+            double mu = log(bg_mean) - log(bg_var/m2 + 1.0)/2.0;
+
+            ll += dnorm(log(cbg), mu, sigma);
+        }
+        //fprintf(stderr, "-1) %f\n", ll);
+        llmax = ll;
+    }
+    
+    double llprev = llmax;
+
     long int maxn = dim_enrich_sort.size();
     if (!sgrna){
         maxn = 2;
     }
+    
     for (int i = 0; i < maxn; ++i){
         int j = dim_enrich_sort[i].second;
-        if (sizes[j] <= 0){
+        if (sizes[j] <= 0 || obsrow[j] == 0){
             continue;
         }
-
+        else if (-dim_enrich_sort[i].first < 0){
+        //    continue;
+        } 
         included.insert(j);
         
         tot_counts += sizes[j];
@@ -600,7 +641,7 @@ bool assign_cell(vector<double>& bgprops,
             }
         }
         double ll = dmultinom(obsrowclean, p);
-        
+         
         if (bg_mean != -1 && bg_var != -1){
             double tot_exp = tot_counts + bg_mean;
             var += bg_var/1e6;
@@ -611,47 +652,70 @@ bool assign_cell(vector<double>& bgprops,
             double mu = log(tot_exp) - log(var/m2 + 1.0)/2.0;
             ll += dnorm(log(obsrow[obsrow.size()-1]), mu, sigma);
         }
-        lls.push_back(make_pair(-ll, i));
-    }
-    
-    // Should we check for the case of 100% background? 
-    if (add_bg){
-        vector<double> params_bg;
-        for (int j = 0; j < ndim; ++j){
-            if (sizes[j] > 0){
-                params_bg.push_back(pbg * bgprops[j]);
+        
+        //fprintf(stderr, "%d) %f\n", j, ll); 
+        // Things are sorted so that once log likelihood starts to dip, we can stop looking
+        // (it will only continue to decrease).
+        if (llmax != 0.0 && ll < llmax){
+            if (llsecond == 0.0 || llsecond < ll){
+                llsecond = ll;
+            }
+            break;
+        }
+        else if (ll == llmax){
+            // This should not happen often.
+            llsecond = llmax;
+            // Don't add in result - keep more parsimonious result (fewer assignments/guides)
+        }
+        else{
+            bool keep = true;
+            if (prob > 0 && prob > 0.5 && llprev != 0.0){
+                // Check probability to see if we should bail.
+                double denom = pow(2, llprev - llprev) + pow(2, ll-llprev);
+                double thisprob = pow(2, ll-llprev) / denom;
+                if (thisprob < prob){
+                    // Don't accept.
+                    keep = false;
+                    break;
+                }
+            }
+            if (keep){
+                llsecond = llmax;
+                llmax = ll;
+                llprev = ll;
+                result.insert(j);
             }
         }
-        double ll = dmultinom(obsrowclean, params_bg);
-        
-        if (bg_mean != -1 && bg_var != -1){
-            double cbg = obsrow[obsrow.size()-1];
-
-            // Use log-normal distribution
-            double m2 = bg_mean*bg_mean;
-            double sigma = sqrt(log(bg_var/m2 + 1.0));
-            double mu = log(bg_mean) - log(bg_var/m2 + 1.0)/2.0;
-
-            ll += dnorm(log(cbg), mu, sigma);
-        }
-        lls.push_back(make_pair(-ll, -1));
     }
-    sort(lls.begin(), lls.end());
-    llr = -lls[0].first - -lls[1].first;
-    int chosen = lls[0].second;
-    if (chosen == -1){
+    
+    vector<double> model_means_this = sizes;
+
+    //fprintf(stderr, "\n");
+
+    llr = llmax - llsecond;
+    
+    // Result should already be populated
+    if (result.size() == 0){
         bgcount = obsrow[obsrow.size()-1];
-        return false;    
-    }
+        return false;
+    } 
     else{
-        for (int i = 0; i <= chosen; ++i){
-            result.insert(dim_enrich_sort[i].second);
-        }
-        bgcount = get_cell_bg(obsrow, result, sizes, bgprops, ndim);
+        bgcount = get_cell_bg(obsrow, result, model_means_this, bgprops, ndim);
         return true;
     }
 }
 
+double diff_negbin_exp(double x, const map<string, double>& data_d, const map<string, int>& data_i){
+    double mu = data_d.at("mu");
+    double phi = data_d.at("phi");
+    double lambda = data_d.at("lambda");
+
+    // Brent solver is set to maximize, we want to minimize. So make negative.
+    double ll1 = dnbinom(x, mu, phi);
+    double ll2 = dexp(x, lambda);
+    
+    return ll1-ll2;
+}
 /**
  * First step: fit a 2-way mixture model to counts of each label.
  * Background is modeled as a negative binomial over low counts,
@@ -686,24 +750,76 @@ void fit_dists_2way(vector<vector<double> >& obscol,
         else{
             sort(obscol[i].begin(), obscol[i].end());
             double lowval = obscol[i][0];
+            double lowval2;
+            if (obscol[i].size() % 2 == 0){
+                double lowval2a = obscol[i][obscol[i].size()/2];
+                double lowval2b = obscol[i][obscol[i].size()/2-1];
+                lowval2 = (lowval2a + lowval2b)/2.0;
+            }
+            else{
+                lowval2 = obscol[i][(obscol[i].size()-1)/2];
+            }
             double highval = obscol[i][obscol[i].size()-1];
             vector<mixtureDist> dists;
+            
+            pair<int, double> lomm = nbinom_moments(lowval, pow((lowval2-lowval)/2.0, 2));
+
             mixtureDist low("negative_binomial", vector<double>{ lowval, 1.0 });
             mixtureDist high("exponential", 1.0/highval);
             dists.push_back(low);
             dists.push_back(high);
             mixtureModel mod(dists);
             mod.fit(obscol[i]);
-            double dist_sep = pnbinom(1.0/mod.dists[1].params[0][0],
-                mod.dists[0].params[0][0], mod.dists[0].params[0][1]);
-            fprintf(stderr, "%s:\t%f\t%f\n", labels[i].c_str(),
-                mod.dists[0].params[0][0], 1.0/mod.dists[1].params[0][0]);
             
-            fprintf(outf, "%s\t%f\t%f\t%f\t%f\n", labels[i].c_str(),
-                mod.weights[0], mod.dists[0].params[0][0], mod.dists[0].params[0][1],
-                mod.dists[1].params[0][0]);
+            vector<mixtureDist> dists2;
+            mixtureDist low2("negative_binomial", vector<double>{ lowval2, 1.0 });
+            mixtureDist high2("exponential", 1.0/highval);
+            dists2.push_back(low2);
+            dists2.push_back(high2);
+            mixtureModel mod2(dists2);
+            mod2.fit(obscol[i]);
+            
+            fprintf(stderr, "LL %s %f %f\n", labels[i].c_str(), mod.loglik, mod2.loglik);
+            double gini1 = 0.0;
+            for (int x = 0; x < obscol[i].size(); ++x){
+                double gini1b = 1.0 - mod.responsibility_matrix[x][0]*mod.responsibility_matrix[x][0] - 
+                    mod.responsibility_matrix[x][1]*mod.responsibility_matrix[x][1];
+                gini1 += gini1b;
+            }
+            gini1 /= (double)obscol[i].size();
 
-            if (mod.weights[1] >= mod.weights[0] || dist_sep < 0.99){
+            double gini2 = 0.0;
+            for (int x = 0; x < obscol[i].size(); ++x){
+                double gini2b = 1.0 - mod2.responsibility_matrix[x][0]*mod2.responsibility_matrix[x][0] - 
+                    mod2.responsibility_matrix[x][1]*mod2.responsibility_matrix[x][1];
+                gini2 += gini2b;
+            }
+            gini2 /= (double)obscol[i].size();
+            fprintf(stderr, "  gini %f %f\n", gini1, gini2);
+            fprintf(stderr, "  means %f %f | %f %f\n", mod.dists[0].params[0][0], 1.0/mod.dists[1].params[0][0],
+                mod2.dists[0].params[0][0], 1.0/mod2.dists[1].params[0][0]);
+            fprintf(stderr, "  weights %f | %f\n", mod.weights[0], mod2.weights[0]);
+            double lomean = mod.dists[0].params[0][0];
+            double lophi = mod.dists[0].params[0][1];
+            double himean = 1.0/mod.dists[1].params[0][0];
+            double w = mod.weights[0];
+            fprintf(stderr, "  disps %f %f\n", mod.dists[0].params[0][1], mod2.dists[0].params[0][1]);
+            if (1.0/mod2.dists[1].params[0][0] > mod2.dists[0].params[0][0] && 
+                mod2.loglik > mod.loglik){
+                fprintf(stderr, "  SWAP\n");
+                lomean = mod2.dists[0].params[0][0];
+                lophi = mod2.dists[0].params[0][1];
+                himean = 1.0/mod2.dists[1].params[0][0];
+                w = mod2.weights[0];
+            }
+
+            double dist_sep = pnbinom(himean, lomean, lophi);
+            fprintf(stderr, "%s:\t%f\t%f\n", labels[i].c_str(), lomean, himean);
+            fprintf(outf, "%s\t%f\t%f\t%f\t%f\n", labels[i].c_str(),
+                w, lomean, lophi, 1.0/himean);
+
+            if (dist_sep < 0.99){
+            //if (mod.weights[1] >= mod.weights[0] || dist_sep < 0.99){
                 lomeans.push_back(0);
                 lophis.push_back(0);
                 himeans.push_back(0);
@@ -711,11 +827,11 @@ void fit_dists_2way(vector<vector<double> >& obscol,
                 loweights.push_back(1);
             }
             else{
-                lomeans.push_back(mod.dists[0].params[0][0]);
-                lophis.push_back(mod.dists[0].params[0][1]);
-                himeans.push_back(1.0/mod.dists[1].params[0][0]);
-                hiweights.push_back(mod.weights[1]);
-                loweights.push_back(mod.weights[0]);
+                lomeans.push_back(lomean);
+                lophis.push_back(lophi);
+                himeans.push_back(himean);
+                hiweights.push_back(1.0-w);
+                loweights.push_back(w);
             }
         }
     }
@@ -759,6 +875,7 @@ void fit_dists_2way(vector<vector<double> >& obscol,
                 himeans[i] = -1;
             }
             else{
+                /*
                 double dbeta1 = dbeta(hiweights[i], loweightbeta.first, loweightbeta.second);
                 double dbeta2 = dbeta(hiweights[i], hiweightbeta.first, hiweightbeta.second);
                 if (dbeta2 - dbeta1 < 0){
@@ -770,12 +887,14 @@ void fit_dists_2way(vector<vector<double> >& obscol,
                     himeans[i] = -1;
                 }
                 else{
+                */
                     model_means.push_back(himeans[i]);
-                }
+                //}
             }
         }
     }
 }
+
 
 /**
  * Do initial assignments to learn the % of background/ambient tags
@@ -849,7 +968,9 @@ pair<double, double> assign_init(vector<vector<double> >& obs,
                 p_high = pow(2, ll_high-max) / tot;
             }
 
-            if (p_high > p_thresh){
+            // Also ensure the value is higher than the mean of the lower dist, because sometimes
+            // the exponential can scoop up values on the left tail too
+            if (p_high > p_thresh && obs[i][j] > lomeans[j]){
                 counts_all[j].push_back(obs[i][obs[i].size()-1]);
                 chosen.insert(j);
             }
@@ -878,21 +999,11 @@ pair<double, double> assign_init(vector<vector<double> >& obs,
     // Model this as a linear fit between log transformed count and logit-transformed
     // percent background.
     pair<double, double> slope_int = linreg(logtots, logitpercs);
-    
+   
     return slope_int;
 }
 
-double diff_negbin_exp(double x, const map<string, double>& data_d, const map<string, int>& data_i){
-    double mu = data_d.at("mu");
-    double phi = data_d.at("phi");
-    double lambda = data_d.at("lambda");
 
-    // Brent solver is set to maximize, we want to minimize. So make negative.
-    double ll1 = dnbinom(x, mu, phi);
-    double ll2 = dexp(x, lambda);
-    
-    return ll1-ll2;
-}
 
 double ll_beta_diff(double x, const map<string, double>& data_d, const map<string, int>& data_i){
     
@@ -906,6 +1017,199 @@ double ll_beta_diff(double x, const map<string, double>& data_d, const map<strin
     return ll1-ll2;
 }
 
+double median(vector<double>& nums){
+    sort(nums.begin(), nums.end());
+    if (nums.size() % 2 == 0){
+        return (nums[nums.size()/2] + nums[nums.size()/2-1])*0.5;
+    }
+    else{
+        return nums[(nums.size()-1) / 2];
+    }
+}
+
+pair<double, double> modes(vector<double>& nums){
+    map<double, int> histlo;
+    map<double, int> histhi;
+    int maxcountlo = -1;
+    double maxbinlo = -1;
+    int maxcounthi = -1;
+    double maxbinhi = -1;
+    for (int i = 0; i < nums.size(); ++i){
+        double rounded = round(nums[i]*100.0)/100.0;
+        if (nums[i] < 0.5){
+            if (histlo.count(rounded) == 0){
+                histlo.insert(make_pair(rounded, 0));
+            }
+            histlo[rounded]++;
+            if (maxcountlo == -1 || histlo[rounded] > maxcountlo){
+                maxcountlo = histlo[rounded];
+                maxbinlo = rounded;
+            }
+        }
+        else{
+            if (histhi.count(rounded) == 0){
+                histhi.insert(make_pair(rounded, 0));
+            }
+            histhi[rounded]++;
+            if (maxcounthi == -1 || histhi[rounded] > maxcounthi){
+                maxcounthi = histhi[rounded];
+                maxbinhi = rounded;
+            }
+        }
+    }
+    return make_pair(maxbinlo, maxbinhi);
+}
+
+/**
+ * Model percent background counts as 2 dists:
+ * low percent background (true positives) and high percent background
+ * (false positives).
+ *
+ * Returns cutoff value between the two distributions.
+ */
+double sep_bg_dists_percent(vector<double>& bgperc_all_flat){
+    
+    if (bimod_test(bgperc_all_flat)){
+        mixtureModel bgmod;
+        mixtureModel bgpercmod; 
+        double intptx = -1;
+        
+        // Get initial values: mean % bg when below 50% and mean % bg when
+        // above 50% 
+        vector<double> bgperc_flat_low;
+        vector<double> bgperc_flat_high;
+        
+        vector<vector<double> > bgperc_all;
+
+        for (int i = 0; i < bgperc_all_flat.size(); ++i){
+            if (bgperc_all_flat[i] > 0 && bgperc_all_flat[i] < 1.0){
+                if (bgperc_all_flat[i] < 0.5){
+                    bgperc_flat_low.push_back(bgperc_all_flat[i]);
+                }
+                else{
+                    bgperc_flat_high.push_back(bgperc_all_flat[i]);
+                }
+                bgperc_all.push_back(vector<double>{ bgperc_all_flat[i] });
+            }
+        }
+
+        pair<double, double> muvar_bgl = welford(bgperc_flat_low);
+        pair<double, double> muvar_bgh = welford(bgperc_flat_high);
+        pair<double, double> hilomodes = modes(bgperc_all_flat);
+        pair<double, double> ab_bgl = beta_moments(muvar_bgl.first, muvar_bgl.second);
+        pair<double, double> ab_bgh = beta_moments(muvar_bgh.first, muvar_bgh.second);
+        
+        //mixtureDist lo("exponential", 1.0/muvar_bgl.first);
+        mixtureDist lo("beta", ab_bgl.first, ab_bgl.second);
+        mixtureDist hi("beta", ab_bgh.first, ab_bgh.second);
+
+        //mixtureDist lo("beta", 0.25, 5.0);
+        //mixtureDist hi("beta", 5.0, 0.25);
+        //mixtureDist lo("beta", 1.0, 9.0);
+        //mixtureDist hi("beta", 9.0, 1.0);
+        vector<mixtureDist> dists;
+        dists.push_back(lo);
+        dists.push_back(hi);
+        vector<double> w{ 0.5, 0.5};
+        bgpercmod.init(dists, w);
+        bgpercmod.fit(bgperc_all);
+        bgpercmod.print();
+        
+        optimML::brent_solver intpt(ll_beta_diff);
+        intpt.set_root();
+        intpt.add_data_fixed("a1", bgpercmod.dists[0].params[0][0]);
+        intpt.add_data_fixed("b1", bgpercmod.dists[0].params[0][1]);
+        intpt.add_data_fixed("a2", bgpercmod.dists[1].params[0][0]);
+        intpt.add_data_fixed("b2", bgpercmod.dists[1].params[0][1]);
+        double mean1 = bgpercmod.dists[0].params[0][0] / (bgpercmod.dists[0].params[0][0] + bgpercmod.dists[0].params[0][1]);
+        double mean2 = bgpercmod.dists[1].params[0][0] / (bgpercmod.dists[1].params[0][0] + bgpercmod.dists[0].params[0][1]);
+        // Find intersection point between the two dists; use as cutoff.
+        return intpt.solve(mean1, mean2);
+    }
+    else{
+        fprintf(stderr, "Disabled filtering on ambient fraction; distribution not bimodal\n");
+        return -1.0;
+    }
+}
+
+/**
+ * Model total background counts as two distributions: low bg count (true positive
+ * assignments) and high bg count (false positive assignments).
+ *
+ * Returns cutoff value for background count.
+ */
+double sep_bg_dists(vector<double>& bgcount_all){
+    if (!bimod_test(bgcount_all)){
+        fprintf(stderr, "Disabled filtering step: background count distribution is unimodal\n");
+        return -1;
+    }
+    else{
+        
+        // Get some initial value guesses
+        pair<double, double> muvar_all = welford(bgcount_all);
+        sort(bgcount_all.begin(), bgcount_all.end());
+        double bglow = percentile(bgcount_all, 0.5);
+        double bghigh = bgcount_all[bgcount_all.size()-1];
+        
+        double mid = (bglow + bghigh)/2.0;
+        double sd = (mid-bglow)/2.0;
+        double var = sd*sd;
+        pair<double, double> nb1 = nbinom_moments(bglow, 2*bglow);
+        pair<double, double> nb2 = nbinom_moments(bghigh, 2*bghigh);
+        
+        vector<mixtureDist> bgdists;
+        mixtureDist dist_high("exponential", 1.0/bghigh);
+        mixtureDist dist_low("negative_binomial", vector<double>{ bglow, 1.0 });
+        bgdists.push_back(dist_low);
+        bgdists.push_back(dist_high);
+        
+        vector<double> w{ 0.5, 0.5 }; 
+        mixtureModel bgmod;
+        bgmod.init(bgdists, w);
+        vector<vector<double> > bgobs;
+        for (int i = 0; i < bgcount_all.size(); ++i){
+            bgobs.push_back(vector<double>{ bgcount_all[i] });
+        }
+        bgmod.fit(bgobs);
+        
+        fprintf(stderr, "===== Unfiltered vs excessive background counts per cell =====\n");
+        fprintf(stderr, "Mean counts: %f\t%f\n", bgmod.dists[0].params[0][0], 
+            1.0/bgmod.dists[1].params[0][0]);
+        fprintf(stderr, "phi %f\n", bgmod.dists[0].params[0][1]);
+        fprintf(stderr, "Dist weights: %f\t%f\n", bgmod.weights[0], bgmod.weights[1]);
+        
+        // Don't filter if we'll lose too much data
+        // or if means are too close together.
+        
+        // Find point of intersection between the two distributions
+        optimML::brent_solver intpoint_finder(diff_negbin_exp);
+        intpoint_finder.set_root();
+        intpoint_finder.add_data_fixed("mu", bgmod.dists[0].params[0][0]);
+        intpoint_finder.add_data_fixed("phi", bgmod.dists[0].params[0][1]);
+        intpoint_finder.add_data_fixed("lambda", bgmod.dists[1].params[0][0]);
+        // Require that point of intersection be between the two means.
+        double intpt = intpoint_finder.solve(bgmod.dists[0].params[0][0],
+            1.0/bgmod.dists[1].params[0][0]);
+        double intpt_p = pnbinom(intpt, bgmod.dists[0].params[0][0], bgmod.dists[0].params[0][1]);
+         
+        fprintf(stderr, "Intersection point %f, %f of lower dist\n", intpt, 1.0-intpt_p);
+        
+        // Find point of intersection between the two distributions (the point at which 
+        // an observation becomes more likely under the filtered distribution)
+        double lambda = bgmod.dists[1].params[0][1];
+        double mu = bgmod.dists[0].params[0][0];
+        double phi = bgmod.dists[0].params[0][1];
+
+        if (intpt_p < 0.9){
+            fprintf(stderr, "  disabled background filtering\n");
+            return -1.0;
+        }
+        else{
+            return intpt;
+        }
+    }
+}
+
 /**
  * Main function for assigning cell identities from data.
  */
@@ -916,13 +1220,14 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     vector<string>& labels,
     bool filt,
     string& output_prefix, 
-    bool sgrna){
+    bool sgrna,
+    double prob){
     
     // For initial fitting: let counts for each label be a vector 
     vector<vector<double> > obscol;
 
     vector<double> meanscol;
-
+    
     for (int i = 0; i < labels.size(); ++i){
         vector<double> v;
         obscol.push_back(v);
@@ -944,7 +1249,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
             ++y){
             row[y->first] += (double)y->second;
             tot += (double)y->second;
-            double val = (double)y->second + 1;
+            double val = (double)y->second;
             obscol[y->first].push_back(val);
             meanscol[y->first] += val;
         }
@@ -956,10 +1261,10 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
             bcs.push_back(x->first);
         }
     }
+    
     // Step 1: fit a 2-way mixture model to each label independently.
     // This will allow us to get a rough idea of which cells are which
     // identities, and learn about the background distribution.
-
     vector<double> model_means;
     vector<double> lomeans;
     vector<double> lophis;
@@ -972,206 +1277,151 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     pair<double, double> slope_int = assign_init(obs, labels, bgmeans,   
         lomeans, lophis, himeans, model_means, sgrna);
     
-    // Make second-round assignments and store the maximum likelihood-inferred
-    // background counts    
-    vector<double> bgcount_all; 
-    vector<vector<double> > bgperc_all;
-    vector<double> bgperc_all_flat;
+    
+    
+    /* 
+    vector<vector<double> > sgrna_count_on;
+    vector<vector<double> > sgrna_count_off;
+    if (sgrna){
+        for (int i = 0; i < labels.size(); ++i){
+            vector<double> v;
+            sgrna_count_on.push_back(v);
+            sgrna_count_off.push_back(v);
+        }   
+    }
+    */
 
-    fprintf(stderr, "Making second round of assignments to infer ambient counts per cell...\n");
+    // Refine total count -> perc bg relationship 
+    vector<double> logtots;
+    vector<double> logitpercs;
+    
+    fprintf(stderr, "Making second round of assignments...\n");
+    vector<double> bgcount_all;
+
     for (int i = 0; i < obs.size(); ++i){
         set<int> assns;
         double llr;
-        double bgcount; 
+        double bgcount;
         assign_cell(bgmeans, model_means, -1, -1, obs[i],   
-            labels.size(), slope_int, true, assns, llr, bgcount, false, sgrna);
+            labels.size(), slope_int, true, assns, llr, bgcount, false, sgrna, -1);
+        
+        /*
+        string bcstr = bc2str(bcs[i]);
+        string atxt = "";
+        set<string> a2;
+        for (set<int>::iterator a = assns.begin(); a != assns.end(); ++a){
+            a2.insert(labels[*a]);
+        }
+        bool first = true;
+        for (set<string>::iterator ax = a2.begin(); ax != a2.end(); ++ax){
+            if (!first){
+                atxt += "+";
+            }
+            atxt += ax->c_str();
+            first = false;
+        }
+        fprintf(stdout, "%s\t%s\t%f\n", bcstr.c_str(), atxt.c_str(), bgcount);
+        */
         if (bgcount != -1){
             bgcount_all.push_back(bgcount);    
             if (bgcount > 0 && bgcount < tots[i]){
-                bgperc_all.push_back(vector<double>{ bgcount / tots[i] }); 
-                bgperc_all_flat.push_back(bgcount/tots[i]);
+                double perc = bgcount/tots[i];
+                logtots.push_back(log(tots[i]));
+                logitpercs.push_back(logit(perc));
+                //bgperc_all_flat.push_back(perc);
             }
         }
+        /*
+        if (sgrna){
+            // Store counts of positive/negative assignments of each sgRNA
+            for (int j = 0; j < labels.size(); ++j){
+                if (obs[i][j] > 0.0){
+                    if (assns.find(j) != assns.end()){
+                        sgrna_count_on[j].push_back(obs[i][j]);
+                    }
+                    else{
+                        sgrna_count_off[j].push_back(obs[i][j]);
+                    }
+                } 
+            }
+        }
+        */
     }
     
-    // Use what we learned from round2 of assignments to learn the mean & variance
-    // of background counts per cell 
-    pair<double, double> muvarbg = welford(bgcount_all);
+    // Update % bg from tot prediction
+    slope_int = linreg(logtots, logitpercs);
     
-   
-    mixtureModel bgmod;
-    mixtureModel bgpercmod; 
-    double intptx = -1;
-
+    /* 
     if (sgrna){
-        
-        // Do not filter the normal way. Filter on percent background counts instead.
-        
-        if (bimod_test(bgperc_all_flat)){
-            filt = false;
-            mixtureDist lo("beta", 1.0, 9.0);
-            mixtureDist hi("beta", 9.0, 1.0);
-            vector<mixtureDist> dists;
-            dists.push_back(lo);
-            dists.push_back(hi);
-            vector<double> w{ 0.5, 0.5};
-            bgpercmod.init(dists, w);
-            bgpercmod.fit(bgperc_all);
-            bgpercmod.print();
-            
-            optimML::brent_solver intpt(ll_beta_diff);
-            intpt.set_root();
-            intpt.add_data_fixed("a1", bgpercmod.dists[0].params[0][0]);
-            intpt.add_data_fixed("b1", bgpercmod.dists[0].params[0][1]);
-            intpt.add_data_fixed("a2", bgpercmod.dists[1].params[0][0]);
-            intpt.add_data_fixed("b2", bgpercmod.dists[1].params[0][1]);
-            double mean1 = bgpercmod.dists[0].params[0][0] / (bgpercmod.dists[0].params[0][0] + bgpercmod.dists[0].params[0][1]);
-            double mean2 = bgpercmod.dists[1].params[0][0] / (bgpercmod.dists[1].params[0][0] + bgpercmod.dists[0].params[0][1]);
-            intptx = intpt.solve(mean1, mean2);
-            fprintf(stderr, "intpt %f\n", intptx);
-        }
-        else{
-            fprintf(stderr, "Disabled filtering on ambient fraction; distribution not bimodal\n");
-        }
-    }    
-    if (filt){ 
-        if (!bimod_test(bgcount_all)){
-            fprintf(stderr, "Disabled filtering step: background count distribution is unimodal\n");
-            filt = false;
+        model_means.clear();
+        // Fit negative binomial (negative) & exponential (positive) to each sgRNA 
+        for (int i = 0; i < labels.size(); ++i){
+            // Negative binomial
+            pair<double, double> muvar_off = welford(sgrna_count_off[i]);
+            pair<double, double> muphi_off = nbinom_moments(muvar_off.first, muvar_off.second);
+            // Exponential
+            pair<double, double> muvar_on = welford(sgrna_count_on[i]);
+            model_means.push_back(muvar_on.first);
         }
     }
-    if (filt){ 
-        
-        fprintf(stderr, "===== Unfiltered vs excessive background counts per cell =====\n");
+    */
 
-        pair<double, double> muvar_all = welford(bgcount_all);
-        sort(bgcount_all.begin(), bgcount_all.end());
-        double bglow = percentile(bgcount_all, 0.1);
-        double bghigh = bgcount_all[bgcount_all.size()-1];
-        double mid = (bglow + bghigh)/2.0;
-        double sd = (mid-bglow)/2.0;
-        double var = sd*sd;
-        pair<double, double> nb1 = nbinom_moments(bglow, 2*bglow);
-        pair<double, double> nb2 = nbinom_moments(bghigh, 2*bghigh);
-        
-        vector<mixtureDist> bgdists;
-        mixtureDist dist_high("exponential", 1.0/bghigh);
-        mixtureDist dist_low("negative_binomial", vector<double>{ bglow, 1.0 });
-        bgdists.push_back(dist_low);
-        bgdists.push_back(dist_high);
-        
-        vector<double> w{ 0.5, 0.5 }; 
-        bgmod.init(bgdists, w);
-        vector<vector<double> > bgobs;
-        for (int i = 0; i < bgcount_all.size(); ++i){
-            bgobs.push_back(vector<double>{ bgcount_all[i] });
-        }
-        bgmod.fit(bgobs);
-        fprintf(stderr, "Mean counts: %f\t%f\n", bgmod.dists[0].params[0][0], 
-            1.0/bgmod.dists[1].params[0][0]);
-        fprintf(stderr, "Dist weights: %f\t%f\n", bgmod.weights[0], bgmod.weights[1]);
-        
-        // Don't filter if we'll lose too much data
-        // or if means are too close together.
-        
-        // Find point of intersection between the two distributions
-        optimML::brent_solver intpoint_finder(diff_negbin_exp);
-        intpoint_finder.set_root();
-        intpoint_finder.add_data_fixed("mu", bgmod.dists[0].params[0][0]);
-        intpoint_finder.add_data_fixed("phi", bgmod.dists[0].params[0][1]);
-        intpoint_finder.add_data_fixed("lambda", bgmod.dists[1].params[0][0]);
-        // Require that point of intersection be between the two means.
-        double intpt = intpoint_finder.solve(bgmod.dists[0].params[0][0],
-            1.0/bgmod.dists[1].params[0][0]);
-        double intpt_p = pnbinom(intpt, bgmod.dists[0].params[0][0], bgmod.dists[0].params[0][1]);
-        
-        fprintf(stderr, "Intersection point %f, %f of lower dist\n", intpt, 1.0-intpt_p);
-        
-        // Find point of intersection between the two distributions (the point at which 
-        // an observation becomes more likely under the filtered distribution)
-        double lambda = bgmod.dists[1].params[0][1];
-        double mu = bgmod.dists[0].params[0][0];
-        double phi = bgmod.dists[0].params[0][1];
-
-        if (intpt_p < 0.9){
-            fprintf(stderr, "  disabled background filtering\n");
-            filt = false;
-        }
-    }
+    pair<double, double> muvarbg = welford(bgcount_all);
 
     int count_filt = 0;
     
     fprintf(stderr, "Making final assignments...\n");
-    
-    pair<double, double> muphi = nbinom_moments(muvarbg.first, muvarbg.second);
-    double p_bg_thresh = 0.01;
 
+    //double bgcount_cutoff = sep_bg_dists(bgcount_all);
+
+    bgcount_all.clear();
+    vector<double> bgperc_all;
+    
     for (int i = 0; i < obs.size(); ++i){
         set<int> assns;
         double llr; 
         double bgcount;
         bool assigned = assign_cell(bgmeans, model_means, muvarbg.first, 
             muvarbg.second, obs[i], labels.size(), slope_int, true, assns, llr, bgcount, 
-            false, sgrna);
+            false, sgrna, prob);
         
+        bgcount_all.push_back(bgcount);
         double pbg = bgcount / tots[i];
-        cell_bg.emplace(bcs[i], pbg);
+        bgperc_all.push_back(pbg);
         
-        if (assigned && sgrna){
-            if (intptx > 0 && pbg > intptx){
-                assns.clear();
-                llr = 0.0;
-            }
-            /*
-            if (pbg == 1.0){
-                assns.clear();
-            }
-            else{
-                vector<double> row{ pbg };
-                double ll_lo = bgpercmod.dists[0].loglik(row);
-                double ll_hi = bgpercmod.dists[1].loglik(row);
-                if (ll_hi > ll_lo){
-                    llr = ll_hi - ll_lo;
-                    assns.clear();
-                }
-            }
-            */
-        }
+        assn.emplace(bcs[i], assns);
+        assn_llr.emplace(bcs[i], llr);
+        cell_bg.emplace(bcs[i], pbg);
+    }
 
-        // Because exponential dists can catch low-count stuff too, make sure it's more likely
-        // under the high dist AND that its count is high, not very low.
-        if (assigned && filt && bgcount > bgmod.dists[0].params[0][0]){
-            
-            vector<double> row{ bgcount };
-            double ll1 = bgmod.dists[0].loglik(row);
-            double ll2 = bgmod.dists[1].loglik(row);
-            double prob_high;
-            if (ll1 < ll2){
-                double denom = 1.0 + pow(2, ll2-ll1);
-                prob_high = pow(2, ll2-ll1) / denom;
-            }
-            else{
-                double denom = 1.0 + pow(2, ll1-ll2);
-                prob_high = 1.0 - pow(2, ll1-ll2) / denom;
-            }
-            
-            if (ll2 > ll1){
-                double denom = 1.0 + pow(2, ll2-ll1);
-                double prob_high = pow(2, ll2-ll1) / denom;
-                if (prob_high > 0.5){
-                    assigned = false;
+    if (sgrna){
+        // Filter assignments
+        double cutoff = sep_bg_dists_percent(bgperc_all);
+        if (cutoff != -1){
+            fprintf(stderr, "Percent background cutoff: %f\n", cutoff);
+            for (int i = 0; i < obs.size(); ++i){
+                if (bgperc_all[i] > cutoff){
+                    // Set to WT
+                    assn.erase(bcs[i]);
+                    assn_llr.erase(bcs[i]);
                 }
             }
-        }
-        if (assigned){
-            assn.emplace(bcs[i], assns);
-            assn_llr.emplace(bcs[i], llr);
-        }
-        else{
-            count_filt++;
         }
     }
-    
+    else if (filt){
+        // Filter assignments
+        double bgcount_cutoff = sep_bg_dists(bgcount_all);
+        if (bgcount_cutoff != -1){
+            for (int i = 0; i < obs.size(); ++i){
+                if (bgcount_all[i] > bgcount_cutoff){
+                    count_filt++;
+                    // Remove assignment
+                    assn.erase(bcs[i]);
+                    assn_llr.erase(bcs[i]);
+                }
+            }
+        }
+    }
     if (filt){ 
         fprintf(stderr, "Filtered %d of %ld assignments\n", count_filt, obs.size());
     }
@@ -1495,7 +1745,58 @@ void count_tags_in_reads(vector<string>& read1fn,
 }
 
 int main(int argc, char *argv[]) {    
+    /*    
+    ifstream inf("HM2D_L1.bg");
+    string barc;
+    double pbg;
+    vector<vector<double> > obstest;
+    vector<double> bglo;
+    vector<double> bghi;
+    while (inf >> barc >> pbg){
+        if (pbg > 0 && pbg < 1){
+            obstest.push_back(vector<double>{ pbg });
+        }
+        if (pbg < 0.5){
+            bglo.push_back(pbg);
+        }
+        else{
+            bghi.push_back(pbg);
+        }
+    } 
+
+    pair<double, double> mvl = welford(bglo);
+    pair<double, double> mvh = welford(bghi);
+
+    fprintf(stderr, "%f %f | %f %f\n", mvl.first, mvl.second, mvh.first, mvh.second);
+
+    pair<double, double> bl = beta_moments(mvl.first, mvl.second);
+    pair<double, double> bh = beta_moments(mvh.first, mvh.second);
+
+    fprintf(stderr, "%f %f | %f %f\n", bl.first, bl.second, bh.first, bh.second);
     
+    vector<mixtureDist> dd;
+    mixtureDist d1("beta", vector<double>{ bl.first, bl.second });
+    mixtureDist d2("beta", vector<double>{ bh.first, bh.second });
+    dd.push_back(d1);
+    dd.push_back(d2);
+    mixtureModel mm(dd);
+    mm.fit(obstest);
+    mm.print();
+    
+    optimML::brent_solver intpt(ll_beta_diff);
+    intpt.set_root();
+    intpt.add_data_fixed("a1", mm.dists[0].params[0][0]);
+    intpt.add_data_fixed("b1", mm.dists[0].params[0][1]);
+    intpt.add_data_fixed("a2", mm.dists[1].params[0][0]);
+    intpt.add_data_fixed("b2", mm.dists[1].params[0][1]);
+    double mean1 = mm.dists[0].params[0][0] / (mm.dists[0].params[0][0] + mm.dists[0].params[0][1]);
+    double mean2 = mm.dists[1].params[0][0] / (mm.dists[1].params[0][0] + mm.dists[0].params[0][1]);
+    double intptx = intpt.solve(mean1, mean2);
+    fprintf(stderr, "intpt %f\n", intptx);
+
+    exit(0);
+    */
+
     // Define long-form program options 
     static struct option long_options[] = {
        {"output_prefix", required_argument, 0, 'o'},
@@ -1518,6 +1819,7 @@ int main(int argc, char *argv[]) {
        {"mtx", required_argument, 0, 'M'},
        {"features", required_argument, 0, 'F'},
        {"feature_type", required_argument, 0, 't'},
+       {"prob", required_argument, 0, 'p'},
        {0, 0, 0, 0} 
     };
     
@@ -1541,6 +1843,7 @@ int main(int argc, char *argv[]) {
     bool cellranger = false;
     bool seurat = false;
     bool underscore = false;
+    double prob = 0.5;
 
     string pr = STRINGIZE(PROJ_ROOT);
     if (pr[pr.length()-1] != '/'){
@@ -1554,7 +1857,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:n:i:M:F:t:1:2:m:N:w:u:B:s:CSUegfch", 
+    while((ch = getopt_long(argc, argv, "o:n:i:M:F:t:1:2:m:N:w:u:B:s:p:CSUegfch", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -1583,6 +1886,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'C':
                 cellranger = true;
+                break;
+            case 'p':
+                prob = atof(optarg);
                 break;
             case 'S':
                 seurat = true;
@@ -1668,7 +1974,15 @@ int main(int argc, char *argv[]) {
     if (sgrna && sep == "+"){
         sep = ",";
     }
-    
+    if (!sgrna && prob != 0.5){
+        fprintf(stderr, "ERROR: --prob/-p argument not used in --sgRNA mode.\n");
+        exit(1);
+    } 
+    if (prob < 0.5 || prob >= 1.0){
+        fprintf(stderr, "ERROR: --prob/-p must be between 0.5 and 1, exclusive.\n");
+        exit(1);
+    }
+
     // Data structure to store counts
     //robin_hood::unordered_map<unsigned long, vector<pair<int, string> > > bc_tag_counts;
     robin_hood::unordered_map<unsigned long, map<int, long int> > bc_tag_counts;
@@ -1823,7 +2137,8 @@ next time)...\n");
     robin_hood::unordered_map<unsigned long, set<int> > assn;
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     robin_hood::unordered_map<unsigned long, double> cell_bg; 
-    assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, filt, output_prefix, sgrna);
+    fprintf(stderr, "prob cutoff %f\n", prob);
+    assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, filt, output_prefix, sgrna, prob);
     
     string assnfilename = output_prefix + ".assignments";
     write_assignments(bc_tag_counts, assnfilename, assn, labels, assn_llr, sep, batch_id, 
