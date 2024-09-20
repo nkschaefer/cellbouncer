@@ -945,6 +945,9 @@ all possible individuals\n", idfile_doublet.c_str());
                     fprintf(stderr, "Processed %d of %d SNPs\r", nsnp_processed, nsnps); 
                     last_print = nsnp_processed;
                 }
+                if (nsnp_processed == nsnps){
+                    break;
+                }
             }
             
             // Handle any final SNPs.

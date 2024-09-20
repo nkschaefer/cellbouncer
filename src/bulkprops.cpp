@@ -431,6 +431,10 @@ all possible individuals\n", idfile.c_str());
                 fprintf(stderr, "Processed %d of %d SNPs\r", nsnp_processed, nsnps); 
                 last_print = nsnp_processed;
             }
+        
+            if (nsnp_processed == nsnps){
+                break;
+            }
         }
         
     }
