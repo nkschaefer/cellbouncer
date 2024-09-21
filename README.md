@@ -2,7 +2,7 @@
 <img src="img/logo.png", width=350, alt="CellBouncer" />
 </p>
 
-Tools for demultiplexing and keeping the riffraff out of pooled single cell sequencing data sets. 
+Tools for checking cell identities and keeping the riffraff out of pooled single cell sequencing data sets. 
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
