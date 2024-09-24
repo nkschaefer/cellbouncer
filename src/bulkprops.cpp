@@ -62,14 +62,21 @@ void help(int code){
     fprintf(stderr, "       to this number, in order to avoid reporting a local maximum, Default = 0\n");
     fprintf(stderr, "    --error_rate -e Sequencing error rate (will attempt to calculate from data if \n");
     fprintf(stderr, "       not provided.\n");
-    fprintf(stderr, "    --window -w Re-compute fractions across all windows of this number of SNPs.\n");
-    fprintf(stderr, "       <= 0 disables; default = 0. Not compatible with bootstrapping.\n");
     fprintf(stderr, "----- I/O options -----\n");
     fprintf(stderr, "    --index_jump -j Instead of reading through the entire BAM file \n");
     fprintf(stderr, "       to count reads at variant positions, use the BAM index to \n");
     fprintf(stderr, "       jump to each variant position. This will be faster if you \n");
     fprintf(stderr, "       have relatively few SNPs, and much slower if you have a lot \n");
     fprintf(stderr, "       of SNPs.\n");
+    fprintf(stderr, "===== ALTERNATIVE RUN MODE =====\n");
+    fprintf(stderr, "    --props -p A preexisting file listing mixture proportions (or an .assignments\n");
+    fprintf(stderr, "       file from which to calculate them). In this mode, instead of inferring MLE\n");
+    fprintf(stderr, "       mixture proportions, it will compute the log likelihood of the read counts\n");
+    fprintf(stderr, "       at every SNP given the mixture proportions supplied here, and output in BED\n");
+    fprintf(stderr, "       format to stdout.\n");
+    fprintf(stderr, "    --genes -g Instead of printing log likelihood for every SNP, aggregate across\n");
+    fprintf(stderr, "       genes and output one average LL (weighted by number of reads at each SNP)\n");
+    fprintf(stderr, "       per gene. Requires CellRanger/STARsolo-like GN/GX tags to be present in BAM.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
@@ -227,6 +234,186 @@ bool infer_props(map<int, map<int, pair<float, float> > >& snp_ref_alt,
     return true;
 }
 
+/**
+ * Splits a line (from an input text file) into fields using tabs as separators.
+ */
+void split_line(string& line, vector<string>& fields){
+    istringstream splitter(line);
+    string field;
+    while(getline(splitter, field, '\t')){
+        fields.push_back(field);
+    }    
+}
+
+/**
+ * Parse an input file (assignments or bulkprops) and convert to proportions of 
+ * individuals. If assignments, treat as bulk (split up doublet identities).
+ */
+void parse_props_prev(string& filename, map<int, double>& props, vector<string>& samples){
+    map<string, int> name2idx;
+    for (int i = 0; i < samples.size(); ++i){
+        name2idx.insert(make_pair(samples[i], i));
+    }
+    ifstream inf(filename);
+    string line;
+    bool is_assignments;
+    bool first = true;
+
+    map<int, int> assncounts;
+    int assntot;
+
+    while (getline(inf, line)){
+        vector<string> fields;
+        split_line(line, fields);
+        if (first){
+            // Check whether assignments file.
+            if (fields.size() == 4 && (fields[2] == "S" || fields[2] == "D")){
+                is_assignments = true;
+            }
+            else{
+                is_assignments = false;
+            }
+            first = false;
+        }
+        if (is_assignments){
+            if (fields[2] == "D"){
+                size_t splitpos = fields[1].find("+");
+                if (splitpos == string::npos){
+                    fprintf(stderr, "ERROR parsing doublet identity %s\n", fields[1].c_str());
+                    exit(1);
+                }
+                string name1 = fields[1].substr(0, splitpos);
+                string name2 = fields[1].substr(splitpos+1, fields[1].length()-splitpos-1);
+                if (name2idx.count(name1) == 0){
+                    fprintf(stderr, "ERROR: name %s not found in VCF data.\n", name1.c_str());
+                }
+                if (name2idx.count(name2) == 0){
+                    fprintf(stderr, "ERROR: name %s not found in VCF data.\n", name2.c_str());
+                }
+                int id1 = name2idx[name1];
+                int id2 = name2idx[name2];
+                if (assncounts.count(id1) == 0){
+                    assncounts.insert(make_pair(id1, 0));
+                }
+                if (assncounts.count(id2) == 0){
+                    assncounts.insert(make_pair(id2, 0));
+                }
+                assncounts[id1]++;
+                assncounts[id2]++;
+                assntot += 2; 
+            }
+            else{
+                if (name2idx.count(fields[1]) == 0){
+                    fprintf(stderr, "ERROR: name %s not found in VCF data.\n", fields[1].c_str());
+                    exit(1);
+                }
+                int id = name2idx[fields[1]];
+                if (assncounts.count(id) == 0){
+                    assncounts.insert(make_pair(id, 0));
+                }
+                assncounts[id] += 2;
+                assntot += 2;
+            }
+        }
+        else{
+            double prop = atof(fields[1].c_str());
+            if (name2idx.count(fields[0]) == 0){
+                fprintf(stderr, "ERROR: name %s not found in VCF data.\n", fields[0].c_str());
+                exit(1);
+            }
+            int id = name2idx[fields[0]];
+            props.insert(make_pair(id, prop));
+        }
+    }
+    if (is_assignments){
+        // Convert counts into proportions.
+        for (map<int, int>::iterator a = assncounts.begin(); a != assncounts.end(); ++a){
+            double prop = (double)a->second/(double)assntot;
+            props.insert(make_pair(a->first, prop));
+        }
+    }
+}
+
+void compute_ll_snps(map<int, map<int, pair<float, float> > >& snp_ref_alt,
+    map<int, map<int, var> >& snpdat,
+    map<int, string>& tid2chrom,
+    map<int, double>& props,
+    double err_rate,
+    int n_samples,
+    bool genes,
+    map<pair<int, int>, set<string> >& snp_gene_ids,
+    map<string, string>& gene_id2name){
+    
+    map<string, double> genesums;
+    map<string, double> genecounts;
+     
+    for (map<int, map<int, pair<float, float> > >::iterator x = snp_ref_alt.begin();
+        x != snp_ref_alt.end(); ++x){
+        for (map<int, pair<float, float> >::iterator y = x->second.begin();
+            y != x->second.end(); ++y){
+            bool miss = false;
+            // Get expected freqs
+            double freqsum = 0.0;
+            for (int i = 0; i < n_samples; ++i){
+                if (!snpdat[x->first][y->first].haps_covered[i]){
+                    miss = true;
+                    break;
+                }
+                else{
+                    int nalt = 0;
+                    if (snpdat[x->first][y->first].haps1[i]){
+                        nalt++;
+                    }
+                    if (snpdat[x->first][y->first].haps2[i]){
+                        nalt++;
+                    }
+                    double expec = (double)nalt/(double)2.0;
+                    if (expec == 0){
+                        expec += err_rate;
+                    }
+                    else if (expec == 1.0){
+                        expec -= err_rate;
+                    }
+                    freqsum += props[i] * expec;
+                }
+            }
+            if (!miss){
+                double ref = y->second.first;
+                double alt = y->second.second;
+                if (ref + alt > 0){
+                    double ll = dbinom(ref+alt, alt, freqsum);
+                    if (genes){
+                        pair<int, int> key = make_pair(x->first, y->first);
+                        for (set<string>::iterator gid = snp_gene_ids[key].begin(); gid != 
+                            snp_gene_ids[key].end(); ++gid){
+                            if (genesums.count(*gid) == 0){
+                                genesums.insert(make_pair(*gid, 0));
+                                genecounts.insert(make_pair(*gid, 0));
+                            }
+                            genesums[*gid] += ll*(ref+alt);
+                            genecounts[*gid] += ref+alt;
+                        }
+                    }
+                    else{
+                        fprintf(stdout, "%s\t%d\t%d\t%f\t%f\n", tid2chrom[x->first].c_str(),
+                            y->first, y->first+1, ll, ref+alt);
+                    }
+                }
+            }
+        }
+    }
+    if (genes){
+        for (map<string, double>::iterator gs = genesums.begin(); gs != genesums.end(); ++gs){
+            double mean = gs->second/genecounts[gs->first];
+            string name = gs->first;
+            if (gene_id2name.count(gs->first) > 0){
+                name = gene_id2name[gs->first];
+            }
+            fprintf(stdout, "%s\t%s\t%f\t%f\n", gs->first.c_str(), name.c_str(), mean, genecounts[gs->first]);
+        }
+    }
+}
+
 int main(int argc, char *argv[]) {    
    
     static struct option long_options[] = {
@@ -237,8 +424,9 @@ int main(int argc, char *argv[]) {
        {"ids", required_argument, 0, 'i'},
        {"qual", required_argument, 0, 'q'},
        {"n_trials", required_argument, 0, 'N'},
-       {"window", required_argument, 0, 'w'},
+       {"props", required_argument, 0, 'p'},
        {"bootstrap", required_argument, 0, 'B'},
+       {"genes", no_argument, 0, 'g'},
        {0, 0, 0, 0} 
     };
     
@@ -252,9 +440,11 @@ int main(int argc, char *argv[]) {
     bool idfile_given = false;
     int n_trials = 0;
     double err_prior = -1;
-    int window = 0;
     int bootstrap = 100;
     bool bootstrap_given = false;
+    string propsfile;
+    bool props_given = false;
+    bool genes = false;
 
     int option_index = 0;
     int ch;
@@ -262,7 +452,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:e:v:o:q:i:N:w:B:jh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:e:v:o:q:i:N:w:B:p:gjh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -282,9 +472,9 @@ int main(int argc, char *argv[]) {
             case 'N':
                 n_trials = atoi(optarg);
                 break;
-            case 'w':
-                window = atoi(optarg);
-                break;
+            //case 'w':
+            //    window = atoi(optarg);
+            //    break;
             case 'o':
                 output_prefix = optarg;
                 break;
@@ -302,6 +492,13 @@ int main(int argc, char *argv[]) {
                 bootstrap = atoi(optarg);
                 bootstrap_given = true;
                 break;
+            case 'p':
+                propsfile = optarg;
+                props_given = true;
+                break;
+            case 'g':
+                genes = true;
+                break;
             default:
                 help(0);
                 break;
@@ -313,7 +510,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: variant quality must be a positive integer (or 0 for no filter)\n");
         exit(1);
     }
-    if (output_prefix.length() == 0){
+    if (output_prefix.length() == 0 && !props_given){
         fprintf(stderr, "ERROR: output_prefix/-o required\n");
         exit(1);
     }
@@ -321,15 +518,15 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: --n_trials/-N must be 0 or greater\n");
         exit(1);
     }
-    if (window > 0 && bootstrap > 0 && bootstrap_given){
-        fprintf(stderr, "ERROR: --window/-w and --bootstrap/-B arguments are mutually exclusive.\n");
+    if (props_given && idfile_given){
+        fprintf(stderr, "ERROR: only one of --props/-p and --ids/-i is allowed.\n");
         exit(1);
     }
-    else if (window > 0 && bootstrap > 0){
-        // Bootstrap is on by default. Disable it.
-        bootstrap = 0;
+    if (genes && !props_given){
+        fprintf(stderr, "ERROR: --genes/-g argument requires --props/-p.\n");
+        exit(1);
     }
-    
+
     // Init BAM reader
     bam_reader reader = bam_reader();
 
@@ -353,6 +550,12 @@ int main(int argc, char *argv[]) {
     }
     fprintf(stderr, "Loading variants from VCF/BCF...\n");
     nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, false, false);
+    
+    map<int, double> props_prev;
+    if (props_given){
+        parse_props_prev(propsfile, props_prev, samples);
+
+    }
 
     set<int> allowed_ids;
     set<int> allowed_ids2;
@@ -371,6 +574,10 @@ all possible individuals\n", idfile.c_str());
     // Store erronenous (non ref-alt) counts at SNPs
     map<int, map<int, float> > snp_err;
 
+    // Store gene names at SNPs
+    map<pair<int, int>, set<string> > snp_gene_ids;
+    map<string, string> snp_gene_names;
+
     // Print progress message every n sites
     int progress = 1000;
     // What was the last number of sites for which a message was printed?
@@ -382,6 +589,10 @@ all possible individuals\n", idfile.c_str());
     // retrieve cell barcodes
     reader.set_cb();
     
+    if (genes){
+        reader.check_genes();
+    }
+
     // Get a mapping of chromosome names to internal numeric IDs in the 
     // BAM file. This is necessary to reconcile how HTSLib might represent
     // the same chromosome name in the BAM vs the VCF file.
@@ -400,6 +611,7 @@ all possible individuals\n", idfile.c_str());
         
         map<int, var>::iterator cursnp;
         while (reader.next()){
+            
             if (curtid != reader.tid()){
                 // Started a new chromosome
                 if (curtid != -1){
@@ -423,8 +635,12 @@ all possible individuals\n", idfile.c_str());
             while (cursnp2 != snpdat[reader.tid()].end() && 
                 cursnp2->first >= reader.reference_start && 
                 cursnp2->first <= reader.reference_end){   
-                process_bam_record_bulk(reader, cursnp2->first, cursnp2->second,
-                    snp_ref_alt, snp_err);
+                
+                if (!genes || (reader.gene_ids.size() > 0 || reader.gene_names.size() > 0)){
+                    process_bam_record_bulk(reader, cursnp2->first, cursnp2->second,
+                        snp_ref_alt, snp_err, genes, snp_gene_ids, snp_gene_names);
+                }
+
                 ++cursnp2;
             }
             if (nsnp_processed % progress == 0 && nsnp_processed > last_print){
@@ -451,8 +667,10 @@ all possible individuals\n", idfile.c_str());
                 reader.set_query_site(tid, pos); 
                 
                 while(reader.next()){
-                    process_bam_record_bulk(reader, cursnp->first, cursnp->second, 
-                        snp_ref_alt, snp_err);
+                    if (!genes || (reader.gene_ids.size() > 0 || reader.gene_names.size() > 0)){
+                        process_bam_record_bulk(reader, cursnp->first, cursnp->second, 
+                            snp_ref_alt, snp_err, genes, snp_gene_ids, snp_gene_names);
+                    }
                 }
                 
                 ++nsnp_processed;        
@@ -467,6 +685,15 @@ all possible individuals\n", idfile.c_str());
     }
     fprintf(stderr, "Processed %d of %d SNPs\n", nsnp_processed, nsnps);
     
+    if (snp_ref_alt.size() == 0){
+        fprintf(stderr, "ERROR: no valid SNPs detected.\n");
+        if (genes){
+            fprintf(stderr, "Did you run this with --genes on a BAM file that lacks GX/GN tags?\n");
+            fprintf(stderr, "make sure these tags were added by an alignment program like CellRanger\n");
+            fprintf(stderr, "or STARsolo.\n");
+            exit(1);
+        }
+    }
     // Calculate error rate
     double err_rate = 0.0;
     if (err_prior > 0 && err_prior < 1){
@@ -501,7 +728,10 @@ all possible individuals\n", idfile.c_str());
     string outfn = output_prefix + ".bulkprops";
     FILE* outf = fopen(outfn.c_str(), "w");
     
-    if (window > 0){
+    // Window output not used.
+    if (false){
+        /*
+    //if (window > 0){
         fprintf(stdout, "chrom\tstart\tend\tnreads");
         map<string, int> samplesort;
         for (int i = 0; i < samples.size(); ++i){
@@ -575,6 +805,12 @@ all possible individuals\n", idfile.c_str());
                 winstart = -1;
             }
         }
+        */
+    }
+    else if (props_given){
+        // Compute log likelihood of each SNP under given proportions.
+        compute_ll_snps(snp_ref_alt, snpdat, tid2chrom, 
+            props_prev, err_rate, samples.size(), genes, snp_gene_ids, snp_gene_names);
     }
     else{
         vector<double> props;
