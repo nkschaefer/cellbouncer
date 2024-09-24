@@ -75,16 +75,16 @@ def parse_args():
     
     reads = parser.add_argument_group()
     reads.add_argument("--rna_dir", "-rd", help="Directory containing RNA-seq reads", 
-        required=True)
+        required=True, nargs="+")
     reads.add_argument("--libs", "-l", help="Text file listing names of libraries", 
         type=parse_libs, required=True)
     reads.add_argument("--atac_dir", "-ad", help="Directory containing ATAC-seq reads (optional)", 
-        required=False, default=None)
+        required=False, default=None, nargs="+")
     reads.add_argument("--atac_map", "-am", help="If ATAC & GEX libraries have different names, \
 pass a file mapping ATAC to GEX names, tab separated, one per line.",
         required=False, default=None, type=parse_map)
     reads.add_argument("--custom_dir", "-cd", help="Directory containing custom-type reads (optional)", 
-        required=False, default=None)
+        required=False, default=None, nargs="+")
     reads.add_argument("--custom_map", "-cm", help="Custom libraries must be given with a file \
 mapping library name -> data type. If library names do not match library names for GEX data, then \
 a third column should be included, listing corresponding GEX library name. Data types should \
@@ -104,12 +104,21 @@ if using ATAC data)", required=False)
         required=True)
     
     parser.add_argument("--max_mem", "-m", type=int, help="Maximum memory (in GB) to request for k-mer counting \
-jobs. Default = 60. This number should be higher if you use longer k-mers (i.e. 120-150GB for 45-mers).", \
-        default=60, required=False)
+jobs. Default = 90. This number should be higher if you use longer k-mers (i.e. 120-150GB for 45-mers).", \
+        default=90, required=False)
 
     parser.add_argument("--num_chunks", "-n", help="How many pieces should reads be split into? \
 Default = 100", type=int, required=False, default=100)
 
+    parser.add_argument("--dump_only", "-d", help="Only assign cells to species; do not split reads \
+by species", action="store_true", default=False)
+    
+    parser.add_argument("--nochunks", "-nc", help="By default, input files will be demultiplexed in \
+chunks. This argument will result in entire input files being demultiplexed (slower, but output will be \
+CellRanger compatible", action="store_true")
+    
+    parser.add_argument("--exact", "-e", help="Require exact matches when looking up cell barcodes \
+(will be faster)", action="store_true")
     parsed = parser.parse_args()
     
     if parsed.rna_dir == parsed.tmp_directory or parsed.atac_dir == parsed.tmp_directory or parsed.custom_dir == parsed.tmp_directory:
@@ -155,14 +164,13 @@ def get_split_script(tmpdir):
 def get_count_script(libdir, jid, max_mem, num_chunks):
     lines = get_script_base()
     lines.append('#$ -N demux_species__count')
-    # Hopefully this is liberal enough: shouldn't need more than 10 hours per chunk
-    # after splitting into many pieces
-    lines.append('#$ -l h_rt=10:00:00')
+    lines.append('#$ -l h_rt=36:00:00')
     # Ensure it gets a lot of memory
     lines.append('#$ -l mem_free={}G'.format(max_mem))
     lines.append('#$ -o {}/{}/count.out'.format(os.getcwd(), libdir))
     lines.append('#$ -e {}/{}/count.err'.format(os.getcwd(), libdir))
-    lines.append('#$ -hold_jid {}'.format(jid))
+    if jid is not None:
+        lines.append('#$ -hold_jid {}'.format(jid))
     lines.append('#$ -t 1-{}'.format(num_chunks))
     return '\n'.join(lines)
 
@@ -196,6 +204,18 @@ def get_demux_script(libdir, jid):
     lines.append('#$ -hold_jid {}'.format(jid))
     return '\n'.join(lines)
 
+def get_demux_script_multi(libdir, jid, numchunks):
+    lines = get_script_base()
+    lines.append('#$ -N demux_species__demux')
+    lines.append('#$ -l h_rt=10:00:00')
+    lines.append('#$ -l mem_free=25G')
+    lines.append('#$ -o {}/{}/demux.out'.format(os.getcwd(), libdir))
+    lines.append('#$ -e {}/{}/demux.err'.format(os.getcwd(), libdir))
+    lines.append('#$ -hold_jid {}'.format(jid))
+    lines.append('#$ -t 1-{}'.format(numchunks))
+    return '\n'.join(lines)
+
+
 def get_plot_script(libdir, jid):
     lines = get_script_base()
     lines.append('#$ -N demux_species__plot')
@@ -210,9 +230,8 @@ def launch_job(script):
     Given a shell script in text form, submits it as a job using qsub and
     returns the resulting job ID
     """
-    #print(script, file=sys.stderr)
-    #print("", file=sys.stderr)
-    
+    #print(script, file=sys.stdout)
+    #return '0'
     p = subprocess.Popen(['qsub', '-terse'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     out, err = p.communicate(input=script.encode())
 
@@ -234,17 +253,28 @@ def main(args):
     if options.custom_dir is not None and options.custom_dir[-1] == '/':
         options.custom_dir = options.custom_dir[0:-1]
     
+    # True: use chopped up files to split
+    # False: split complete files (slower)
+    demux_chunks = True
+    if options.nochunks:
+        demux_chunks = False
+
     # Make sure stuff exists
     # Directories of reads
-    if not os.path.isdir(options.rna_dir):
-        print("ERROR: directory {} not found".format(options.rna_dir), file=sys.stderr)
-        exit(1)
-    if options.atac_dir is not None and not os.path.isdir(options.atac_dir):
-        print("ERROR: directory {} not found".format(options.atac_dir), file=sys.stderr)
-        exit(1)
-    if options.custom_dir is not None and not os.path.isdir(options.custom_dir):
-        print("ERROR: directory {} not found".format(options.custom_dir), file=sys.stderr)
-        exit(1)
+    for rna_dir in options.rna_dir:
+        if not os.path.isdir(rna_dir):
+            print("ERROR: directory {} not found".format(rna_dir), file=sys.stderr)
+            exit(1)
+    if options.atac_dir is not None:
+        for atac_dir in options.atac_dir:
+            if not os.path.isdir(atac_dir):
+                print("ERROR: directory {} not found".format(atac_dir), file=sys.stderr)
+                exit(1)
+    if options.custom_dir is not None:
+        for custom_dir in options.custom_dir:
+            if not os.path.isdir(custom_dir):
+                print("ERROR: directory {} not found".format(custom_dir), file=sys.stderr)
+                exit(1)
     
     # Unique k-mer files
     if not os.path.isfile("{}.0.kmers".format(options.kmers)) or \
@@ -275,6 +305,21 @@ def main(args):
     if not os.path.isdir(options.tmp_directory):
         os.mkdir(options.tmp_directory)
     
+    nchunks_found = None
+    
+    gex_chunk1 = []
+    gex_chunk2 = []
+
+    atac_chunk1 = []
+    atac_chunk2 = []
+    atac_chunk3 = []
+    atac_chunk_jid = []
+
+    custom_chunk1 = []
+    custom_chunk2 = []
+    custom_chunk_name = []
+    custom_chunk_jid = []
+
     for lib in options.libs:
         
         libdir = '{}/{}'.format(options.tmp_directory, lib)
@@ -298,58 +343,115 @@ def main(args):
 
         custom_r1 = []
         custom_r2 = []
+
         custom_names = []
-
-        for fn in glob.glob('{}/{}*_S*_R1_001.fastq.gz'.format(options.rna_dir, lib)):
-            fn1 = fn
-            fn2 = fn1.replace("_R1_001.fastq.gz", "_R2_001.fastq.gz")
-            
-            gex_r1.append('-r {}'.format(fn1))
-            gex_r2.append('-R {}'.format(fn2))
-
-            script = get_split_script(options.tmp_directory) + '\n' + \
-                "{}/utils/split_read_files -1 {} -2 {} -n {} -o {}".format(cbpath,
-                fn1, fn2, options.num_chunks, libdir)
-            
-            jid = launch_job(script)
-
-            # Create a job to run demux_species on this chunk
-            script2 = get_count_script(libdir, jid, options.max_mem, options.num_chunks) + '\n' + \
-                '{}/demux_species -r {}/{}.${{SGE_TASK_ID}}.fastq.gz -R {}/{}.${{SGE_TASK_ID}}.fastq.gz -w {} -k {} -b $(( $SGE_TASK_ID + {} )) -o {}'.format(\
-                cbpath, libdir, fn1.split('/')[-1].split('.fastq.gz')[0], \
-                libdir, fn2.split('/')[-1].split('.fastq.gz')[0], options.whitelist, options.kmers, \
-                lib_idx * options.num_chunks, libdir_out)
-            
-            jid = launch_job(script2)
-            lib_jids.append(jid)
-            
-            lib_idx += 1
         
+        for rna_dir in options.rna_dir:
+            for fn in glob.glob('{}/{}*_S*_R1_001.fastq.gz'.format(rna_dir, lib)):
+                fn1 = fn
+                fn2 = fn1.replace("_R1_001.fastq.gz", "_R2_001.fastq.gz")
+                
+                fn1base = fn1.split('/')[-1].split('.fastq.gz')[0]
+                fn2base = fn2.split('/')[-1].split('.fastq.gz')[0]
+                already_split = False
+                
+                """
+                if os.path.isfile('{}/{}.1.fastq.gz'.format(libdir, fn1base)) and \
+                    os.path.isfile('{}/{}.1.fastq.gz'.format(libdir, fn2base)):
+                    # Files already split. Figure out how many pieces.
+                    idx = 2
+                    while os.path.isfile('{}/{}.{}.fastq.gz'.format(libdir, fn1base, idx)) and \
+                        os.path.isfile('{}/{}.{}.fastq.gz'.format(libdir, fn2base, idx)):
+                        idx += 1
+                    print("{}: Found prior run with n = {}".format(fn1base.split("_R1_")[0], idx), file=sys.stderr)
+                    if nchunks_found is None:
+                        chunks_found = idx
+                    elif nchunks_found != idx:
+                        # Oops: uneven numbers of chunks.
+                        print("WARNING: different numbers of chunks found for different libraries: {} vs {}".\
+                            format(nchunks_found, idx), file=sys.stderr)
+                    nchunks_found = idx
+
+                    already_split = True
+                
+                jid = None
+                nchunks = nchunks_found
+                """
+
+                if not already_split:
+                    gex_r1.append('-r {}'.format(fn1))
+                    gex_r2.append('-R {}'.format(fn2))
+
+                    script = get_split_script(options.tmp_directory) + '\n' + \
+                        "{}/utils/split_read_files -1 {} -2 {} -n {} -o {}".format(cbpath,
+                        fn1, fn2, options.num_chunks, libdir)
+                    
+                    jid = launch_job(script)
+                    nchunks = options.num_chunks
+
+                # Create a job to run demux_species on this chunk
+                exacttxt = ""
+                if options.exact:
+                    exacttxt = " -e "
+                script2 = get_count_script(libdir, jid, options.max_mem, nchunks) + '\n' + \
+                    '{}/demux_species {}-r {}/{}.${{SGE_TASK_ID}}.fastq.gz -R {}/{}.${{SGE_TASK_ID}}.fastq.gz -w {} -k {} -b $(( $SGE_TASK_ID + {} )) -o {}'.format(\
+                    cbpath, exacttxt, libdir, fn1.split('/')[-1].split('.fastq.gz')[0], \
+                    libdir, fn2.split('/')[-1].split('.fastq.gz')[0], options.whitelist, options.kmers, \
+                    lib_idx * options.num_chunks, libdir_out) 
+                 
+                gex_chunk1.append('{}/{}.${{SGE_TASK_ID}}.fastq.gz'.format(libdir, fn1.split('/')[-1].split('.fastq.gz')[0]))
+                gex_chunk2.append('{}/{}.${{SGE_TASK_ID}}.fastq.gz'.format(libdir, fn2.split('/')[-1].split('.fastq.gz')[0]))
+
+                jid = launch_job(script2)
+                lib_jids.append(jid)
+                
+                lib_idx += 1
+            
         # Search for ATAC data, if it exists
         if options.atac_dir is not None:
             lib_atac = lib
             if options.atac_map is not None and lib in options.atac_map:
                 lib_atac = options.atac_map[lib]
-            for fn in glob.glob('{}/{}*_S*_R1_001.fastq.gz'.format(options.atac_dir, lib_atac)):
-                fn1 = fn
-                fn2 = fn1.replace("_R1_001.fastq.gz", "_R2_001.fastq.gz")
-                fn3 = fn1.replace("_R1_001.fastq.gz", "_R3_001.fastq.gz")
-                atac_r1.append('-1 {}'.format(fn1))
-                atac_r2.append('-2 {}'.format(fn2))
-                atac_r3.append('-3 {}'.format(fn3))
-        
+            for atac_dir in options.atac_dir:
+                for fn in glob.glob('{}/{}*_S*_R1_001.fastq.gz'.format(atac_dir, lib_atac)):
+                    fn1 = fn
+                    fn2 = fn1.replace("_R1_001.fastq.gz", "_R2_001.fastq.gz")
+                    fn3 = fn1.replace("_R1_001.fastq.gz", "_R3_001.fastq.gz")
+                    atac_r1.append('-1 {}'.format(fn1))
+                    atac_r2.append('-2 {}'.format(fn2))
+                    atac_r3.append('-3 {}'.format(fn3))
+                    
+                    ascript = get_split_script(options.tmp_directory) + '\n' + \
+                        "{}/utils/split_read_files -1 {} -2 {} -3 {} -n {} -o {}".format(cbpath,
+                        fn1, fn2, fn3, options.num_chunks, libdir)
+                    
+                    atac_chunk_jid.append(launch_job(ascript))
+                    atac_chunk1.append('{}/{}.${{SGE_TASK_ID}}.fastq.gz'.format(libdir, fn1.split('/')[-1].split('.fastq.gz')[0]))
+                    atac_chunk2.append('{}/{}.${{SGE_TASK_ID}}.fastq.gz'.format(libdir, fn2.split('/')[-1].split('.fastq.gz')[0]))
+                    atac_chunk3.append('{}/{}.${{SGE_TASK_ID}}.fastq.gz'.format(libdir, fn3.split('/')[-1].split('.fastq.gz')[0]))
+
         # Search for custom read type data, if it exists
         if options.custom_dir is not None:
             lib_custom = lib
             if options.custom_map[0] is not None and lib in options.custom_map[0]:
                 lib_custom = options.custom_map[0][lib]
             lib_datatype = options.custom_map[1][lib_custom]
-            for fn in glob.glob('{}/{}*_S*_R1_001.fastq.gz'.format(options.custom_dir, lib_custom)):
-                fn1 = fn
-                fn2 = fn1.replace("_R1_001.fastq.gz", "_R2_001.fastq.gz")
-                custom_r1.append('-x {}'.format(fn1))
-                custom_r2.append('-X {}'.format(fn2))
-                custom_names.append('-N {}'.format(lib_datatype))
+            for custom_dir in options.custom_dir:
+                for fn in glob.glob('{}/{}*_S*_R1_001.fastq.gz'.format(custom_dir, lib_custom)):
+                    fn1 = fn
+                    fn2 = fn1.replace("_R1_001.fastq.gz", "_R2_001.fastq.gz")
+                    custom_r1.append('-x {}'.format(fn1))
+                    custom_r2.append('-X {}'.format(fn2))
+                    custom_names.append('-N {}'.format(lib_datatype))
+     
+                    cscript = get_split_script(options.tmp_directory) + '\n' + \
+                        "{}/utils/split_read_files -1 {} -2 {} -n {} -o {}".format(cbpath,
+                        fn1, fn2, options.num_chunks, libdir)
+                    
+                    custom_chunk_jid.append(launch_job(cscript))
+                    custom_chunk1.append('{}/{}.${{SGE_TASK_ID}}.fastq.gz'.format(libdir, fn1.split('/')[-1].split('.fastq.gz')[0]))
+                    custom_chunk2.append('{}/{}.${{SGE_TASK_ID}}.fastq.gz'.format(libdir, fn2.split('/')[-1].split('.fastq.gz')[0]))
+                    custom_chunk_name.append(lib_datatype)
 
         # Queue up script to combine counts
         script = get_join_script(libdir, lib_jids) + '\n' + \
@@ -371,11 +473,14 @@ def main(args):
             script_extra.append(' '.join(custom_r1))
             script_extra.append(' '.join(custom_r2))
             script_extra.append(' '.join(custom_names))
-
-        script = get_assn_script(libdir, jid) + '\n' + \
-            '{}/demux_species -o {} -d -w {} '.format(cbpath, libdir_out, options.whitelist) + \
-            ' ' + ' '.join(script_extra)
         
+        exacttxt = ""
+        if options.exact:
+            exacttxt = " -e "
+        script = get_assn_script(libdir, jid) + '\n' + \
+            '{}/demux_species {}-o {} -d -w {} '.format(cbpath, exacttxt, libdir_out, options.whitelist) + \
+            ' ' + ' '.join(script_extra)
+
         jid = launch_job(script)
 
         # Create plots
@@ -383,35 +488,65 @@ def main(args):
             '{}/plot/species.R {}/{}'.format(cbpath, os.getcwd(), libdir_out)
         
         jid2 = launch_job(script)
+        
+        if not options.dump_only:
+            # Queue up final jobs to finish demultiplexing
+            if demux_chunks:
+                for idx in range(0, len(gex_chunk1)):
+                    fn1 = gex_chunk1[idx]
+                    fn2 = gex_chunk2[idx]
+                    script = get_demux_script_multi(libdir, jid, options.num_chunks) + '\n' + \
+                        '{}/demux_species -w {} -o {}'.format(cbpath, options.whitelist, libdir_out) + \
+                        ' -r {} -R {}'.format(fn1, fn2)
+                    jid2 = launch_job(script)
 
-        # Queue up final jobs to finish demultiplexing
-        for idx in range(0, len(gex_r1)):
-            fn1 = gex_r1[idx]
-            fn2 = gex_r2[idx]
-            script = get_demux_script(libdir, jid) + '\n' + \
-                '{}/demux_species -w {} -o {}'.format(cbpath, options.whitelist, libdir_out) + \
-                ' ' + fn1 + ' ' + fn2
-            jid2 = launch_job(script)
+                for idx in range(0, len(atac_chunk1)):
+                    fn1 = atac_chunk1[idx]
+                    fn2 = atac_chunk2[idx]
+                    fn3 = atac_chunk3[idx]
+                    ajid = atac_chunk_jid[idx]
+                    script = get_demux_script_multi(libdir, '{},{}'.format(jid, ajid), options.num_chunks) + '\n' + \
+                        '{}/demux_species -w {} -W -o {}'.format(cbpath, options.whitelist, \
+                        options.whitelist_atac, libdir_out) + \
+                        ' -1 {} -2 {} -3 {}'.format(fn1, fn2, fn3)
+                    jid2 = launch_job(script)
+                
+                for idx in range(0, len(custom_chunk1)):
+                    fn1 = custom_chunk1[idx]
+                    fn2 = custom_chunk2[idx]
+                    cjid = custom_chunk_jid[idx]
+                    cname = custom_chunk_name[idx]
+                    script = get_demux_script_multi(libdir, '{},{}'.format(jid, cjid), options.num_chunks) + '\n' + \
+                        '{}/demux_species -w {} -o {}'.format(cbpath, options.whitelist) + \
+                        ' -x {} -X {} -N {}'.format(fn1, fn2, cname) 
+            else:
+                for idx in range(0, len(gex_r1)):
+                    fn1 = gex_r1[idx]
+                    fn2 = gex_r2[idx]
+                    script = get_demux_script(libdir, jid) + '\n' + \
+                        '{}/demux_species -w {} -o {}'.format(cbpath, options.whitelist, libdir_out) + \
+                        ' ' + fn1 + ' ' + fn2
+                    jid2 = launch_job(script)
 
-        for idx in range(0, len(atac_r1)):
-            fn1 = atac_r1[idx]
-            fn2 = atac_r2[idx]
-            fn3 = atac_r3[idx]
-            script = get_demux_script(libdir, jid) + '\n' + \
-                '{}/demux_species -w {} -W {} -o {}'.format(cbpath, options.whitelist, \
-                options.whitelist_atac, libdir_out) + \
-                ' ' + fn1 + ' ' + fn2 + ' ' + fn3
-            jid2 = launch_job(script)
+                for idx in range(0, len(atac_r1)):
+                    fn1 = atac_r1[idx]
+                    fn2 = atac_r2[idx]
+                    fn3 = atac_r3[idx]
+                    script = get_demux_script(libdir, jid) + '\n' + \
+                        '{}/demux_species -w {} -W {} -o {}'.format(cbpath, options.whitelist, \
+                        options.whitelist_atac, libdir_out) + \
+                        ' ' + fn1 + ' ' + fn2 + ' ' + fn3
+                    jid2 = launch_job(script)
 
-        for idx in range(0, len(custom_r1)):
-            fn1 = custom_r1[idx]
-            fn2 = custom_r2[idx]
-            name = custom_names[idx]
-            script = get_demux_script(libdir, jid) + '\n' + \
-                '{}/demux_species -w {} -o {}'.format(cbpath, options.whitelist, libdir_out) + \
-                ' ' + fn1 + ' ' + fn2 + ' ' + name
-            jid2 = launch_job(script)
-    
+                for idx in range(0, len(custom_r1)):
+                    fn1 = custom_r1[idx]
+                    fn2 = custom_r2[idx]
+                    name = custom_names[idx]
+                    script = get_demux_script(libdir, jid) + '\n' + \
+                        '{}/demux_species -w {} -o {}'.format(cbpath, options.whitelist, libdir_out) + \
+                        ' ' + fn1 + ' ' + fn2 + ' ' + name
+                    jid2 = launch_job(script)
+            
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

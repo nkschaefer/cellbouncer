@@ -2,7 +2,7 @@
 <img src="img/logo.png", width=350, alt="CellBouncer" />
 </p>
 
-Tools for demultiplexing and keeping the riffraff out of pooled single cell sequencing data sets. 
+Tools for checking cell identities and keeping the riffraff out of pooled single cell sequencing data sets. 
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
@@ -90,7 +90,7 @@ Before mapping data, infer the species of origin of each cell barcode by countin
 
 ## [demux_mt](docs/demux_mt.md)
 <p>
-<img src="img/mito.png", width=200, alt="demux_mt" />
+<img src="img/demux_mt.png", width=200, alt="demux_mt" />
 </p>
 Using a BAM file of aligned scATAC-seq (ideally) or whole-cell scRNA-seq data containing cells originating from multiple individuals, infer the set of mitochondrial haplotypes in the mixture, as well as the number of individuals. Assign each cell an identity based on its likeliest mitochondrial haplotype. These assignments can then be used to label individuals of origin in the BAM, and a variant caller can then identify genomic SNPs and their genotypes in the inferred individuals.
 
@@ -107,7 +107,7 @@ Given genotype data for the individuals in a pool and a BAM file of aligned sing
 
 ## [demux_tags](docs/demux_tags.md)
 <p>
-<img src="img/demux_tags.png" width=150, alt="demux_tags" />
+<img src="img/demux_tags.png" width=200, alt="demux_tags" />
 </p>
 
 If you have collected [MULTIseq](https://www.nature.com/articles/s41592-019-0433-8), [cell hashing](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-018-1603-1), [CITE-seq](https://emea.illumina.com/techniques/sequencing/rna-sequencing/cite-seq.html), or [sgRNA capture](https://www.nature.com/articles/s41587-020-0470-y) data, this program can count occurrences of tag/sgRNA sequences in your reads. It can then assign cells to identities from these counts, as well as inferring the proportion of counts per cell consisting of ambient tag counts. This algorithm considers combinations of multiple assignments, making it suitable for assigning guides in both high and low-MOI CRISPR experiments, although care should be taken to filter results.
@@ -125,7 +125,7 @@ Once you have run [`demux_vcf`](#demux_vcf), you can use the computed allele cou
 
 ## [doublet_dragon](docs/doublet_dragon.md)
 <p>
-<img src="img/doublet_dragon2.png" width=275, alt="doublet_dragon" />
+<img src="img/doublet_dragon_full.png" width=275, alt="doublet_dragon" />
 </p>
 
 After assigning cells to individuals using one or more data types, `doublet_dragon` can compile all `.assignments` files given and infer global proportions of all individual assignment types, as well as a global doublet rate, using maximum likelihood.
@@ -134,7 +134,7 @@ After assigning cells to individuals using one or more data types, `doublet_drag
 
 ## [bulkprops](docs/bulkprops.md)
 <p>
-<img src="img/bulkprops3.png" width=200, alt="bulkprops" />
+<img src="img/bulkprops.png" width=200, alt="bulkprops" />
 </p>
 
 If you have a VCF of known variant data for a set of individuals, and a BAM file of any type of mapped sequence data corresponding to those individuals (it need not be single cell), infer the proportion of reads corresponding to each individual. Can only use SNPs where there are no missing genotypes, but does not require very many SNPs for accuracy.

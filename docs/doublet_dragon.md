@@ -1,7 +1,7 @@
 # doublet_dragon
 
 <p>
-<img src="../img/doublet_dragon2.png" width=275 alt="doublet_dragon" />
+<img src="../img/doublet_dragon_full.png" width=275 alt="doublet_dragon" />
 </p>
 
 All programs in `CellBouncer` that assign cells to individuals are also capable of classifying cells as doublets (or multiplets, in the case of `demux_tags`). Each set of identifications can end up with a different doublet rate, however, depending on how reliable each piece of information is, how many data were collected for each data type, and other factors. 
