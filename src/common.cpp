@@ -816,7 +816,8 @@ void dll_dirichlet(const vector<double>& params,
  */
 void fit_dirichlet(vector<double>& mle_fracs,
     vector<vector<double> >& dirprops,
-    vector<double>& dirichlet_mle){
+    vector<double>& dirichlet_mle,
+    int n_threads){
     
     // How many mixture components are there?
     int n_samples = mle_fracs.size();
@@ -833,6 +834,10 @@ void fit_dirichlet(vector<double>& mle_fracs,
     
     // Create solver
     optimML::multivar_ml_solver dirsolver(dir_init, ll_dirichlet, dll_dirichlet);
+    if (n_threads > 1){
+        dirsolver.set_threads(n_threads);
+        dirsolver.set_bfgs_threads(n_threads);
+    }
     char buf[30];
     string bufstr;
     for (int j = 0; j < n_samples; ++j){

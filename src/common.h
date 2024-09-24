@@ -85,6 +85,7 @@ void parse_mex(const std::string& barcodesfile,
 
 void fit_dirichlet(std::vector<double>& mle_fracs,
     std::vector<std::vector<double> >& dirichlet_bootstraps,
-    std::vector<double>& conc_param_results);
+    std::vector<double>& conc_param_results,
+    int nthreads=1);
 
 #endif

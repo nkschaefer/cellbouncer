@@ -1114,6 +1114,8 @@ double contamFinder::update_ambient_profile(bool global_c){
     optimML::multivar_ml_solver solver(efparams, ll_ambmu, dll_ambmu);
     if (num_threads > 1){
         solver.set_threads(num_threads);
+        // Many parameters - use threads
+        solver.set_bfgs_threads(num_threads);
     }
     for (int i = 0; i < efparams.size(); ++i){
         solver.constrain_01(i);
@@ -1269,6 +1271,7 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c, b
     optimML::multivar_ml_solver solver(params, ll_amb_prof_mixture, dll_amb_prof_mixture);
     if (num_threads > 1){
         solver.set_threads(num_threads);
+        solver.set_bfgs_threads(num_threads);
     }
 
     vector<vector<double> > mixfracs;
@@ -1500,6 +1503,7 @@ void contamFinder::bootstrap_amb_prof(int n_boots, map<int, double>& dirichlet_p
         optimML::multivar_ml_solver solver(params, ll_amb_prof_mixture, dll_amb_prof_mixture);
         if (num_threads > 1){
             solver.set_threads(num_threads);
+            solver.set_bfgs_threads(num_threads);
         }
         solver.add_mixcomp(mixfracs_boot);
         solver.add_mixcomp_fracs(startprops);

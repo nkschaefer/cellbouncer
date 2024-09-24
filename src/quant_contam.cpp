@@ -394,6 +394,7 @@ void contam_gex(robin_hood::unordered_map<unsigned long, double>& contam_rate,
     optimML::multivar_ml_solver mnsolver(paramsx, ll_multinom, dll_multinom);
     if (num_threads > 1){
         mnsolver.set_threads(num_threads);
+        mnsolver.set_bfgs_threads(num_threads);
     }
     mnsolver.add_param_grp(grp1);
     for (int i = 0; i < grps2.size(); ++i){

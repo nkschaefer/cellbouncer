@@ -73,7 +73,7 @@ utils/split_read_files: src/split_read_files.cpp src/common.h build/common.o
 utils/combine_species_counts: src/combine_species_counts.cpp src/common.h build/common.o
 	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) build/common.o src/combine_species_counts.cpp $(LFLAGS) $(DEPS) -o utils/combine_species_counts -lhts -lz
 
-build/common.o: src/common.cpp src/common.h lib/libhtswrapper.a lib/libmixturedist.a
+build/common.o: src/common.cpp src/common.h lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) src/common.cpp -c -o build/common.o
 
 build/demux_vcf_io.o: src/demux_vcf_io.cpp src/demux_vcf_io.h src/common.h
