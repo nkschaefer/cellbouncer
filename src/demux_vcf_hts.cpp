@@ -385,7 +385,10 @@ void process_bam_record_bulk(bam_reader& reader,
     int snppos,
     var& vardat,
     map<int, map<int, pair<float, float> > >& snp_ref_alt,
-    map<int, map<int, float> >& snp_err){
+    map<int, map<int, float> >& snp_err,
+    bool genes,
+    map<pair<int, int>, set<string> >& gene_ids,
+    map<string, string>& gene_id2name){
 
     if (!reader.unmapped() && !reader.secondary() && 
         !reader.dup() && reader.has_cb_z){
@@ -419,6 +422,35 @@ void process_bam_record_bulk(bam_reader& reader,
             }
             else{
                 snp_err[tid][snppos] += prob_corr;
+            }
+        }
+
+        if (genes){
+            pair<int, int> key = make_pair(tid, snppos);
+            if (gene_ids.count(key) == 0){
+                set<string> s;
+                gene_ids.insert(make_pair(key, s));
+            }
+            if (reader.gene_names.size() > 0 && reader.gene_ids.size() < reader.gene_names.size()){
+                // Use names as IDs
+                for (int i = 0; i < reader.gene_names.size(); ++i){
+                    gene_ids[key].insert(reader.gene_names[i]);
+                }
+            }
+            else if (reader.gene_ids.size() > 0 && reader.gene_names.size() < reader.gene_ids.size()){
+                // Ignore gene names (can't map from IDs -> names)
+                for (int i = 0; i < reader.gene_ids.size(); ++i){
+                    gene_ids[key].insert(reader.gene_ids[i]);
+                }
+            }
+            else if (reader.gene_ids.size() == reader.gene_names.size()){
+                // Store gene IDs and map to names
+                for (int i = 0; i < reader.gene_ids.size(); ++i){
+                    gene_ids[key].insert(reader.gene_ids[i]);
+                    if (gene_id2name.count(reader.gene_ids[i]) == 0){
+                        gene_id2name.insert(make_pair(reader.gene_ids[i], reader.gene_names[i]));
+                    }
+                }
             }
         }
     }

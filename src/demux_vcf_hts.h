@@ -86,7 +86,10 @@ void process_bam_record_bulk(bam_reader& reader,
     int snppos,
     var& vardat,
     std::map<int, std::map<int, std::pair<float, float> > >& snp_ref_alt,
-    std::map<int, std::map<int, float> >& snp_err);
+    std::map<int, std::map<int, float> >& snp_err,
+    bool genes,
+    std::map<std::pair<int, int>, std::set<std::string> >& snp_gene_ids,
+    std::map<std::string, std::string>& gene_id2name);
 
 void process_bam_record_bysnp(bam_reader& reader,
     int snppos,

@@ -256,8 +256,8 @@ void dll_err_rates(const vector<double>& params, const map<string, double>& data
     }
     double dy_dp = (k-n*binom_p)/(binom_p - binom_p*binom_p);
     
-    results[0] = dy_dp * (1 - p_e + c*(p_e - p_c));
-    results[1] = dy_dp * (c*(p_e - p_c) - p_e);
+    results[0] += dy_dp * (1 - p_e + c*(p_e - p_c));
+    results[1] += dy_dp * (c*(p_e - p_c) - p_e);
     
 }
 
@@ -313,8 +313,10 @@ void dll_amb_prof_mixture(const vector<double>& params,
     double n = data_d.at("n");
     double k = data_d.at("k");
     double p_e = data_d.at("p_e");
-    double binom_p = (1.0 - c) * p_e + c * params[1];
+    
+    double binom_p = (1.0 - c) * p_e + c * p_c;
     double dy_dp = (k-n*binom_p)/(binom_p - binom_p*binom_p);
+    
     results[results.size()-1] += dy_dp * c;
     if (c_in_data){
         results[0] += dy_dp * (p_c - p_e);
@@ -477,6 +479,10 @@ void contamFinder::no_weights(){
 
 void contamFinder::set_init_c(double c){
     c_init = c;
+}
+
+void contamFinder::set_num_threads(int nt){
+    num_threads = nt;
 }
 
 /**
@@ -887,8 +893,10 @@ void contamFinder::est_contam_cells_global(){
             p_c.push_back(amb_mu[type1_all[*i]][type2_all[*i]]);
         }
     }
-    
     optimML::brent_solver c_global(ll_c, dll_dc, d2ll_dc2);
+    if (num_threads > 1){
+        c_global.set_threads(num_threads);
+    }
     c_global.add_data("n", n);
     c_global.add_data("k", k);
     c_global.add_data("p_e", p_e);
@@ -938,8 +946,11 @@ void contamFinder::est_contam_cells(){
             p_e.push_back(adjust_p_err(p_e_all[*i], e_r, e_a));
             p_c.push_back(amb_mu[type1_all[*i]][type2_all[*i]]);
         }
-
         optimML::brent_solver c_cell(ll_c, dll_dc, d2ll_dc2);
+        if (num_threads > 1){
+            //c_cell.set_threads(num_threads);
+        }
+
         c_cell.add_data("n", n);
         c_cell.add_data("k", k);
         c_cell.add_data("p_e", p_e);
@@ -1101,6 +1112,9 @@ double contamFinder::update_ambient_profile(bool global_c){
     }
         
     optimML::multivar_ml_solver solver(efparams, ll_ambmu, dll_ambmu);
+    if (num_threads > 1){
+        solver.set_threads(num_threads);
+    }
     for (int i = 0; i < efparams.size(); ++i){
         solver.constrain_01(i);
     }
@@ -1248,13 +1262,15 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c, b
     // true means short-circuit expfrac calculation - if one of two individuals
     // for a SNP type matches conditional individual, treat as that individual
     bool ef_all_avg = true;
-    
     vector<double> params;
     if (solve_for_c){
         params.push_back(init_c);
     }
     optimML::multivar_ml_solver solver(params, ll_amb_prof_mixture, dll_amb_prof_mixture);
-    
+    if (num_threads > 1){
+        solver.set_threads(num_threads);
+    }
+
     vector<vector<double> > mixfracs;
     vector<double> weights;
     vector<double> n;
@@ -1320,7 +1336,6 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c, b
         solver.log_likelihood = maxll;
         solver.results[0] = cs[maxidx];
         solver.results_mixcomp = mcs[maxidx];
-        
         // Update stored contamination profile (mixture of individuals)
         contam_prof.clear();
         for (int i = 0; i < idx2samp.size(); ++i){
@@ -1348,7 +1363,6 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c, b
     }
     
     // Update stored ambient RNA profile (allele matching fractions)
-
     for (int x = 0; x < idx2samp.size(); ++x){
         int i = idx2samp[x];
         for (int nalt = 0; nalt <= 2; ++nalt){
@@ -1484,6 +1498,9 @@ void contamFinder::bootstrap_amb_prof(int n_boots, map<int, double>& dirichlet_p
         // Solve
         vector<double> params;
         optimML::multivar_ml_solver solver(params, ll_amb_prof_mixture, dll_amb_prof_mixture);
+        if (num_threads > 1){
+            solver.set_threads(num_threads);
+        }
         solver.add_mixcomp(mixfracs_boot);
         solver.add_mixcomp_fracs(startprops);
         solver.add_data("n", n_boot);
@@ -1690,6 +1707,10 @@ bool contamFinder::reclassify_cells(){
                         }
                     }
                     optimML::brent_solver c_cell(ll_c, dll_dc, d2ll_dc2);
+                    
+                    if (num_threads > 1){
+                        c_cell.set_threads(num_threads);
+                    }
                     c_cell.add_data("n", n);
                     c_cell.add_data("k", k);
                     c_cell.add_data("p_e", p_e);
@@ -1789,6 +1810,9 @@ pair<double, double> contamFinder::est_error_rates(bool init){
     }
     
     optimML::multivar_ml_solver solver({e_r, e_a}, ll_err_rates, dll_err_rates);
+    if (num_threads > 1){
+        solver.set_threads(num_threads);
+    }
     solver.add_data("n", n);
     solver.add_data("k", k);
     solver.add_data("c", c);
@@ -1847,14 +1871,12 @@ double contamFinder::compute_ll(){
  * Return overall log likelihood.
  */
 void contamFinder::fit(){
-    
     // Begin with minimum estimate of c (global contamination rate)
     // if not provided from a previous run
     if (c_init <= 0){
         // Get (estimated/averaged) min bound on c
         c_init = this->est_min_c();
     }
-    
     double ll_init = init_params(c_init);
     fprintf(stderr, "Initial global contamination rate = %f\n", c_init);
     

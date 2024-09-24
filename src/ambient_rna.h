@@ -96,6 +96,9 @@ class contamFinder{
         // Should we consider log likelihood ratio of assignments when inferring
         // contamination?
         bool weighted;
+        
+        // Number of parallel processing threads to use
+        int num_threads;
 
         // Wrangle data
         void compile_data(robin_hood::unordered_map<unsigned long, int>& assn,
@@ -191,7 +194,8 @@ class contamFinder{
         void set_maxiter(int i);
         void use_weights();
         void no_weights();
-        
+        void set_num_threads(int nt);
+
         // Get variance on contamination profile by bootstrapping it and fitting
         // a Dirichlet distribution
         void bootstrap_amb_prof(int n_boots, std::map<int, double>& contam_prof_cont);

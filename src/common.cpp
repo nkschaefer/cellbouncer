@@ -656,7 +656,6 @@ void parse_mex(const string& barcodesfile,
         exit(1);
     }
     
-    fprintf(stderr, "nfeature %d\n", nfeatures_match);
     set<int> bciuniq;
 
     bool barcodes_first = false;
@@ -737,7 +736,6 @@ void parse_mex(const string& barcodesfile,
             ++mexline;
         }
     }
-    fprintf(stderr, "BCUNIQ %ld\n", bciuniq.size());
     if (featuretype == "" && unique_featuretype.size() > 1){
         fprintf(stderr, "ERROR: no feature type filter provided, but %ld feature types\n", 
             unique_featuretype.size());
@@ -822,7 +820,7 @@ void fit_dirichlet(vector<double>& mle_fracs,
     
     // How many mixture components are there?
     int n_samples = mle_fracs.size();
-    
+
     // Ensure result vector is empty
     dirichlet_mle.clear();
 
@@ -844,6 +842,7 @@ void fit_dirichlet(vector<double>& mle_fracs,
         bufstr = buf;
         dirsolver.add_data(bufstr, dirprops[j]);
     }
+    
     dirsolver.solve();
     for (int j = 0; j < n_samples; ++j){
         dirichlet_mle.push_back(dirsolver.results[j]);
