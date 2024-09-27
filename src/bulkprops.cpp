@@ -47,6 +47,8 @@ void help(int code){
     fprintf(stderr, "       will be considered, and phasing will be ignored.\n");
     fprintf(stderr, "    --output_prefix -o Base name for output files. Will create [output_prefix].bulkprops\n");
     fprintf(stderr, "===== OPTIONAL =====\n");
+    fprintf(stderr, "    --num_threads -T Number of parallel threads to use in maximum likelihood\n");
+    fprintf(stderr, "       inference (does not apply to BAM reading) (default = none)\n");
     fprintf(stderr, "    --bootstrap -B If you wish to compute the variance of the estimate of\n");
     fprintf(stderr, "       pool composition, set a number of bootstrap replicates to perform here.\n");
     fprintf(stderr, "       After all replicates are computed, a Dirichlet distribution will be fit\n");
@@ -91,13 +93,18 @@ void infer_props_aux(vector<double>& n,
     int n_samples,
     int n_trials,
     double& maxll,
-    vector<double>& maxprops){
+    vector<double>& maxprops,
+    int nthread){
 
     vector<double> startfrac;
     for (int i = 0; i < n_samples; ++i){
         startfrac.push_back(1.0/(double)n_samples);
     }    
     optimML::mixcomp_solver solver(expfracs_all, "binom", n, k);
+    if (nthread > 0){
+        solver.set_threads(nthread);
+        solver.set_threads_bfgs(nthread);
+    }
     solver.solve();
     
     maxll = solver.log_likelihood;
@@ -124,7 +131,8 @@ bool infer_props(map<int, map<int, pair<float, float> > >& snp_ref_alt,
     double& maxll,
     vector<double>& maxprops,
     vector<double>& dirichlet_mle,
-    int bootstrap){
+    int bootstrap,
+    int nthread){
     
     nreads = 0;
     
@@ -178,7 +186,7 @@ bool infer_props(map<int, map<int, pair<float, float> > >& snp_ref_alt,
         return false;
     }
     
-    infer_props_aux(n, k, expfracs_all, n_samples, n_trials, maxll, maxprops);
+    infer_props_aux(n, k, expfracs_all, n_samples, n_trials, maxll, maxprops, nthread);
     
     if (bootstrap > 0){
         // Resample.
@@ -218,7 +226,7 @@ bool infer_props(map<int, map<int, pair<float, float> > >& snp_ref_alt,
             double ll_bootstrap;
             // Solve
             infer_props_aux(n_bootstrap, k_bootstrap, expfrac_bootstrap,
-                n_samples, n_trials, ll_bootstrap, p_bootstrap);
+                n_samples, n_trials, ll_bootstrap, p_bootstrap, nthread);
 
             props_bootstrap.push_back(p_bootstrap);
             for (int j = 0; j < n_samples; ++j){
@@ -228,7 +236,7 @@ bool infer_props(map<int, map<int, pair<float, float> > >& snp_ref_alt,
         fprintf(stderr, "\n");
         
         // Find MLE concentration parameters of Dirichlet (in common.cpp)
-        fit_dirichlet(maxprops, dirprops, dirichlet_mle);
+        fit_dirichlet(maxprops, dirprops, dirichlet_mle, nthread);
         
     }
     return true;
@@ -427,6 +435,7 @@ int main(int argc, char *argv[]) {
        {"props", required_argument, 0, 'p'},
        {"bootstrap", required_argument, 0, 'B'},
        {"genes", no_argument, 0, 'g'},
+       {"num_threads", required_argument, 0, 'T'},
        {0, 0, 0, 0} 
     };
     
@@ -445,6 +454,7 @@ int main(int argc, char *argv[]) {
     string propsfile;
     bool props_given = false;
     bool genes = false;
+    int nthread = 0;
 
     int option_index = 0;
     int ch;
@@ -452,7 +462,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:e:v:o:q:i:N:w:B:p:gjh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:e:v:o:q:i:N:w:B:p:T:gjh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -499,6 +509,9 @@ int main(int argc, char *argv[]) {
             case 'g':
                 genes = true;
                 break;
+            case 'T':
+                nthread = atoi(optarg);
+                break;
             default:
                 help(0);
                 break;
@@ -525,6 +538,10 @@ int main(int argc, char *argv[]) {
     if (genes && !props_given){
         fprintf(stderr, "ERROR: --genes/-g argument requires --props/-p.\n");
         exit(1);
+    }
+    
+    if (nthread <= 1){
+        nthread = 0;
     }
 
     // Init BAM reader
@@ -818,7 +835,7 @@ all possible individuals\n", idfile.c_str());
         double nreads;
         vector<double> dirichlet_params;
         infer_props(snp_ref_alt, snpdat, err_rate, n_trials, samples.size(), 
-            nreads, ll, props, dirichlet_params, bootstrap);
+            nreads, ll, props, dirichlet_params, bootstrap, nthread);
         
         int si = 0;
         map<string, int> samplesort;

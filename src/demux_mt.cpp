@@ -28,6 +28,7 @@
 #include <mixtureDist/mixtureModel.h>
 #include <optimML/brent.h>
 #include "common.h"
+#include "demux_vcf_llr.h"
 
 /**
  * Given a BAM file of mapped single-cell sequencing data (ATAC or 
@@ -741,20 +742,7 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
 
     double zero = 1.0-one;
     
-    vector<int> all_model_idx;
-    for (int i = 0; i < haps_final.size(); ++i){
-        if (doublet_rate < 1.0){
-            all_model_idx.push_back(i);
-        }
-        if (doublet_rate > 0.0){
-            for (int j = i + 1; j < haps_final.size(); ++j){
-                int k = hap_comb_to_idx(i, j, haps_final.size());
-                all_model_idx.push_back(k);
-            }
-        }
-    }
-    sort(all_model_idx.begin(), all_model_idx.end());
-    
+
     int progress = 1000;
     int n_assigned = 0;
 
@@ -764,37 +752,224 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
         if (use_filter && cell_filter.find(hc->first) == cell_filter.end()){
             continue;
         }
-
-        map<int, map<int, double> > llrs;
-        for (int i = 0; i < all_model_idx.size()-1; ++i){
-            int idx1 = all_model_idx[i];
-            if (llrs.count(idx1) == 0){
-                map<int, double> m;
-                llrs.insert(make_pair(idx1, m));
+        
+        /*
+        llr_table lltab(haps_final.size());
+        map<pair<int, int>, double> llrs;
+        // Compute each singlet LL
+        for (int i = 0; i < haps_final.size()-1; ++i){
+            for (int j = i + 1; j < haps_final.size(); ++j){
+                llrs.insert(make_pair(make_pair(i, j), 0.0));
             }
-            for (int j = i + 1; j < all_model_idx.size(); ++j){
-                int idx2 = all_model_idx[j];
-                if (llrs[idx1].count(idx2) == 0){
-                    // Start with prior
-                    // Don't bother with prior if both singlet or
-                    // both doublet -- since dealing only with
-                    // likelihood ratios
-                    double init_llr = 0.0;
-                    if (idx1 < haps_final.size() && 
-                        idx2 >= haps_final.size()){
-                        init_llr = log2(1.0-doublet_rate) - 
-                            log2(doublet_rate);
+        }
+        
+        set<int> sites_valid;
+        for (int site = 0; site < nvars; ++site){
+            if (mask_global[site]){
+                
+                // Retrieve major/minor allele counts
+                int count1 = hc->second.counts1[site];
+                int count2 = hc->second.counts2[site];
+                
+                if (count1+count2 > 0){
+                    sites_valid.insert(site);
+                    for (int i = 0; i < haps_final.size()-1; ++i){
+                        if (haps_final[i].mask[site]){
+                            double exp1 = zero;
+                            if (haps_final[i].vars[site]){
+                                exp1 = one;
+                            }
+                            for (int j = i + 1; j < haps_final.size(); ++j){
+                                if (haps_final[j].mask[site]){
+                                    double exp2 = zero;
+                                    if (haps_final[j].vars[site]){
+                                        exp2 = one;
+                                    }
+                                    if (exp1 != exp2){
+                                        double llr = dbinom(count1+count2, count2, exp1) - 
+                                            dbinom(count1+count2, count2, exp2);
+                                        llrs[make_pair(i, j)] += llr;
+                                    }
+                                }
+                            }
+                        }
                     }
-                    else if (idx2 < haps_final.size() &&
-                        idx1 >= haps_final.size()){
-                        init_llr = log2(doublet_rate) - 
-                            log2(1.0-doublet_rate);
-                    }
-                    llrs[idx1].insert(make_pair(idx2, init_llr));
                 }
             }
         }
         
+        // If we encounter a LLR == 0, then we have to bail out because
+        // we can't tell apart two haplotypes.
+        bool has_zero = false;
+
+        for (map<pair<int, int>, double>::iterator llr = llrs.begin(); llr != llrs.end(); ++llr){
+            if (false){
+            //if (llr->second == 0.0){
+                has_zero = true;
+                break;
+            }
+            else{
+                lltab.insert(llr->first.first, llr->first.second, llr->second);
+            }
+        }
+        
+        if (has_zero){
+            continue;
+        }
+
+        llrs.clear();
+
+        if (doublet_rate > 0.0){
+            // Keep only 10 likeliest individuals before checking doublet combinations
+            lltab.del(10);
+            vector<int> remaining;
+            for (int i = 0; i < haps_final.size(); ++i){
+                if (lltab.included[i]){
+                    remaining.push_back(i);
+                }
+                for (int j = i + 1; j < haps_final.size(); ++j){
+                    if (lltab.included[j]){
+                        int k = hap_comb_to_idx(i, j, haps_final.size());
+                        remaining.push_back(k);
+                    }
+                }
+            }
+            for (set<int>::iterator s = sites_valid.begin(); s != sites_valid.end(); ++s){
+                // Retrieve major/minor allele counts
+                int count1 = hc->second.counts1[*s];
+                int count2 = hc->second.counts2[*s];
+                
+                for (int i = 0; i < remaining.size()-1; ++i){
+                    int idx1 = remaining[i];
+                    pair<int, int> combo1;
+                    bool is_combo1 = false;
+                    if (idx1 >= haps_final.size()){
+                        combo1 = idx_to_hap_comb(idx1, haps_final.size());
+                        is_combo1 = true;
+                    }
+                    if ((!is_combo1 && haps_final[idx1].mask[*s]) ||
+                        (is_combo1 && haps_final[combo1.first].mask[*s] &&
+                         haps_final[combo1.second].mask[*s])){
+                        
+                        double exp1;
+                        if (is_combo1){
+                            if (haps_final[combo1.first].vars[*s]){
+                                if (haps_final[combo1.second].vars[*s]){
+                                    exp1 = one;
+                                }
+                                else{
+                                    exp1 = 0.5;
+                                }
+                            }
+                            else{
+                                if (haps_final[combo1.second].vars[*s]){
+                                    exp1 = 0.5;
+                                }
+                                else{
+                                    exp1 = zero;
+                                }
+                            }
+                        }
+                        else{
+                            if (haps_final[idx1].vars[*s]){
+                                exp1 = one;
+                            }
+                            else{
+                                exp1 = zero;
+                            }
+                        }
+                        for (int j = i + 1; j < remaining.size(); ++j){
+                            int idx2 = remaining[j];
+                            pair<int, int> combo2;
+                            bool is_combo2 = false;
+                            if (idx2 >= haps_final.size()){
+                                combo2 = idx_to_hap_comb(idx2, haps_final.size());
+                                is_combo2 = true;
+                            }
+                            
+                            // Don't both with comparison if both are singlets - we already did that
+                            if ((!is_combo1 || !is_combo2) && !is_combo2 && haps_final[idx2].mask[*s] || 
+                                (is_combo2 && haps_final[combo2.first].mask[*s] &&
+                                 haps_final[combo2.second].mask[*s])){
+                                
+                                double exp2;
+                                if (is_combo2){
+                                    if (haps_final[combo2.first].vars[*s]){
+                                        if (haps_final[combo2.second].vars[*s]){
+                                            exp2 = one;
+                                        }
+                                        else{
+                                            exp2 = 0.5;
+                                        }
+                                    }
+                                    else{
+                                        if (haps_final[combo2.second].vars[*s]){
+                                            exp2 = 0.5;
+                                        }
+                                        else{
+                                            exp2 = zero;
+                                        }
+                                    }
+                                }
+                                else{
+                                    if (haps_final[idx2].vars[*s]){
+                                        exp2 = one;
+                                    }
+                                    else{
+                                        exp2 = zero;
+                                    }
+                                }
+
+                                if (exp1 != exp2){
+                                    double llr = dbinom(count1+count2, count2, exp1) - 
+                                        dbinom(count1+count2, count2, exp2);
+                                    pair<int, int> key = make_pair(idx1, idx2);
+                                    if (llrs.count(key) == 0){
+                                        llrs.insert(make_pair(key, 0.0));
+                                    }
+                                    llrs[key] += llr;          
+                                }
+                            }
+                        }     
+                    }
+                } 
+            }
+        }
+        for (map<pair<int, int>, double>::iterator llr = llrs.begin(); llr != llrs.end(); ++llr){
+            if (llr->first.first >= haps_final.size() && llr->first.second < haps_final.size()){
+                llr->second += log2(doublet_rate) - log2(1.0-doublet_rate);
+            }
+            else if (llr->first.first < haps_final.size() && llr->first.second >= haps_final.size()){
+                llr->second += log2(1.0-doublet_rate) - log2(doublet_rate);
+            }
+            lltab.insert(llr->first.first, llr->first.second, llr->second);
+        }
+
+        // Get best assignment
+        double best_llr = 0.0;
+        int best_idx = -1;
+        lltab.get_max(best_idx, best_llr);
+        if (best_idx != -1 && best_llr != 0){
+            assignments.emplace(hc->first, best_idx);
+            assignments_llr.emplace(hc->first, best_llr);
+        }
+        */
+        
+        vector<int> all_model_idx;
+        for (int i = 0; i < haps_final.size(); ++i){
+            if (doublet_rate < 1.0){
+                all_model_idx.push_back(i);
+            }
+            if (doublet_rate > 0.0){
+                for (int j = i + 1; j < haps_final.size(); ++j){
+                    int k = hap_comb_to_idx(i, j, haps_final.size());
+                    all_model_idx.push_back(k);
+                }
+            }
+        }
+        sort(all_model_idx.begin(), all_model_idx.end());
+        map<int, map<int, double> > llrs;
+
         // Use 0.5 for every mixture proportion
         map<int, double> mixprops;
         for (int i = 0; i < all_model_idx.size(); ++i){
@@ -910,6 +1085,14 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                                     exp_frac2 = one;
                                 }
                                 
+                                if (llrs.count(idx1) == 0){
+                                    map<int, double> m;
+                                    llrs.insert(make_pair(idx1, m));
+                                }
+                                if (llrs[idx1].count(idx2) == 0){
+                                    llrs[idx1].insert(make_pair(idx2, 0.0));
+                                }
+
                                 double ll1 = dbinom(count1+count2, count2, exp_frac1);
                                 double ll2 = dbinom(count1+count2, count2, exp_frac2);
                                 
@@ -920,13 +1103,25 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                 }
             }
         }
-        
+        /*
+        llr_table llrtab(haps_final.size());
+        for (map<int, map<int, double> >::iterator x = llrs.begin(); x != 
+            llrs.end(); ++x){
+            for (map<int, double>::iterator y = x->second.begin(); y != 
+                x->second.end(); ++y){
+                llrtab.insert(x->first, y->first, y->second);
+            }
+        }
+        */
         double llr;
-        int best_assignment = collapse_llrs(llrs, llr);
+        int best_assignment;
+        //llrtab.get_max(best_assignment, llr);
+        best_assignment = collapse_llrs(llrs, llr);
         if (best_assignment != -1 && llr > 0){
             assignments.emplace(hc->first, best_assignment);
             assignments_llr.emplace(hc->first, llr);
-        }       
+        } 
+              
         ++n_assigned;
         if (!use_filter && n_assigned % progress == 0){
             fprintf(stderr, "%d cells assigned\r", n_assigned);

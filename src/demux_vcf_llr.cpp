@@ -27,7 +27,7 @@ using namespace std;
  * ===== origin, used by demux_vcf.                                 =====
  */
 
-
+// x is the number of singlet IDs not counting doublet combinations
 llr_table::llr_table(int x){
     n_indvs = 0;
     int n_elt = x + (int)round(pow(2, binom_coef_log(x, 2)));

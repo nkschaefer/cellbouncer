@@ -58,8 +58,12 @@ void help(int code){
     fprintf(stderr, "       If you have already run this program once, specifying the same output\n");
     fprintf(stderr, "       directory name will load previously-computed counts. To start a new run,\n");
     fprintf(stderr, "       delete the old output directory or use a new output directory.\n");
-    fprintf(stderr, "   --num_threads -t The number of threads to use for parallel processing\n");
+    fprintf(stderr, "   --num_threads -T The number of threads to use for parallel processing\n");
     fprintf(stderr, "       (default 1)\n");
+    fprintf(stderr, "   --disable_umis -u By default, identical UMIs are collapsed when counting\n");
+    fprintf(stderr, "       species-specific k-mers. With this option enabled, UMIs will not be\n");
+    fprintf(stderr, "       considered (increases speed at the cost of read duplicates affecting\n");
+    fprintf(stderr, "       k-mer counts)\n");
     fprintf(stderr, "   --dump -d Only dump per-barcode data (barcode, then count of reads\n");
     fprintf(stderr, "       per species (tab separated)) and barcode-to-species assignments\n");
     fprintf(stderr, "       instead of demultiplexing reads. These files are created in\n");
@@ -84,6 +88,13 @@ void help(int code){
     fprintf(stderr, "   --atac_r1 -1 ATAC R1 reads to demultiplex (can specify multiple times)\n");
     fprintf(stderr, "   --atac_r2 -2 ATAC R2 reads to demultiplex (can specify multiple times)\n");
     fprintf(stderr, "   --atac_r3 -3 ATAC R3 reads to demultiplex (can specify multiple times)\n");
+    fprintf(stderr, "   --atac_preproc -A If you set this option, all ATAC files will be written\n");
+    fprintf(stderr, "       out as paired (forward/reverse) genomic reads, with corrected cell\n");
+    fprintf(stderr, "       barcodes written in sequence comments as CB:Z:[sequence]. This allows\n");
+    fprintf(stderr, "       the data to be mapped with any aligner that allows you to insert sequence\n");
+    fprintf(stderr, "       comments as SAM tags (i.e. minimap2 -a -x sr -y, bwa mem -C, or\n");
+    fprintf(stderr, "       bowtie2 --sam-append-comment). This will prevent cellranger-arc from\n");
+    fprintf(stderr, "       being able to run the data.\n");
     fprintf(stderr, "   --rna_r1 -r Forward RNA-seq reads to demultiplex (can specify multiple\n");
     fprintf(stderr, "       times)\n");
     fprintf(stderr, "   --rna_r2 -R Reverse RNA-seq reads to demultiplex (can specify multiple\n");
@@ -228,7 +239,6 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
     }
     
     double knee = find_knee(counthist, 0.1);
-    fprintf(stderr, "cutoff %f\n", knee);
     
     vector<vector<double> > obs_init_filt;
     vector<unsigned long> bc_init_filt;
@@ -466,9 +476,10 @@ int main(int argc, char *argv[]) {
        {"dump", no_argument, 0, 'd'},
        {"doublet_rate", required_argument, 0, 'D'},
        {"k", required_argument, 0, 'k'},
-       {"num_threads", required_argument, 0, 't'},
+       {"num_threads", required_argument, 0, 'T'},
        {"batch_num", required_argument, 0, 'b'},
        {"exact", no_argument, 0, 'e'},
+       {"disable_umis", no_argument, 0, 'u'},
        {"libname", required_argument, 0, 'n'},
        {"cellranger", no_argument, 0, 'C'},
        {"seurat", no_argument, 0, 'S'},
@@ -500,6 +511,8 @@ int main(int argc, char *argv[]) {
     bool cellranger = false;
     bool seurat = false;
     bool underscore = false;
+    bool disable_umis = false;
+    bool atac_preproc = false;
 
     int option_index = 0;
     int ch;
@@ -507,7 +520,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "t:o:n:1:2:3:r:R:x:X:N:k:w:W:D:b:eCSUdh", 
+    while((ch = getopt_long(argc, argv, "T:o:n:1:2:3:r:R:x:X:N:k:w:W:D:b:AueCSUdh", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -516,7 +529,10 @@ int main(int argc, char *argv[]) {
             case 'h':
                 help(0);
                 break;
-            case 't':
+            case 'A':
+                atac_preproc = true;
+                break;
+            case 'T':
                 num_threads = atoi(optarg);
                 break;
             case 'o':
@@ -578,6 +594,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'e':
                 exact_matches = true;
+                break;
+            case 'u':
+                disable_umis = true;
                 break;
             default:
                 help(0);
@@ -816,10 +835,19 @@ data for %s with more species.\n", kmerbase.c_str());
         
         if (exact_matches){
             wl.exact_matches_only();
-        } 
+        }
 
         // Init species k-mer counter 
         species_kmer_counter counter(num_threads, k, kmerfiles.size(), &wl, &bc_species_counts);
+        
+        if (disable_umis){
+            fprintf(stderr, "Running without collapsing UMIs\n");
+            counter.disable_umis();
+        }
+        else{
+            fprintf(stderr, "UMI collapsing enabled\n");
+            counter.enable_umis();
+        }
 
         // i = species index
         for (int i = 0; i < kmerfiles.size(); ++i){
@@ -828,21 +856,14 @@ data for %s with more species.\n", kmerbase.c_str());
             fprintf(stderr, "Loading %s-specific k-mers\n", speciesnames[i].c_str());
             counter.init(i, kmerfiles[i]);
             fprintf(stderr, "done\n");
-
+            
             idx2species.insert(make_pair(i, speciesnames[i]));
             species2idx.insert(make_pair(speciesnames[i], i));
             
-            // Process RNA-seq data.
-            counter.launch_gex_threads();    
-            
             for (int i = 0; i < rna_r1files.size(); ++i){
-                // Read through this set of files and launch jobs.
+                // The object handles multi-threading, if enabled
                 counter.process_gex_files(rna_r1files[i], rna_r2files[i]); 
             }
-            
-            // Shut off running threads.
-            counter.close_pool();
-            
         }
 
         // Create file listing species names (in case we need to re-run without
@@ -892,7 +913,6 @@ data for %s with more species.\n", kmerbase.c_str());
     robin_hood::unordered_map<unsigned long, short> bc2species;
     robin_hood::unordered_map<unsigned long, pair<unsigned int, unsigned int> > bc2doublet;
     robin_hood::unordered_map<unsigned long, double> bc2llr;
-    
 
     if (!dump && assnfile_given){
         
@@ -905,7 +925,9 @@ data for %s with more species.\n", kmerbase.c_str());
         
         while (inf >> bc_str >> species >> type >> llr){
             unsigned long ul = bc_ul(bc_str);
-            // Don't bother with doublets.
+            // All we have to do on this run is demultiplex reads.
+            // Don't bother with doublets (since those cells won't go into
+            // output files)
             if (type == 'S'){
                 bc2species.emplace(ul, species2idx[species]);
                 bc2llr.emplace(ul, llr); 
@@ -941,6 +963,7 @@ data for %s with more species.\n", kmerbase.c_str());
         // Our job is done here
         return 0;
     }
+
     bc_whitelist wl_out;
     
     // Note: do not set exact matches here, even if exact matches are set earlier. This is because we are
@@ -963,8 +986,10 @@ data for %s with more species.\n", kmerbase.c_str());
         else{
             // Try load from whitelists.
             wl.init(whitelist_rna_filename, whitelist_atac_filename);
-            for (robin_hood::unordered_map<unsigned long, map<short, int> >::iterator x = bc_species_counts.begin();
+            for (robin_hood::unordered_map<unsigned long, map<short, int> >::iterator x = 
+                bc_species_counts.begin();
                 x != bc_species_counts.end(); ++x){
+                
                 unsigned long barcode_atac = wl.wl1towl2(x->first);
                 bc_conversion.emplace(x->first, barcode_atac);
             }
@@ -973,8 +998,10 @@ data for %s with more species.\n", kmerbase.c_str());
         // Initialize the whitelist
         vector<unsigned long> rnalist;
         vector<unsigned long> ataclist;
-        for (robin_hood::unordered_map<unsigned long, unsigned long >::iterator x = bc_conversion.begin(); 
+        for (robin_hood::unordered_map<unsigned long, unsigned long >::iterator x = 
+            bc_conversion.begin(); 
             x != bc_conversion.end(); ++x){
+            
             rnalist.push_back(x->first);
             ataclist.push_back(x->second);
         }
@@ -983,21 +1010,25 @@ data for %s with more species.\n", kmerbase.c_str());
     else{
         // Single-whitelist, RNA-seq. only feed it the barcodes that have assignments.
         vector<unsigned long> ul_list;
-        for (robin_hood::unordered_map<unsigned long, short>::iterator b2s = bc2species.begin(); b2s != 
-            bc2species.end(); ++b2s){
+        for (robin_hood::unordered_map<unsigned long, short>::iterator b2s = 
+            bc2species.begin(); b2s != bc2species.end(); ++b2s){
             ul_list.push_back(b2s->first);
         } 
         wl_out.init(ul_list);
     } 
-
     
     // Now go through reads and demultiplex by species.
     reads_demuxer demuxer(wl_out, bc2species, idx2species, outdir);
+    demuxer.set_threads(num_threads);
+    demuxer.correct_bcs(true);
+    if (atac_preproc){
+        demuxer.preproc_atac(true);
+    }
 
     for (int i = 0; i < atac_r1files.size(); ++i){
         fprintf(stderr, "Processing ATAC files %s, %s, and %s\n", 
             atac_r1files[i].c_str(), atac_r2files[i].c_str(), atac_r3files[i].c_str());
-        demuxer.init_atac(atac_r1files[i], atac_r2files[i], atac_r3files[i]);
+        demuxer.init_atac(atac_r1files[i], atac_r2files[i], atac_r3files[i], atac_preproc);
         demuxer.scan_atac();
     } 
     for (int i = 0; i < rna_r1files.size(); ++i){
@@ -1005,6 +1036,7 @@ data for %s with more species.\n", kmerbase.c_str());
             rna_r1files[i].c_str(), rna_r2files[i].c_str());
         demuxer.init_rna(rna_r1files[i], rna_r2files[i]);
         demuxer.scan_rna();
+        fprintf(stderr, "demuxer done\n");
     }
     for (int i = 0; i < custom_r1files.size(); ++i){
         fprintf(stderr, "Processing custom read files %s and %s\n", 
@@ -1012,6 +1044,6 @@ data for %s with more species.\n", kmerbase.c_str());
         demuxer.init_custom(custom_names[i], custom_r1files[i], custom_r2files[i]);
         demuxer.scan_custom();
     } 
-
+    fprintf(stderr, "main done\n");
     return 0;
 }

@@ -31,14 +31,23 @@
 #include "common.h"
 #include "kmsuftree.h"
 
-// ===== kmers_in_reads.h
+// ===== species_kmers.h
 // Contains functions used to scan reads for species-specific kmers
 // used by demux_species.
 
 // Information to represent read pairs.
 struct rp_info{
-    std::string seq_f;
-    std::string seq_r;
+    //std::string seq_f;
+    //std::string seq_r;
+    //char[FQ_READ_LEN] seq_f;
+    //char[FQ_READ_LEN] = seq_r;
+    char* seq_f;
+    char* seq_r;
+    int len_f;
+    int len_r;
+    rp_info(const char* seq_f, int seq_f_len, const char* seq_r, int seq_r_len); 
+    rp_info(const rp_info& other);
+    ~rp_info();    
 };
 
 // Information to represent read triplets.
@@ -48,10 +57,32 @@ struct rt_info{
     std::string seq_3;
 };
 
+struct kmer_node_ptr{
+    kmer_node_ptr* f_A;
+    kmer_node_ptr* f_C;
+    kmer_node_ptr* f_G;
+    kmer_node_ptr* f_T;
+    kmer_node_ptr* r_A;
+    kmer_node_ptr* r_C;
+    kmer_node_ptr* r_G;
+    kmer_node_ptr* r_T;
+    
+    bool f_A_flip;
+    bool f_C_flip;
+    bool f_G_flip;
+    bool f_T_flip;
+    bool r_A_flip;
+    bool r_C_flip;
+    bool r_G_flip;
+    bool r_T_flip;
+
+    //kmer_node_ptr();
+};
+
 // Define a class for parallel processing stuff
 class species_kmer_counter{
     protected:
-        static bool is_rc_first(char* kmer, int k);
+        static bool is_rc_first(const char* kmer, int k);
     private:
         
         // Common to all jobs
@@ -74,9 +105,15 @@ class species_kmer_counter{
         std::mutex counts_mutex;
         std::mutex umi_mutex;
         robin_hood::unordered_map<unsigned long, std::map<short, int> >* bc_species_counts;
-        robin_hood::unordered_map<unsigned long, umi_set* > bc_species_umis;
+        robin_hood::unordered_node_map<unsigned long, umi_set* > bc_species_umis;
+        robin_hood::unordered_node_map<unsigned long, mutex*> bc_species_mutex;
+        bool use_umis;
         bc_whitelist* wl;
-
+        
+        void close_pool();
+         
+        void launch_gex_threads();
+        
         // Task-specific
         // Parameter queue for kmer file parsing jobs
         std::deque<std::pair<std::string, short> > kmer_parse_jobs;
@@ -90,11 +127,11 @@ class species_kmer_counter{
         // Function to process RNA-seq reads
         void gex_thread();
         
-        int scan_seq_kmers(std::string& seq);
+        int scan_seq_kmers(const char* seq, int len);
         
-        void scan_gex_data(rp_info& info);
+        void scan_gex_data(const char* seq_f, int seq_f_len, const char* seq_r, int seq_r_len);
         
-        void add_rp_job(rp_info& info);
+        void add_rp_job(const char* seq_f, int seq_f_len, const char* seq_r, int seq_r_len);
 
         void add_rt_job(rt_info& info);
 
@@ -113,10 +150,9 @@ class species_kmer_counter{
 
         void init(short species_idx, std::string& kmerfile);
 
-        void close_pool();
-         
-        void launch_gex_threads();
-        
+        void disable_umis(); 
+        void enable_umis();
+
         void process_gex_files(std::string& r1filename, std::string& r2filename);
         
 };

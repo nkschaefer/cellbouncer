@@ -28,11 +28,11 @@ dependencies: lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
 demux_vcf: src/demux_vcf.cpp build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o build/demux_vcf_llr.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o build/demux_vcf_llr.o src/demux_vcf.cpp -o demux_vcf $(LFLAGS) $(DEPS) -lz -lhts
 
-demux_mt: src/demux_mt.cpp src/common.h build/common.o $(DEPS)
-	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -D MAX_SITES=$(MAX_SITES) build/common.o src/demux_mt.cpp -o demux_mt $(LFLAGS) $(DEPS) -lhts -lz
+demux_mt: src/demux_mt.cpp src/common.h build/common.o build/demux_vcf_llr.o $(DEPS)
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -D MAX_SITES=$(MAX_SITES) build/common.o build/demux_vcf_llr.o src/demux_mt.cpp -o demux_mt $(LFLAGS) $(DEPS) -lhts -lz
 
 demux_species: src/demux_species.cpp src/kmsuftree.h src/common.h build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o $(DEPS)
-	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o src/demux_species.cpp $(LFLAGS) $(DEPS) -pthread -o demux_species -lhts -lz
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -fsanitize=thread -g build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o src/demux_species.cpp $(LFLAGS) $(DEPS) -pthread -o demux_species -lhts -lz
 
 demux_tags: src/demux_tags.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o src/demux_tags.cpp $(LFLAGS) $(DEPS) -D PROJ_ROOT=$(PROJROOT) -o demux_tags -lhts -lz
@@ -89,13 +89,13 @@ build/ambient_rna.o: src/ambient_rna.cpp src/ambient_rna.h src/common.h $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) src/ambient_rna.cpp -c -o build/ambient_rna.o
 
 build/species_kmers.o: src/species_kmers.cpp src/species_kmers.h src/common.h src/kmsuftree.h
-	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) src/species_kmers.cpp -c -o build/species_kmers.o
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g src/species_kmers.cpp -c -o build/species_kmers.o
 
 build/reads_demux.o: src/reads_demux.cpp src/reads_demux.h src/common.h lib/libhtswrapper.a
-	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) src/reads_demux.cpp -c -o build/reads_demux.o
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g src/reads_demux.cpp -c -o build/reads_demux.o
 
 build/demux_species_io.o: src/demux_species_io.cpp src/demux_species_io.h src/common.h lib/libhtswrapper.a
-	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) src/demux_species_io.cpp -c -o build/demux_species_io.o
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g src/demux_species_io.cpp -c -o build/demux_species_io.o
 
 build/kmsuftree.o: src/kmsuftree.c src/kmsuftree.h
 	$(CCOMP) $(CFLAGS) src/kmsuftree.c -c -o build/kmsuftree.o

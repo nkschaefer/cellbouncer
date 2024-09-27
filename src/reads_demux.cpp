@@ -18,12 +18,13 @@
 #include <htslib/kseq.h>
 #include <htswrapper/bc.h>
 #include <htswrapper/robin_hood/robin_hood.h>
+#include <htswrapper/bc_scanner.h>
 #include "common.h"
 #include "reads_demux.h"
 
 using namespace std;
 
-KSEQ_INIT(gzFile, gzread);
+//KSEQ_INIT(gzFile, gzread);
 
 // Constructor
 reads_demuxer::reads_demuxer(bc_whitelist& whitelist,
@@ -35,15 +36,30 @@ reads_demuxer::reads_demuxer(bc_whitelist& whitelist,
     this->bc2species = bc2species;
     this->idx2species = idx2species;
     this->outdir = outdir;
-
+    
+    this->atac_preproc = false;
+    this->corr_barcodes = true;
     initialized = false;
 }
 
 // Destructor
 reads_demuxer::~reads_demuxer(){
+    fprintf(stderr, "destroy reads_demuxer\n");
     close();
+    fprintf(stderr, "closed\n");
 }
 
+void reads_demuxer::set_threads(int nt){
+    nthreads = nt;
+}
+
+void reads_demuxer::preproc_atac(bool option){
+    this->atac_preproc = option;
+}
+
+void reads_demuxer::correct_bcs(bool option){
+    this->corr_barcodes = option;
+}
 // If already initialized for a given set of files, close.
 void reads_demuxer::close(){
     if (this->initialized){
@@ -130,6 +146,28 @@ bool reads_demuxer::scan_rna(){
         return false;
     }
     // Now iterate through read files, find/match barcodes, and assign to the correct files.
+    bc_scanner scanner(r1, r2);
+    scanner.init_10x_RNA(*whitelist);
+    if (nthreads > 1){
+        scanner.set_threads(nthreads);
+    } 
+    if (corr_barcodes){
+        scanner.corr_barcodes(true);
+    }   
+    fprintf(stderr, "scanner\n"); 
+    while(scanner.next()){
+        int species = bc2species[scanner.barcode];
+        
+        write_fastq(scanner.seq_id, scanner.seq_id_len,
+            scanner.barcode_read, scanner.barcode_read_len,
+            scanner.barcode_read_qual, species*2);
+        write_fastq(scanner.seq_id, scanner.seq_id_len,
+            scanner.read_f, scanner.read_f_len,
+           scanner.read_f_qual, species*2 + 1);
+
+    }
+    fprintf(stderr, "scanner done\n");
+    /*
     // Prep input file(s).
     int f_progress;
     int r_progress;
@@ -169,6 +207,7 @@ bool reads_demuxer::scan_rna(){
     close();
     kseq_destroy(seq_f);
     kseq_destroy(seq_r);
+    */
     return true;  
 }
 
@@ -179,9 +218,15 @@ bool reads_demuxer::scan_custom(){
 /**
  * Set up for ATAC-seq files
  */
-void reads_demuxer::init_atac(string& r1filename, string& r2filename, string& r3filename){
+void reads_demuxer::init_atac(string& r1filename, 
+    string& r2filename, 
+    string& r3filename,
+    bool preproc){
+
     close();
     
+    atac_preproc = preproc;
+
     // Trim directory paths off file names for output file names
     string r1filetrim = filename_nopath(r1filename);
     string r2filetrim = filename_nopath(r2filename);
@@ -213,6 +258,9 @@ void reads_demuxer::init_atac(string& r1filename, string& r2filename, string& r3
     }
     
     n_outfiles = idx2species.size()*3;
+    if (atac_preproc){
+        n_outfiles = idx2species.size()*2;
+    }
     outfiles = (gzFile*)malloc(n_outfiles * sizeof(gzFile));
 
     for (map<short, string>::iterator spec = idx2species.begin(); spec != idx2species.end(); ++spec){
@@ -220,23 +268,42 @@ void reads_demuxer::init_atac(string& r1filename, string& r2filename, string& r3
         if (!mkdir(dirn.c_str(), 0775)){
             // Assume directory already exists
         }
-        string fn = dirn + "/" + r1filetrim;
-        outfiles[spec->first * 3] = gzopen(fn.c_str(), "w");
-        if (!outfiles[spec->first * 3]){
-            fprintf(stderr, "ERROR opening %s for writing.\n", fn.c_str());
-            exit(1);
+
+        if (atac_preproc){
+            // Prepare to write two output files.
+            string fn = dirn + "/" + r1filetrim;
+            outfiles[spec->first * 2] = gzopen(fn.c_str(), "w");
+            if (!outfiles[spec->first * 2]){
+                fprintf(stderr, "ERROR opening %s for writing.\n", fn.c_str());
+                exit(1);
+            }
+            fn = dirn + "/" + r2filetrim;
+            outfiles[spec->first * 2 + 1] = gzopen(fn.c_str(), "w");
+            if (!outfiles[spec->first * 2 + 1]){
+                fprintf(stderr, "ERROR opening %s for writing.\n", fn.c_str());
+                exit(1);
+            }
         }
-        fn = dirn + "/" + r2filetrim;
-        outfiles[spec->first * 3 + 1] = gzopen(fn.c_str(), "w");
-        if (!outfiles[spec->first * 3 + 1]){
-            fprintf(stderr, "ERROR opening %s for writing.\n", fn.c_str());
-            exit(1);
-        }
-        fn = dirn + "/" + r3filetrim;
-        outfiles[spec->first * 3 + 2] = gzopen(fn.c_str(), "w");
-        if (!outfiles[spec->first * 3 + 2]){
-            fprintf(stderr, "ERROR opening %s for writing.\n", fn.c_str());
-            exit(1);
+        else{
+            // Prepare to write three output files.
+            string fn = dirn + "/" + r1filetrim;
+            outfiles[spec->first * 3] = gzopen(fn.c_str(), "w");
+            if (!outfiles[spec->first * 3]){
+                fprintf(stderr, "ERROR opening %s for writing.\n", fn.c_str());
+                exit(1);
+            }
+            fn = dirn + "/" + r2filetrim;
+            outfiles[spec->first * 3 + 1] = gzopen(fn.c_str(), "w");
+            if (!outfiles[spec->first * 3 + 1]){
+                fprintf(stderr, "ERROR opening %s for writing.\n", fn.c_str());
+                exit(1);
+            }
+            fn = dirn + "/" + r3filetrim;
+            outfiles[spec->first * 3 + 2] = gzopen(fn.c_str(), "w");
+            if (!outfiles[spec->first * 3 + 2]){
+                fprintf(stderr, "ERROR opening %s for writing.\n", fn.c_str());
+                exit(1);
+            }
         }
     }
     this->r1 = r1filename;
@@ -252,6 +319,45 @@ bool reads_demuxer::scan_atac(){
     }
 
     // Now iterate through read files, find/match barcodes, and assign to the correct files.
+    bc_scanner scanner(r1, r2, r3);
+    scanner.init_10x_multiome_ATAC(*whitelist);
+    if (nthreads > 1){
+        scanner.set_threads(nthreads);
+    } 
+    if (corr_barcodes && !atac_preproc){
+        scanner.corr_barcodes(true);
+    }    
+
+    int bc_len = whitelist->len_bc();
+
+    while(scanner.next()){
+        int species = bc2species[scanner.barcode];
+        if (atac_preproc){
+            string bc_str = bc2str(scanner.barcode, bc_len);
+            write_fastq(scanner.seq_id, scanner.seq_id_len,
+                scanner.read_f, scanner.read_f_len,
+                scanner.read_f_qual, species*2, 
+                bc_str.c_str(), bc_len);
+            write_fastq(scanner.seq_id, scanner.seq_id_len,
+                scanner.read_r, scanner.read_r_len,
+                scanner.read_r_qual, species*2+1,
+                bc_str.c_str(), bc_len);
+        }
+        else{
+            write_fastq(scanner.seq_id, scanner.seq_id_len,
+                scanner.read_f, scanner.read_f_len,
+                scanner.read_f_qual, species*3);
+            write_fastq(scanner.seq_id, scanner.seq_id_len,
+                scanner.barcode_read, scanner.barcode_read_len,
+                scanner.barcode_read_qual, species*3+1);
+            write_fastq(scanner.seq_id, scanner.seq_id_len,
+                scanner.read_r, scanner.read_r_len,
+                scanner.read_r_qual, species*3+2);
+
+        }
+    }
+    
+   /* 
     // Prep input file(s).
     int f_progress;
     int r_progress;
@@ -312,6 +418,8 @@ bool reads_demuxer::scan_atac(){
     kseq_destroy(seq_i);
     close();
     return true;
+    */
+    return true;
 }
 
 /**
@@ -322,10 +430,16 @@ void reads_demuxer::write_fastq(const char* id,
     const char* seq, 
     int seqlen, 
     const char* qual, 
-    int out_idx){
+    int out_idx,
+    const char* comment,
+    int comment_len){
     
     gzwrite(outfiles[out_idx], "@", 1);
     gzwrite(outfiles[out_idx], id, idlen);
+    if (comment != NULL){
+        gzwrite(outfiles[out_idx], " CB:Z:", 6);
+        gzwrite(outfiles[out_idx], comment, comment_len); 
+    }
     gzwrite(outfiles[out_idx], "\n", 1);
     gzwrite(outfiles[out_idx], seq, seqlen);
     gzwrite(outfiles[out_idx], "\n", 1);

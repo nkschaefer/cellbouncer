@@ -637,6 +637,8 @@ void inx2kmer( const size_t inx, const int k, char* kmer ) {
  *
  * Arguments:
  *  kmer_tree_node* ptr     The node
+ *  careful:    1 = don't free stored data
+ *              0 = free stored data
 */
 void knode_destruct(struct kmer_tree_node* ptr, int careful) {
     // Recursively destruct the other nodes

@@ -34,6 +34,14 @@ class reads_demuxer{
         
         // Is this ATAC-seq?
         bool is_atac;
+        
+        // Should ATAC seq be preprocessed?
+        // This means converting from R1, R2, and R3 to 
+        // R1 and R2 = paired genomic data, with whitelisted
+        // cell barcode appended to sequence comment
+        bool atac_preproc;
+        
+        bool corr_barcodes;
 
         // Map barcode to species
         robin_hood::unordered_map<unsigned long, short> bc2species;
@@ -52,6 +60,8 @@ class reads_demuxer{
         
         void close();
         void init_rna_or_custom(std::string prefix, std::string& r1, std::string& r2);
+        
+        int nthreads;
 
     public:
         
@@ -62,16 +72,21 @@ class reads_demuxer{
 
         ~reads_demuxer();
 
-        void init_atac(std::string& r1, std::string& r2, std::string& r3);
+        void init_atac(std::string& r1, std::string& r2, std::string& r3, bool preproc = false);
         void init_rna(std::string& r1, std::string& r2);
         void init_custom(std::string prefix, std::string& r1, std::string& r2);
+        
+        void preproc_atac(bool opt);
+        void correct_bcs(bool opt);
 
         bool scan_atac();
         bool scan_rna();
         bool scan_custom();
+        
+        void set_threads(int nthreads);
 
         void write_fastq(const char* id, int idlen, const char* seq, int seqlen,
-            const char* qual, int out_idx);
+            const char* qual, int out_idx, const char* comment = NULL, int comment_len = 0);
 };
 #endif
 
