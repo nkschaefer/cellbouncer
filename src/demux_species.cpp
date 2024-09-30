@@ -1036,7 +1036,6 @@ data for %s with more species.\n", kmerbase.c_str());
             rna_r1files[i].c_str(), rna_r2files[i].c_str());
         demuxer.init_rna(rna_r1files[i], rna_r2files[i]);
         demuxer.scan_rna();
-        fprintf(stderr, "demuxer done\n");
     }
     for (int i = 0; i < custom_r1files.size(); ++i){
         fprintf(stderr, "Processing custom read files %s and %s\n", 
@@ -1044,6 +1043,5 @@ data for %s with more species.\n", kmerbase.c_str());
         demuxer.init_custom(custom_names[i], custom_r1files[i], custom_r2files[i]);
         demuxer.scan_custom();
     } 
-    fprintf(stderr, "main done\n");
     return 0;
 }

@@ -105,8 +105,19 @@ class species_kmer_counter{
         std::mutex counts_mutex;
         std::mutex umi_mutex;
         robin_hood::unordered_map<unsigned long, std::map<short, int> >* bc_species_counts;
-        robin_hood::unordered_node_map<unsigned long, umi_set* > bc_species_umis;
-        robin_hood::unordered_node_map<unsigned long, mutex*> bc_species_mutex;
+        
+        robin_hood::unordered_map<unsigned long, umi_set_exact* > bc_species_umis;
+
+        //robin_hood::unordered_map<unsigned long, int> bc_species_idx;
+        //std::deque<robin_hood::unordered_node_set<unsigned long>* > bc_species_umis;
+        //std::deque<mutex*> bc_species_mutex;
+
+        //robin_hood::unordered_node_map<unsigned long, umi_set* > bc_species_umis;
+        //robin_hood::unordered_node_map<unsigned long, mutex*> bc_species_mutex;
+        
+        
+        vector<robin_hood::unordered_map<unsigned long, int> > cur_counts_thread;
+
         bool use_umis;
         bc_whitelist* wl;
         
@@ -125,11 +136,11 @@ class species_kmer_counter{
         std::deque<rt_info> rt_jobs;
         
         // Function to process RNA-seq reads
-        void gex_thread();
+        void gex_thread(int thread_idx);
         
         int scan_seq_kmers(const char* seq, int len);
         
-        void scan_gex_data(const char* seq_f, int seq_f_len, const char* seq_r, int seq_r_len);
+        void scan_gex_data(const char* seq_f, int seq_f_len, const char* seq_r, int seq_r_len, int thread_idx=-1);
         
         void add_rp_job(const char* seq_f, int seq_f_len, const char* seq_r, int seq_r_len);
 

@@ -32,7 +32,7 @@ demux_mt: src/demux_mt.cpp src/common.h build/common.o build/demux_vcf_llr.o $(D
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -D MAX_SITES=$(MAX_SITES) build/common.o build/demux_vcf_llr.o src/demux_mt.cpp -o demux_mt $(LFLAGS) $(DEPS) -lhts -lz
 
 demux_species: src/demux_species.cpp src/kmsuftree.h src/common.h build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o $(DEPS)
-	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -fsanitize=thread -g build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o src/demux_species.cpp $(LFLAGS) $(DEPS) -pthread -o demux_species -lhts -lz
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o src/demux_species.cpp $(LFLAGS) $(DEPS) -pthread -o demux_species -lhts -lz
 
 demux_tags: src/demux_tags.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o src/demux_tags.cpp $(LFLAGS) $(DEPS) -D PROJ_ROOT=$(PROJROOT) -o demux_tags -lhts -lz

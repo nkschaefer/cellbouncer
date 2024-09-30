@@ -44,9 +44,7 @@ reads_demuxer::reads_demuxer(bc_whitelist& whitelist,
 
 // Destructor
 reads_demuxer::~reads_demuxer(){
-    fprintf(stderr, "destroy reads_demuxer\n");
     close();
-    fprintf(stderr, "closed\n");
 }
 
 void reads_demuxer::set_threads(int nt){
@@ -154,7 +152,6 @@ bool reads_demuxer::scan_rna(){
     if (corr_barcodes){
         scanner.corr_barcodes(true);
     }   
-    fprintf(stderr, "scanner\n"); 
     while(scanner.next()){
         int species = bc2species[scanner.barcode];
         
@@ -166,7 +163,6 @@ bool reads_demuxer::scan_rna(){
            scanner.read_f_qual, species*2 + 1);
 
     }
-    fprintf(stderr, "scanner done\n");
     /*
     // Prep input file(s).
     int f_progress;

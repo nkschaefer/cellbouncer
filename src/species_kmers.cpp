@@ -117,11 +117,39 @@ species_kmer_counter::~species_kmer_counter(){
         kmsuftree_destruct(kt, 0);
     }
     // Free all UMI counters
+    /*
     for (robin_hood::unordered_node_map<unsigned long, umi_set*>::iterator x = bc_species_umis.begin();
         x != bc_species_umis.end(); ){
         delete x->second;
         x = bc_species_umis.erase(x);
     }
+    */
+    /*
+    while (bc_species_umis.size() > 0){
+        delete bc_species_umis[0];
+        bc_species_umis.pop_front();
+        delete bc_species_mutex[0];
+        bc_species_mutex.pop_front();
+    }
+    bc_species_idx.clear();
+    */
+    for (robin_hood::unordered_map<unsigned long, umi_set_exact* >::iterator x = bc_species_umis.begin();
+        x != bc_species_umis.end(); ++x){
+        delete x->second;
+        x->second = NULL;
+    }
+    bc_species_umis.clear();
+    /*
+    for (vector<robin_hood::unordered_node_set<unsigned long>* >::iterator x = bc_species_umis.begin();
+        x != bc_species_umis.end(); ){
+        delete *x;
+        bc_species_umis.erase(x);
+    }
+    for (vector<mutex*>::iterator x = bc_species_mutex.begin(); x != bc_species_mutex.end(); ){
+        delete *x;
+        bc_species_mutex.erase(x);
+    }
+    */
 }
 
 void species_kmer_counter::init(short species_idx, string& kmerfile){
@@ -269,14 +297,35 @@ void species_kmer_counter::process_gex_files(string& r1filename,
     if (num_threads > 1){
        close_pool();
     }
-    else{
+    //else{
         // Free all UMI counters
+        /*
         for (robin_hood::unordered_node_map<unsigned long, umi_set*>::iterator x = bc_species_umis.begin();
             x != bc_species_umis.end(); ){
             delete x->second;
             x = bc_species_umis.erase(x);
         }
-    }
+        */
+        
+        /*
+        for (robin_hood::unordered_map<unsigned long, int>::iterator x = bc_species_idx.begin();
+            x != bc_species_idx.end(); ++x){
+            delete bc_species_umis[x->second];
+            //bc_species_umis.erase(bc_species_umis.find(x->second));
+            delete bc_species_mutex[x->second];
+            //bc_species_mutex.erase(x->second);
+        }
+        bc_species_idx.clear();
+        bc_species_mutex.clear();
+        bc_species_umis.clear();
+        */
+        for (robin_hood::unordered_map<unsigned long, umi_set_exact* >::iterator x = bc_species_umis.begin();
+            x != bc_species_umis.end(); ++x){
+            delete x->second;
+            x->second = NULL;
+        }
+        bc_species_umis.clear();
+    //}
 }
 
 // Stop all running threads and then destroy them
@@ -288,16 +337,24 @@ void species_kmer_counter::close_pool(){
     this->has_jobs.notify_all();
     for (int i = 0; i < this->threads.size(); ++i){
         this->threads[i].join();
+        /*
+        // Dump counts into data structure.
+        for (robin_hood::unordered_map<unsigned long, int>::iterator c = cur_counts_thread[i].begin();
+            c != cur_counts_thread[i].end(); ++c){
+            if (bc_species_counts->count(c->first) == 0){
+                map<short, int> m;
+                bc_species_counts->emplace(c->first, m); 
+            }
+            if ((*bc_species_counts)[c->first].count(this_species) == 0){
+                (*bc_species_counts)[c->first].emplace(this_species, 0);
+            }
+            (*bc_species_counts)[c->first][this_species] += c->second;
+        }
+        */
     }
     this->threads.clear();
+    this->cur_counts_thread.clear();
     this->on = false;
-
-    // Free all UMI counters
-    for (robin_hood::unordered_node_map<unsigned long, umi_set*>::iterator x = bc_species_umis.begin();
-        x != bc_species_umis.end(); ){
-        delete x->second;
-        x = bc_species_umis.erase(x);
-    }
 }
 
 /**
@@ -513,7 +570,7 @@ int species_kmer_counter::scan_seq_kmers(const char* seq, int len){
 }
 
 void species_kmer_counter::scan_gex_data(const char* seq_f, 
-    int seq_f_len, const char* seq_r, int seq_r_len){
+    int seq_f_len, const char* seq_r, int seq_r_len, int thread_idx){
     
     unsigned long bc_key = 0;
     bool exact;
@@ -522,19 +579,58 @@ void species_kmer_counter::scan_gex_data(const char* seq_f,
         bool dup_read = false;
         if (use_umis && umi_start >= 0 && umi_len > 0){
             umi u(seq_f + umi_start, umi_len);
-            if (bc_species_umis.count(bc_key) == 0){
-                umi_set* s = new umi_set(umi_len);
-                // It goes way too slowly if we allow fuzzy matching of UMIs.
-                // Also not that important.
-                s->exact_matches_only(true);
-                unique_lock<mutex> lock(this->umi_mutex);
-                bc_species_umis.emplace(bc_key, s);
+            
+            {
+               unique_lock<mutex> lock(umi_mutex);
+                 
+               if (bc_species_umis.count(bc_key) == 0){
+
+                   umi_set_exact* us = new umi_set_exact();
+                   bc_species_umis.emplace(bc_key, us);
+                    
+                   /*
+                //if (bc_species_idx.count(bc_key) == 0){
+                    robin_hood::unordered_set<unsigned long>* s = 
+                        new robin_hood::unordered_set<unsigned long>;
+                    mutex* m = new mutex;                
+                    int idx = bc_species_umis.size();
+                    bc_species_idx.emplace(bc_key, idx);
+                    bc_species_umis.push_back(s);
+                    bc_species_mutex.push_back(m);
+
+                    //umi_set* s = new umi_set(umi_len);
+                    // It goes way too slowly if we allow fuzzy matching of UMIs.
+                    // Also not that important.
+                    //s->exact_matches_only(true);
+                    //unique_lock<mutex> lock(this->umi_mutex);
+                    //bc_species_umis.emplace(bc_key, s);
+                    */
+                }
             }
             {
-            unique_lock<mutex> lock(bc_species_umis[bc_key]->umi_mutex);
-            if (bc_species_umis[bc_key]->add(u)){
-                dup_read = true;
-            }
+                //int idx = bc_species_idx[bc_key];
+                //double umi_ul = u.bits.to_ulong();
+                //unique_lock<mutex> lock(*bc_species_mutex[idx]);
+                //unique_lock<mutex> lock(bc_species_umis[idx]->mutex);
+                //dup_read = bc_species_umis[idx]->add(u);
+                
+                unique_lock<mutex> lock(bc_species_umis[bc_key]->umi_mutex);
+                dup_read = bc_species_umis[bc_key]->add(u);
+
+                /*
+                if (bc_species_umis[idx]->find(umi_ul) != bc_species_umis[idx]->end()){
+                    dup_read = true;
+                }
+                else{
+                    bc_species_umis[idx]->insert(umi_ul);
+                }
+                */
+                /*
+                unique_lock<mutex> lock(bc_species_umis[bc_key]->umi_mutex);
+                if (bc_species_umis[bc_key]->add(u)){
+                    dup_read = true;
+                }
+                */
             }
         }
         
@@ -547,15 +643,23 @@ void species_kmer_counter::scan_gex_data(const char* seq_f,
         int nk = scan_seq_kmers(seq_r, seq_r_len);
 
         if (nk > 0){    
-            unique_lock<mutex> lock(this->counts_mutex);
-            if (bc_species_counts->count(bc_key) == 0){
-                map<short, int> m;
-                bc_species_counts->emplace(bc_key, m);
-            } 
-            if ((*bc_species_counts)[bc_key].count(this_species) == 0){
-                (*bc_species_counts)[bc_key].insert(make_pair(this_species, 0));
+            if (thread_idx == -1){
+                unique_lock<mutex> lock(this->counts_mutex);
+                if (bc_species_counts->count(bc_key) == 0){
+                    map<short, int> m;
+                    bc_species_counts->emplace(bc_key, m);
+                }
+                if ((*bc_species_counts)[bc_key].count(this_species) == 0){
+                    (*bc_species_counts)[bc_key].insert(make_pair(this_species, 0));
+                }
+                (*bc_species_counts)[bc_key][this_species]++;
             }
-            (*bc_species_counts)[bc_key][this_species]++;
+            else{
+                if (cur_counts_thread[thread_idx].count(bc_key) == 0){
+                    cur_counts_thread[thread_idx].emplace(bc_key, 0);
+                }
+                cur_counts_thread[thread_idx][bc_key]++;
+            }
         }
     }
 }
@@ -839,12 +943,12 @@ void species_kmer_counter::parse_kmer_counts_serial(string& countsfilename,
 /**
  * Worker function for a GEX read scanning job
  */
-void species_kmer_counter::gex_thread(){
+void species_kmer_counter::gex_thread(int thread_idx){
     
      while(true){
-        if (this->rp_jobs.size() == 0 && this->terminate_threads){
-            return;
-        }
+        //if (this->rp_jobs.size() == 0 && this->terminate_threads){
+        //    return;
+        //}
         char* seq_f = NULL;
         int seq_f_len = 0;
         char* seq_r = NULL;
@@ -865,7 +969,7 @@ void species_kmer_counter::gex_thread(){
             this->rp_jobs.pop_front();
         }
         if (seq_f != NULL && seq_r != NULL){
-            scan_gex_data(seq_f, seq_f_len, seq_r, seq_r_len);
+            scan_gex_data(seq_f, seq_f_len, seq_r, seq_r_len, -1);
             free(seq_f);
             free(seq_r);
         }
@@ -883,8 +987,11 @@ void species_kmer_counter::launch_gex_threads(){
 
     for (int i = 0; i < this->num_threads; ++i){
         
+        //robin_hood::unordered_map<unsigned long, int> m;
+        //cur_counts_thread.push_back(m);
+
         this->threads.push_back(thread(&species_kmer_counter::gex_thread,
-            this));
+            this, i));
     }
     this->on = true;
 }
