@@ -58,6 +58,7 @@ void reads_demuxer::preproc_atac(bool option){
 void reads_demuxer::correct_bcs(bool option){
     this->corr_barcodes = option;
 }
+
 // If already initialized for a given set of files, close.
 void reads_demuxer::close(){
     if (this->initialized){
@@ -163,47 +164,6 @@ bool reads_demuxer::scan_rna(){
            scanner.read_f_qual, species*2 + 1);
 
     }
-    /*
-    // Prep input file(s).
-    int f_progress;
-    int r_progress;
-    gzFile f_fp;
-    gzFile r_fp;
-    kseq_t* seq_f;
-    kseq_t* seq_r;
-    f_fp = gzopen(r1.c_str(), "r");
-    if (!f_fp){
-        fprintf(stderr, "ERROR opening %s for reading\n", r1.c_str());
-        exit(1);
-    }    
-    r_fp = gzopen(r2.c_str(), "r");
-    if (!r_fp){
-        fprintf(stderr, "ERROR opening %s for reading\n", r2.c_str());
-        exit(1);
-    }
-   
-    seq_f = kseq_init(f_fp);
-    seq_r = kseq_init(r_fp);
-    
-    while ((f_progress = kseq_read(seq_f)) >= 0){
-        r_progress = kseq_read(seq_r);
-        if (r_progress < 0){
-            fprintf(stderr, "ERROR: read order not matching R2 at seq %s in R1 file\n", seq_f->name.s);
-            exit(1);
-        }
-        unsigned long bc_key = 0;
-        if (whitelist->lookup1_bf(seq_f->seq.s, bc_key, false)){
-            int species = bc2species[bc_key];
-            write_fastq(seq_f->name.s, seq_f->name.l, seq_f->seq.s, seq_f->seq.l, seq_f->qual.s,
-                species*2);
-            write_fastq(seq_f->name.s, seq_r->name.l, seq_r->seq.s, seq_r->seq.l, seq_r->qual.s,
-                species*2 + 1);
-        } 
-    }
-    close();
-    kseq_destroy(seq_f);
-    kseq_destroy(seq_r);
-    */
     return true;  
 }
 
@@ -353,68 +313,6 @@ bool reads_demuxer::scan_atac(){
         }
     }
     
-   /* 
-    // Prep input file(s).
-    int f_progress;
-    int r_progress;
-    int i_progress;
-    gzFile f_fp;
-    gzFile r_fp;
-    gzFile i_fp;
-    kseq_t* seq_f;
-    kseq_t* seq_r;
-    kseq_t* seq_i;
-    f_fp = gzopen(r1.c_str(), "r");
-    if (!f_fp){
-        fprintf(stderr, "ERROR opening %s for reading\n", r1.c_str());
-        exit(1);
-    }    
-    r_fp = gzopen(r3.c_str(), "r");
-    if (!r_fp){
-        fprintf(stderr, "ERROR opening %s for reading\n", r3.c_str());
-        exit(1);
-    }
-    i_fp = gzopen(r2.c_str(), "r");
-    if (!i_fp){
-        fprintf(stderr, "ERROR opening %s for reading\n", r2.c_str());
-        exit(1);
-    }
-    seq_f = kseq_init(f_fp);
-    seq_r = kseq_init(r_fp);
-    seq_i = kseq_init(i_fp);
-
-    while ((f_progress = kseq_read(seq_f)) >= 0){
-        r_progress = kseq_read(seq_r);
-        if (r_progress < 0){
-            fprintf(stderr, "ERROR: read order not matching R3 at seq %s in R1 file\n", seq_f->name.s);
-            exit(1);
-        }
-        i_progress = kseq_read(seq_i);
-        if (i_progress < 0){
-            fprintf(stderr, "ERROR: read order not matching R2 at seq %s in R1 file\n", seq_f->name.s);
-            exit(1);
-        }
-        
-        unsigned long bc_key = 0;
-        // ATAC barcode is in seq_i
-        // Orientation: reverse complement, end of read
-        if (whitelist->lookup2_er(seq_i->seq.s, bc_key, false)){
-            int species = bc2species[bc_key];
-            write_fastq(seq_f->name.s, seq_f->name.l, seq_f->seq.s, 
-                seq_f->seq.l, seq_f->qual.s, species*3);
-            write_fastq(seq_i->name.s, seq_i->name.l, seq_i->seq.s, 
-                seq_i->seq.l, seq_i->qual.s, species*3+1);
-            write_fastq(seq_r->name.s, seq_r->name.l, seq_r->seq.s, 
-                seq_r->seq.l, seq_r->qual.s, species*3+2);
-        }
-    } 
-
-    kseq_destroy(seq_f);
-    kseq_destroy(seq_r);
-    kseq_destroy(seq_i);
-    close();
-    return true;
-    */
     return true;
 }
 

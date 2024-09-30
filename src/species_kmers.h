@@ -76,7 +76,6 @@ struct kmer_node_ptr{
     bool r_G_flip;
     bool r_T_flip;
 
-    //kmer_node_ptr();
 };
 
 // Define a class for parallel processing stuff
@@ -107,16 +106,6 @@ class species_kmer_counter{
         robin_hood::unordered_map<unsigned long, std::map<short, int> >* bc_species_counts;
         
         robin_hood::unordered_map<unsigned long, umi_set_exact* > bc_species_umis;
-
-        //robin_hood::unordered_map<unsigned long, int> bc_species_idx;
-        //std::deque<robin_hood::unordered_node_set<unsigned long>* > bc_species_umis;
-        //std::deque<mutex*> bc_species_mutex;
-
-        //robin_hood::unordered_node_map<unsigned long, umi_set* > bc_species_umis;
-        //robin_hood::unordered_node_map<unsigned long, mutex*> bc_species_mutex;
-        
-        
-        vector<robin_hood::unordered_map<unsigned long, int> > cur_counts_thread;
 
         bool use_umis;
         bc_whitelist* wl;
