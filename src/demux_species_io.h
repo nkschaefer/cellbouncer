@@ -1,5 +1,5 @@
-#ifndef _DEMUX_SPECIES_IO_H
-#define _DEMUX_SPECIES_IO_H
+#ifndef _CELLBOUNCER_DEMUX_SPECIES_IO_H
+#define _CELLBOUNCER_DEMUX_SPECIES_IO_H
 #include <zlib.h>
 #include <string>
 #include <algorithm>

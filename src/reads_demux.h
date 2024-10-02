@@ -1,5 +1,5 @@
-#ifndef _CELLID_READS_DEMUX_H
-#define _CELLID_READS_DEMUX_H
+#ifndef _CELLBOUNCER_READS_DEMUX_H
+#define _CELLBOUNCER_READS_DEMUX_H
 #include <zlib.h>
 #include <string>
 #include <algorithm>
