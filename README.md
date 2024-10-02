@@ -17,6 +17,7 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 
 ###  &nbsp; &nbsp; Visualizing and comparing results
 ![](img/viz_compare2.png | width=50 )
+<img src="img/viz_compare2.png" width=50 />
 
 | <img src="img/viz_compare2.png" width=50 alt="visualize_compare" /> | I want to...|I have...|Tool to use|
 |-|------------|---------|-----------|
