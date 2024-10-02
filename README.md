@@ -7,6 +7,7 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
 |Demultiplex cells by **species** before mapping to a reference genome|A transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species|[`demux_species`](#demux_species)|
+|Demultiplex cells by **species** after mapping to a composite reference genome|A BAM file of single-cell data mapped to a composite reference genome, with species names prepended or appended to sequence names|[`utils/composite_bam2counts`](#demux_species) + [`demux_species`](#demux_species)|
 |Demultiplex cells by **individual of origin**, and I hope individuals are unrelated enough to have different mitochondrial haplotypes|A BAM file of aligned scATAC-seq or whole cell scRNA-seq data|[`demux_mt`](#demux_mt)|
 |Demultiplex cells by **individual of origin**|VCF of known variants, plus a BAM file of aligned single cell sequencing data|[`demux_vcf`](#demux_vcf)|
 |Demultiplex individuals by **custom label** or **treatment**|FASTQs containing MULTIseq/HTO/CITE-seq data, or a table of pre-computed counts, optionally in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices)|[`demux_tags`](#demux_tags)|
@@ -59,7 +60,7 @@ make
 You've now got all the programs compiled, and you can run them as long as you remember to `conda activate cellbouncer` first.
 
 # Test data set
-You can get a test data set from [this link](https://ucsf.box.com/s/wvrzl1tvdrozojlj0z4sp5fhmvqe05mu). It contains an example `.bam` file, `vcf` file, and cell hashing `.counts` file. The `README` in the linked directory will explain everything, but these give you the opportunity to test-run `demux_mt`, `demux_tags`, `demux_vcf`, `quant_contam`, and `doublet_dragon`.
+You can get a test data set from [this link](https://ucsf.box.com/s/wvrzl1tvdrozojlj0z4sp5fhmvqe05mu). It contains an example `.bam` file, `vcf` file, and cell hashing `.counts` file. The `README` in the linked directory will explain everything, but these give you the opportunity to test-run `demux_species`, `demux_mt`, `demux_tags`, `demux_vcf`, `quant_contam`, and `doublet_dragon`.
 
 # Overview
 The programs in `cellbouncer` are standalone command line tools. If you run one of them with no arguments or with `-h`, it will give you detailed information about how to run it. Each program uses the concept of an `--output_prefix/-o`, which is a base name that will be used for all output files.
