@@ -6,15 +6,26 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
-|Demultiplex cells by **species** before mapping to a reference genome|A transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species|[`demux_species`](#demux_species)|
-|Demultiplex cells by **species** after mapping to a composite reference genome|A BAM file of single-cell data mapped to a composite reference genome, with species names prepended or appended to sequence names|[`utils/composite_bam2counts`](#demux_species) + [`demux_species`](#demux_species)|
+|Demultiplex cells by **species** |Raw reads, plus a transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species <br>OR<br> A BAM file of reads mapped to a composite reference genome|[`demux_species`](#demux_species)|
 |Demultiplex cells by **individual of origin**, and I hope individuals are unrelated enough to have different mitochondrial haplotypes|A BAM file of aligned scATAC-seq or whole cell scRNA-seq data|[`demux_mt`](#demux_mt)|
 |Demultiplex cells by **individual of origin**|VCF of known variants, plus a BAM file of aligned single cell sequencing data|[`demux_vcf`](#demux_vcf)|
 |Demultiplex individuals by **custom label** or **treatment**|FASTQs containing MULTIseq/HTO/CITE-seq data, or a table of pre-computed counts, optionally in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices)|[`demux_tags`](#demux_tags)|
 |Assign **sgRNAs** to cells|FASTQs containing sgRNA capture data, or a table of pre-computed counts, optionally in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices)|[`demux_tags`](#demux_tags)|
-|Quantify **ambient RNA** per cell and infer its origins|Output from `demux_vcf`|[`quant_contam`](#quant_contam)|
-|Infer global **doublet rate**|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
+|Quantify **ambient RNA** per cell, infer its origins, and optionally adjust gene counts|Output from `demux_vcf` (plus optional single-cell expression data to adjust, in [MEX format](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices))|[`quant_contam`](#quant_contam)|
+|Infer global **doublet rate** and proportions of individuals|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
 |Determine **proportion of individuals** in a pool|A VCF of known variants, plus a BAM of aligned sequence data (can be bulk)|[`bulkprops`](#bulkprops)|
+|------------|---------|-----------|
+|**Visualize** a set of labels and the pool compositions they produce at different confidence cutoffs | An `.assignments` file from a CellBouncer program | [`plot/assignment_llr.R'](docs/plot_assignment_llr.md)|
+|**Compare** two sets of labels on the same cells | Two `.assignments` files from CellBouncer programs run on the same data | [`plot/compare_assignments.R`](docs/plot_compare_assignments.md)|
+|**Merge** two sets of labels on the same cells into one set of labels | Two `.assignments` files from CollBouncer programs run on the same data | [`utils/merge_assignments.R`](docs/utils_merge_assignments.md)
+|**Compare** two sets of pool proportions and assess significance if possible | Two files describing pool composition (i.e. from [`bulkprops`](#bulkprops) or contamination profile from [`quant_contam`](#quant_contam)), or one file describing pool composition and an `.assignments` file describing cell labels | [`utils/compare_props.R`](docs/utils_compare_props.md) |
+|**Refine** genotype calls to better match cell-individual labels | A preexisting set of genotypes in VCF format, a BAM file of aligned single-cell data, and an `.assignments` file mapping cells to individuals of origin | [`utils/refine_vcf`](docs/utils_refine_vcf.md) |
+|------------|---------|-----------|
+|**Split** a BAM file into one file per cell identity | A BAM file of aligned single-cell sequencing data and a CellBouncer-format `.assignments` file | [`utils/bam_split_bcs`](docs/utils_bam_split_bcs.md) |
+|**Tag** reads in a BAM file to mark individual of origin | A BAM file of aligned single-cell sequencing data and a CellBouncer-format `.assignments` file | [`utils/bam_indiv_rg`](docs/demux_mt.md#utilsbam_indiv_rg) |
+|------------|---------|-----------|
+|**Convert** 10X or `scanpy` data from `.h5` to [MEX](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices) format | A [CellRanger-format `.h5`](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-h5-matrices) or [scanpy-format `.h5ad`](https://anndata.readthedocs.io/en/latest/tutorials/notebooks/getting-started.html) file | [`utils/h5tomex.py](docs/utils_h5tomex.md) |
+|**Subset** MEX-format data | Single-cell expression data in [MEX format](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices) | [`utils/split_mex_libs.py`](docs/utils_subset_mex.md) <br> [`utils/subs_mex_bc.py`](docs/utils_subset_mex.md) <br> [`utils/subs_mex_featuretype.py`](docs/utils_subset_mex.md) |
 
 # Installation
 To install ([see below](#get-the-repository)):
