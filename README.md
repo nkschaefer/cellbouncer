@@ -4,7 +4,7 @@
 
 Tools for checking cell identities and keeping the riffraff out of pooled single cell sequencing data sets. 
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |I want to...|I have...|Tool to use|
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |I want to...|I have...|Tool to use|
 |-|------------|---------|-----------|
 | <img src="img/demux_species_mini.png" alt="demux_species" /> | Demultiplex cells by **species** |Raw reads, plus a transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species <p align="center">*OR*</p> A BAM file of reads mapped to a composite reference genome|[`demux_species`](#demux_species)|
 | <img src="img/demux_mt_mini.png" alt="demux_mt" /> | Demultiplex cells by **individual of origin**, and I hope individuals are unrelated enough to have different mitochondrial haplotypes|A BAM file of aligned scATAC-seq or whole cell scRNA-seq data|[`demux_mt`](#demux_mt)|
