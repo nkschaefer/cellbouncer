@@ -15,17 +15,14 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 | <img src="img/doublet_dragon.png" width="100%" alt="doublet_dragon" /> | Infer global **doublet rate** and proportions of individuals|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
 | <img src="img/bulkprops.png" width="100%" alt="bulkprops" /> | Determine **proportion of individuals** in a pool|A VCF of known variants, plus a BAM of aligned sequence data (can be bulk)|[`bulkprops`](#bulkprops)|
 
-###  &nbsp; &nbsp; Visualizing and comparing results
-![](img/viz_compare2.png | width=50 )
-<img src="img/viz_compare2.png" height=50 />
-
-| <img src="img/viz_compare2.png" width=50 alt="visualize_compare" /> | I want to...|I have...|Tool to use|
-|-|------------|---------|-----------|
-| <img src="img/viz_compare2.png" width="100%" alt="visualize_compare" /> | **Visualize** a set of labels and the pool compositions they produce at different confidence cutoffs | An `.assignments` file from a CellBouncer program |[`plot/assignment_llr.R`](docs/plot_assignment_llr.md)|
-| <img src="img/viz_compare2.png" width="100%" alt="visualize_compare" /> | **Compare** two sets of labels on the same cells | Two `.assignments` files from CellBouncer programs run on the same data | [`plot/compare_assignments.R`](docs/plot_compare_assignments.md)|
-| <img src="img/viz_compare2.png" width="100%" alt="visualize_compare" /> | **Merge** two sets of labels on the same cells into one set of labels | Two `.assignments` files from CollBouncer programs run on the same data | [`utils/merge_assignments.R`](docs/utils_merge_assignments.md)
-| <img src="img/viz_compare2.png" width="100%" alt="visualize_compare" /> | **Compare** two sets of pool proportions and assess significance if possible | Two files describing pool composition (i.e. from [`bulkprops`](#bulkprops) or contamination profile from [`quant_contam`](#quant_contam)), or one file describing pool composition and an `.assignments` file describing cell labels | [`utils/compare_props.R`](docs/utils_compare_props.md) |
-| <img src="img/viz_compare2.png" width="100%" alt="visualize_compare" /> | **Refine** genotype calls to better match cell-individual labels | A preexisting set of genotypes in VCF format, a BAM file of aligned single-cell data, and an `.assignments` file mapping cells to individuals of origin | [`utils/refine_vcf`](docs/utils_refine_vcf.md) |
+###  <img src="img/viz_compare2.png" height=50 /> &nbsp; &nbsp; Visualizing and comparing results
+|I want to...|I have...|Tool to use|
+|------------|---------|-----------|
+| **Visualize** a set of labels and the pool compositions they produce at different confidence cutoffs | An `.assignments` file from a CellBouncer program |[`plot/assignment_llr.R`](docs/plot_assignment_llr.md)|
+| **Compare** two sets of labels on the same cells | Two `.assignments` files from CellBouncer programs run on the same data | [`plot/compare_assignments.R`](docs/plot_compare_assignments.md)|
+| **Merge** two sets of labels on the same cells into one set of labels | Two `.assignments` files from CollBouncer programs run on the same data | [`utils/merge_assignments.R`](docs/utils_merge_assignments.md)
+| **Compare** two sets of pool proportions and assess significance if possible | Two files describing pool composition (i.e. from [`bulkprops`](#bulkprops) or contamination profile from [`quant_contam`](#quant_contam)), or one file describing pool composition and an `.assignments` file describing cell labels | [`utils/compare_props.R`](docs/utils_compare_props.md) |
+| **Refine** genotype calls to better match cell-individual labels | A preexisting set of genotypes in VCF format, a BAM file of aligned single-cell data, and an `.assignments` file mapping cells to individuals of origin | [`utils/refine_vcf`](docs/utils_refine_vcf.md) |
 
 ### Manipulating BAM files
 
