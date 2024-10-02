@@ -6,7 +6,7 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
-| ![](img/demux_species.png = 75x) Demultiplex cells by **species** |Raw reads, plus a transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species <p align="center">*OR*</p> A BAM file of reads mapped to a composite reference genome|[`demux_species`](#demux_species)|
+| ![](img/demux_species.png = 75x) | Demultiplex cells by **species** |Raw reads, plus a transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species <p align="center">*OR*</p> A BAM file of reads mapped to a composite reference genome|[`demux_species`](#demux_species)|
 |Demultiplex cells by **individual of origin**, and I hope individuals are unrelated enough to have different mitochondrial haplotypes|A BAM file of aligned scATAC-seq or whole cell scRNA-seq data|[`demux_mt`](#demux_mt)|
 |Demultiplex cells by **individual of origin**|VCF of known variants, plus a BAM file of aligned single cell sequencing data|[`demux_vcf`](#demux_vcf)|
 |Demultiplex individuals by **custom label** or **treatment**|FASTQs containing MULTIseq/HTO/CITE-seq data, or a table of pre-computed counts, optionally in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices)|[`demux_tags`](#demux_tags)|
