@@ -22,7 +22,7 @@ KX2 = 16
 DEPS = lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
 DEPS2 = -lz -lhts -lpthread
 
-all: dependencies demux_vcf demux_mt demux_tags demux_species quant_contam doublet_dragon bulkprops utils/refine_vcf utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/split_read_files utils/atac_fq_preprocess utils/combine_species_counts
+all: dependencies demux_vcf demux_mt demux_tags demux_species quant_contam doublet_dragon bulkprops utils/refine_vcf utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/split_read_files utils/atac_fq_preprocess utils/combine_species_counts utils/composite_bam2counts
 
 dependencies: lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
 
@@ -70,6 +70,9 @@ utils/split_read_files: src/split_read_files.cpp src/common.h build/common.o
 
 utils/combine_species_counts: src/combine_species_counts.cpp src/common.h build/common.o
 	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) build/common.o src/combine_species_counts.cpp $(LFLAGS) $(DEPS) -o utils/combine_species_counts $(DEPS2)
+
+utils/composite_bam2counts: src/composite_bam2counts.cpp lib/libhtswrapper.a
+	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) src/composite_bam2counts.cpp $(LFLAGS) $(DEPS) -o utils/composite_bam2counts $(DEPS2)
 
 build/common.o: src/common.cpp src/common.h lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) src/common.cpp -c -o build/common.o

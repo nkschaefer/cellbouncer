@@ -239,7 +239,7 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
     }
     
     double knee = find_knee(counthist, 0.1);
-    
+
     vector<vector<double> > obs_init_filt;
     vector<unsigned long> bc_init_filt;
     vector<double> weights_init_filt;
@@ -355,8 +355,6 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
             doublet_dist_count++;
         }
     } 
-
-    
 
     vector<double> dist_weights;
     for (map<int, bool>::iterator dd = dist_doublet.begin(); dd != dist_doublet.end();
@@ -655,6 +653,13 @@ the current one (or its contents).\n");
             }
             if (file_exists(convfilename)){
                 convfile_given = true;
+            }
+
+            // Relax requirement to provide reads -- if user has provided a directory 
+            // that contains counts and not supplied any reads, then assume we just want to
+            // fit distributions and dump data.
+            if (atac_r1files.size() == 0 && rna_r1files.size() == 0 && custom_r1files.size() == 0){
+                dump = true;
             }
         }
     }
