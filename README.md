@@ -15,7 +15,7 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 | <img src="img/doublet_dragon_mini.png" alt="doublet_dragon" /> | Infer global **doublet rate** and proportions of individuals|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
 | <img src="img/bulkprops_mini.png" alt="bulkprops" /> | Determine **proportion of individuals** in a pool|A VCF of known variants, plus a BAM of aligned sequence data (can be bulk)|[`bulkprops`](#bulkprops)|
 
-### <img src="img/viz_compare3.png" height=50 />  Visualizing and comparing results
+### <img src="img/viz_compare3.png" width=75 />  Visualizing and comparing results
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
@@ -25,14 +25,14 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 | **Compare** two sets of pool proportions and assess significance if possible | Two files describing pool composition (i.e. from [`bulkprops`](#bulkprops) or contamination profile from [`quant_contam`](#quant_contam)), or one file describing pool composition and an `.assignments` file describing cell labels | [`utils/compare_props.R`](docs/utils_compare_props.md) |
 | **Refine** genotype calls to better match cell-individual labels | A preexisting set of genotypes in VCF format, a BAM file of aligned single-cell data, and an `.assignments` file mapping cells to individuals of origin | [`utils/refine_vcf`](docs/utils_refine_vcf.md) |
 
-### <img src="img/manipulate.png" width=30 /> &nbsp;&nbsp; Manipulating BAM files
+### <img src="img/manipulate.png" width=50 /> &nbsp;&nbsp; Manipulating BAM files
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
 |**Split** a BAM file into one file per cell identity | A BAM file of aligned single-cell sequencing data and a CellBouncer-format `.assignments` file | [`utils/bam_split_bcs`](docs/utils_bam_split_bcs.md) |
 |**Tag** reads in a BAM file to mark individual of origin | A BAM file of aligned single-cell sequencing data and a CellBouncer-format `.assignments` file | [`utils/bam_indiv_rg`](docs/demux_mt.md#utilsbam_indiv_rg) |
 
-### <img src="img/manipulate.png" width=30 /> &nbsp;&nbsp; Manipulating gene expression data
+### <img src="img/manipulate.png" width=50 /> &nbsp;&nbsp; Manipulating gene expression data
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
