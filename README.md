@@ -15,8 +15,8 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 | <img src="img/doublet_dragon.png" width="100%" alt="doublet_dragon" /> | Infer global **doublet rate** and proportions of individuals|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
 | <img src="img/bulkprops.png" width="100%" alt="bulkprops" /> | Determine **proportion of individuals** in a pool|A VCF of known variants, plus a BAM of aligned sequence data (can be bulk)|[`bulkprops`](#bulkprops)|
 
-###  <p style="vertical-align: center;" ><img src="img/viz_compare2.png" height=50 /> &nbsp; &nbsp; Visualizing and comparing results </p>
-|I want to...|I have...|Tool to use|
+### Visualizing and comparing results
+| <img src="img/viz_compare2.png" height=50 /> &nbsp; &nbsp; I want to...|I have...|Tool to use|
 |------------|---------|-----------|
 | **Visualize** a set of labels and the pool compositions they produce at different confidence cutoffs | An `.assignments` file from a CellBouncer program |[`plot/assignment_llr.R`](docs/plot_assignment_llr.md)|
 | **Compare** two sets of labels on the same cells | Two `.assignments` files from CellBouncer programs run on the same data | [`plot/compare_assignments.R`](docs/plot_compare_assignments.md)|
