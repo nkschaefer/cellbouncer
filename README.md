@@ -4,7 +4,7 @@
 
 Tools for checking cell identities and keeping the riffraff out of pooled single cell sequencing data sets. 
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |I want to...|I have...|Tool to use|
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |I want to...|I have...|Tool to use|
 |-|------------|---------|-----------|
 | <img src="img/demux_species.png" width="100%" alt="demux_species" /> | Demultiplex cells by **species** |Raw reads, plus a transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species <p align="center">*OR*</p> A BAM file of reads mapped to a composite reference genome|[`demux_species`](#demux_species)|
 | <img src="img/demux_mt.png" width="100%" alt="demux_mt" /> | Demultiplex cells by **individual of origin**, and I hope individuals are unrelated enough to have different mitochondrial haplotypes|A BAM file of aligned scATAC-seq or whole cell scRNA-seq data|[`demux_mt`](#demux_mt)|
@@ -17,7 +17,7 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 
 ### Visualizing and comparing results
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |I want to...|I have...|Tool to use|
+| <img src="img/viz_compare2.png" width=50 alt="visualize_compare" /> | I want to...|I have...|Tool to use|
 |-|------------|---------|-----------|
 | <img src="img/viz_compare2.png" width="100%" alt="visualize_compare" /> | **Visualize** a set of labels and the pool compositions they produce at different confidence cutoffs | An `.assignments` file from a CellBouncer program |[`plot/assignment_llr.R`](docs/plot_assignment_llr.md)|
 | <img src="img/viz_compare2.png" width="100%" alt="visualize_compare" /> | **Compare** two sets of labels on the same cells | Two `.assignments` files from CellBouncer programs run on the same data | [`plot/compare_assignments.R`](docs/plot_compare_assignments.md)|
