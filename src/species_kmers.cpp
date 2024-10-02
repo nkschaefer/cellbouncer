@@ -103,7 +103,7 @@ species_kmer_counter::species_kmer_counter(int nt,
     this->umi_len = umi_len;
     
     this->use_umis = true;
-    if (umi_start = -1 || umi_len == -1){
+    if (umi_start == -1 || umi_len == -1){
         use_umis = false;
     }
 }
