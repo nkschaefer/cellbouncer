@@ -4,16 +4,16 @@
 
 Tools for checking cell identities and keeping the riffraff out of pooled single cell sequencing data sets. 
 
-|-|I want to...|I have...|Tool to use|
+||I want to...|I have...|Tool to use|
 |-|------------|---------|-----------|
 | <img src="img/demux_species.png" width=50 alt="demux_species" /> | Demultiplex cells by **species** |Raw reads, plus a transcriptome (FASTA) or annotation (GTF) and genome (FASTA) per species <p align="center">*OR*</p> A BAM file of reads mapped to a composite reference genome|[`demux_species`](#demux_species)|
-| <img src="img/demux_mt.png" width=50 alt="demux_mt" style="float: left; display: block;" /> | Demultiplex cells by **individual of origin**, and I hope individuals are unrelated enough to have different mitochondrial haplotypes|A BAM file of aligned scATAC-seq or whole cell scRNA-seq data|[`demux_mt`](#demux_mt)|
-|Demultiplex cells by **individual of origin**|VCF of known variants, plus a BAM file of aligned single cell sequencing data|[`demux_vcf`](#demux_vcf)|
-|Demultiplex individuals by **custom label** or **treatment**|FASTQs containing MULTIseq/HTO/CITE-seq data, or a table of pre-computed counts, optionally in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices)|[`demux_tags`](#demux_tags)|
-|Assign **sgRNAs** to cells|FASTQs containing sgRNA capture data, or a table of pre-computed counts, optionally in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices)|[`demux_tags`](#demux_tags)|
-|Quantify **ambient RNA** per cell, infer its origins, and optionally adjust gene counts|Output from `demux_vcf` (plus optional single-cell expression data to adjust, in [MEX format](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices))|[`quant_contam`](#quant_contam)|
-|Infer global **doublet rate** and proportions of individuals|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
-|Determine **proportion of individuals** in a pool|A VCF of known variants, plus a BAM of aligned sequence data (can be bulk)|[`bulkprops`](#bulkprops)|
+| <img src="img/demux_mt.png" width=50 alt="demux_mt" /> | Demultiplex cells by **individual of origin**, and I hope individuals are unrelated enough to have different mitochondrial haplotypes|A BAM file of aligned scATAC-seq or whole cell scRNA-seq data|[`demux_mt`](#demux_mt)|
+| <img src="img/demux_vcf.png" width=50 alt="demux_vcf" /> | Demultiplex cells by **individual of origin**|VCF of known variants, plus a BAM file of aligned single cell sequencing data|[`demux_vcf`](#demux_vcf)|
+| <img src="img/demux_tags.png" width=50 alt="demux_tags" /> | Demultiplex individuals by **custom label** or **treatment**|FASTQs containing MULTIseq/HTO/CITE-seq data, or a table of pre-computed counts, optionally in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices)|[`demux_tags`](#demux_tags)|
+| <img src="img/demux_tags.png" width=50 alt="demux_tags" /> | Assign **sgRNAs** to cells|FASTQs containing sgRNA capture data, or a table of pre-computed counts, optionally in [MEX format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices)|[`demux_tags`](#demux_tags)|
+| <img src="img/quant_contam.png" width=50 alt="quant_contam" /> | Quantify **ambient RNA** per cell, infer its origins, and optionally adjust gene counts|Output from `demux_vcf` (plus optional single-cell expression data to adjust, in [MEX format](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices))|[`quant_contam`](#quant_contam)|
+| <img src="img/doublet_dragon.png" width=50 alt="doublet_dragon" /> | Infer global **doublet rate** and proportions of individuals|Output from one or more `CellBouncer` programs run on the same cells|[`doublet_dragon`](#doublet_dragon)|
+| <img src="img/bulkprops.png" width=50 alt="bulkprops" /> | Determine **proportion of individuals** in a pool|A VCF of known variants, plus a BAM of aligned sequence data (can be bulk)|[`bulkprops`](#bulkprops)|
 
 ### Visualizing and comparing results
 
