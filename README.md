@@ -16,7 +16,7 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 | <img src="img/bulkprops.png" width="100%" alt="bulkprops" /> | Determine **proportion of individuals** in a pool|A VCF of known variants, plus a BAM of aligned sequence data (can be bulk)|[`bulkprops`](#bulkprops)|
 
 ### Visualizing and comparing results
-| <img src="img/viz_compare2.png" height=50 style="float: left !important;" /> &nbsp; &nbsp; <p style="margin-top: 10px;" I want to...</p> |I have...|Tool to use|
+| <img src="img/viz_compare2.png" height=50 style="float: left !important;" /> &nbsp; &nbsp; <p style="margin-top: 10px;"> I want to...</p> |I have...|Tool to use|
 |------------|---------|-----------|
 | **Visualize** a set of labels and the pool compositions they produce at different confidence cutoffs | An `.assignments` file from a CellBouncer program |[`plot/assignment_llr.R`](docs/plot_assignment_llr.md)|
 | **Compare** two sets of labels on the same cells | Two `.assignments` files from CellBouncer programs run on the same data | [`plot/compare_assignments.R`](docs/plot_compare_assignments.md)|
