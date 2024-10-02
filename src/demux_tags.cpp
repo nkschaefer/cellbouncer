@@ -136,8 +136,6 @@ void help(int code){
     fprintf(stderr, "       sets the minimum probability a guide is present in a cell to be assigned. Because\n");
     fprintf(stderr, "       of how the algorithm works, this is actually the conditional probability the guide\n");
     fprintf(stderr, "       is present, conditional on the presence of any likelier guides. Default = 0.5\n");
-    fprintf(stderr, "   --filt -f Perform a filtering step to remove cells that do not fit the model well\n");
-    fprintf(stderr, "       (these may correspond to high-order multiplets). Default: no filter\n");
     fprintf(stderr, "   --comma -c By default, cells assigned multiple identities will have these\n");
     fprintf(stderr, "       identities separated by + in the .assignments and .ids files. If\n");
     fprintf(stderr, "       identities contain + within them, though, this option switches to a\n");
@@ -1121,8 +1119,10 @@ double sep_bg_dists_percent(vector<double>& bgperc_all_flat){
         intpt.add_data_fixed("b1", bgpercmod.dists[0].params[0][1]);
         intpt.add_data_fixed("a2", bgpercmod.dists[1].params[0][0]);
         intpt.add_data_fixed("b2", bgpercmod.dists[1].params[0][1]);
-        double mean1 = bgpercmod.dists[0].params[0][0] / (bgpercmod.dists[0].params[0][0] + bgpercmod.dists[0].params[0][1]);
-        double mean2 = bgpercmod.dists[1].params[0][0] / (bgpercmod.dists[1].params[0][0] + bgpercmod.dists[0].params[0][1]);
+        double mean1 = bgpercmod.dists[0].params[0][0] / 
+            (bgpercmod.dists[0].params[0][0] + bgpercmod.dists[0].params[0][1]);
+        double mean2 = bgpercmod.dists[1].params[0][0] / 
+            (bgpercmod.dists[1].params[0][0] + bgpercmod.dists[0].params[0][1]);
         // Find intersection point between the two dists; use as cutoff.
         return intpt.solve(mean1, mean2);
     }
@@ -1218,7 +1218,6 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     robin_hood::unordered_map<unsigned long, double>& assn_llr,
     robin_hood::unordered_map<unsigned long, double>& cell_bg,
     vector<string>& labels,
-    bool filt,
     string& output_prefix, 
     bool sgrna,
     double prob){
@@ -1277,20 +1276,6 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     pair<double, double> slope_int = assign_init(obs, labels, bgmeans,   
         lomeans, lophis, himeans, model_means, sgrna);
     
-    
-    
-    /* 
-    vector<vector<double> > sgrna_count_on;
-    vector<vector<double> > sgrna_count_off;
-    if (sgrna){
-        for (int i = 0; i < labels.size(); ++i){
-            vector<double> v;
-            sgrna_count_on.push_back(v);
-            sgrna_count_off.push_back(v);
-        }   
-    }
-    */
-
     // Refine total count -> perc bg relationship 
     vector<double> logtots;
     vector<double> logitpercs;
@@ -1305,23 +1290,6 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
         assign_cell(bgmeans, model_means, -1, -1, obs[i],   
             labels.size(), slope_int, true, assns, llr, bgcount, false, sgrna, -1);
         
-        /*
-        string bcstr = bc2str(bcs[i]);
-        string atxt = "";
-        set<string> a2;
-        for (set<int>::iterator a = assns.begin(); a != assns.end(); ++a){
-            a2.insert(labels[*a]);
-        }
-        bool first = true;
-        for (set<string>::iterator ax = a2.begin(); ax != a2.end(); ++ax){
-            if (!first){
-                atxt += "+";
-            }
-            atxt += ax->c_str();
-            first = false;
-        }
-        fprintf(stdout, "%s\t%s\t%f\n", bcstr.c_str(), atxt.c_str(), bgcount);
-        */
         if (bgcount != -1){
             bgcount_all.push_back(bgcount);    
             if (bgcount > 0 && bgcount < tots[i]){
@@ -1331,48 +1299,14 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
                 //bgperc_all_flat.push_back(perc);
             }
         }
-        /*
-        if (sgrna){
-            // Store counts of positive/negative assignments of each sgRNA
-            for (int j = 0; j < labels.size(); ++j){
-                if (obs[i][j] > 0.0){
-                    if (assns.find(j) != assns.end()){
-                        sgrna_count_on[j].push_back(obs[i][j]);
-                    }
-                    else{
-                        sgrna_count_off[j].push_back(obs[i][j]);
-                    }
-                } 
-            }
-        }
-        */
     }
     
     // Update % bg from tot prediction
     slope_int = linreg(logtots, logitpercs);
     
-    /* 
-    if (sgrna){
-        model_means.clear();
-        // Fit negative binomial (negative) & exponential (positive) to each sgRNA 
-        for (int i = 0; i < labels.size(); ++i){
-            // Negative binomial
-            pair<double, double> muvar_off = welford(sgrna_count_off[i]);
-            pair<double, double> muphi_off = nbinom_moments(muvar_off.first, muvar_off.second);
-            // Exponential
-            pair<double, double> muvar_on = welford(sgrna_count_on[i]);
-            model_means.push_back(muvar_on.first);
-        }
-    }
-    */
-
     pair<double, double> muvarbg = welford(bgcount_all);
 
-    int count_filt = 0;
-    
     fprintf(stderr, "Making final assignments...\n");
-
-    //double bgcount_cutoff = sep_bg_dists(bgcount_all);
 
     bgcount_all.clear();
     vector<double> bgperc_all;
@@ -1407,23 +1341,6 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
                 }
             }
         }
-    }
-    else if (filt){
-        // Filter assignments
-        double bgcount_cutoff = sep_bg_dists(bgcount_all);
-        if (bgcount_cutoff != -1){
-            for (int i = 0; i < obs.size(); ++i){
-                if (bgcount_all[i] > bgcount_cutoff){
-                    count_filt++;
-                    // Remove assignment
-                    assn.erase(bcs[i]);
-                    assn_llr.erase(bcs[i]);
-                }
-            }
-        }
-    }
-    if (filt){ 
-        fprintf(stderr, "Filtered %d of %ld assignments\n", count_filt, obs.size());
     }
 }
 
@@ -1745,57 +1662,6 @@ void count_tags_in_reads(vector<string>& read1fn,
 }
 
 int main(int argc, char *argv[]) {    
-    /*    
-    ifstream inf("HM2D_L1.bg");
-    string barc;
-    double pbg;
-    vector<vector<double> > obstest;
-    vector<double> bglo;
-    vector<double> bghi;
-    while (inf >> barc >> pbg){
-        if (pbg > 0 && pbg < 1){
-            obstest.push_back(vector<double>{ pbg });
-        }
-        if (pbg < 0.5){
-            bglo.push_back(pbg);
-        }
-        else{
-            bghi.push_back(pbg);
-        }
-    } 
-
-    pair<double, double> mvl = welford(bglo);
-    pair<double, double> mvh = welford(bghi);
-
-    fprintf(stderr, "%f %f | %f %f\n", mvl.first, mvl.second, mvh.first, mvh.second);
-
-    pair<double, double> bl = beta_moments(mvl.first, mvl.second);
-    pair<double, double> bh = beta_moments(mvh.first, mvh.second);
-
-    fprintf(stderr, "%f %f | %f %f\n", bl.first, bl.second, bh.first, bh.second);
-    
-    vector<mixtureDist> dd;
-    mixtureDist d1("beta", vector<double>{ bl.first, bl.second });
-    mixtureDist d2("beta", vector<double>{ bh.first, bh.second });
-    dd.push_back(d1);
-    dd.push_back(d2);
-    mixtureModel mm(dd);
-    mm.fit(obstest);
-    mm.print();
-    
-    optimML::brent_solver intpt(ll_beta_diff);
-    intpt.set_root();
-    intpt.add_data_fixed("a1", mm.dists[0].params[0][0]);
-    intpt.add_data_fixed("b1", mm.dists[0].params[0][1]);
-    intpt.add_data_fixed("a2", mm.dists[1].params[0][0]);
-    intpt.add_data_fixed("b2", mm.dists[1].params[0][1]);
-    double mean1 = mm.dists[0].params[0][0] / (mm.dists[0].params[0][0] + mm.dists[0].params[0][1]);
-    double mean2 = mm.dists[1].params[0][0] / (mm.dists[1].params[0][0] + mm.dists[0].params[0][1]);
-    double intptx = intpt.solve(mean1, mean2);
-    fprintf(stderr, "intpt %f\n", intptx);
-
-    exit(0);
-    */
 
     // Define long-form program options 
     static struct option long_options[] = {
@@ -1831,7 +1697,6 @@ int main(int argc, char *argv[]) {
     string wlfn = "";
     string cell_barcodesfn = "";
     int mismatches = 2;
-    bool filt = false;
     string sep = "+";
     string batch_id = "";
     bool sgrna = false;
@@ -1857,7 +1722,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:n:i:M:F:t:1:2:m:N:w:u:B:s:p:CSUegfch", 
+    while((ch = getopt_long(argc, argv, "o:n:i:M:F:t:1:2:m:N:w:u:B:s:p:CSUegch", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -1916,9 +1781,6 @@ int main(int argc, char *argv[]) {
                 break;
             case 'B':
                 cell_barcodesfn = optarg;
-                break;
-            case 'f':
-                filt = true;
                 break;
             case 'c':
                 sep = ",";
@@ -2138,7 +2000,7 @@ next time)...\n");
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     robin_hood::unordered_map<unsigned long, double> cell_bg; 
     fprintf(stderr, "prob cutoff %f\n", prob);
-    assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, filt, output_prefix, sgrna, prob);
+    assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, output_prefix, sgrna, prob);
     
     string assnfilename = output_prefix + ".assignments";
     write_assignments(bc_tag_counts, assnfilename, assn, labels, assn_llr, sep, batch_id, 
