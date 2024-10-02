@@ -2,7 +2,7 @@ SHELL = bash
 COMP = g++
 CCOMP = gcc
 PREFIX ?= /usr/local
-CXXFLAGS = -std=c++11 -fPIC -DBC_LENX2=$(BC_LENX2) -DKX2=$(KX2)
+CXXFLAGS = -std=c++11 -fPIC -D_REENTRANT -DBC_LENX2=$(BC_LENX2) -DKX2=$(KX2)
 CFLAGS = -fPIC -DBC_LENX2=$(BC_LENX2) -DKX2=$(KX2)
 CXXIFLAGS = -I$(PREFIX)/include -Iinclude
 CIFLAGS = -I$(PREFIX)/include -Iinclude
@@ -37,8 +37,8 @@ demux_species: src/demux_species.cpp src/kmsuftree.h src/common.h build/kmsuftre
 demux_tags: src/demux_tags.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o src/demux_tags.cpp $(LFLAGS) $(DEPS) -D PROJ_ROOT=$(PROJROOT) -o demux_tags -lhts -lz
 
-quant_contam: src/common.h src/quant_contam.cpp src/ambient_rna.h build/common.o build/demux_vcf_io.o build/demux_vcf_llr.o build/ambient_rna.o $(DEPS)
-	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o build/demux_vcf_io.o build/demux_vcf_llr.o build/ambient_rna.o src/quant_contam.cpp $(LFLAGS) $(DEPS) -o quant_contam -lhts -lz
+quant_contam: src/common.h src/quant_contam.cpp src/ambient_rna.h build/common.o build/demux_vcf_io.o build/demux_vcf_llr.o build/ambient_rna.o build/ambient_rna_gex.o $(DEPS)
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g build/common.o build/demux_vcf_io.o build/demux_vcf_llr.o build/ambient_rna.o build/ambient_rna_gex.o src/quant_contam.cpp $(LFLAGS) $(DEPS) -o quant_contam -lhts -lz
 
 doublet_dragon: src/doublet_dragon.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o src/doublet_dragon.cpp $(LFLAGS) $(DEPS) -o doublet_dragon -lhts -lz
@@ -87,6 +87,9 @@ build/demux_vcf_llr.o: src/demux_vcf_llr.cpp src/demux_vcf_llr.h src/common.h
 
 build/ambient_rna.o: src/ambient_rna.cpp src/ambient_rna.h src/common.h $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) src/ambient_rna.cpp -c -o build/ambient_rna.o
+
+build/ambient_rna_gex.o: src/ambient_rna_gex.cpp src/ambient_rna_gex.h src/common.h $(DEPS)
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) src/ambient_rna_gex.cpp -c -o build/ambient_rna_gex.o 
 
 build/species_kmers.o: src/species_kmers.cpp src/species_kmers.h src/common.h src/kmsuftree.h
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g src/species_kmers.cpp -c -o build/species_kmers.o

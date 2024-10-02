@@ -586,7 +586,7 @@ double find_knee(map<double, double>& x, double min_frac_to_allow){
  * counts will store (hashed) cell barcodes mapped to counts of label indices,
  * and labels will store the names of the labels (i.e. genes).
  */
-void parse_mex(const string& barcodesfile,
+bool parse_mex(const string& barcodesfile,
     const string& featuresfile,
     const string& matrixfile, 
     robin_hood::unordered_map<unsigned long, map<int, long int> >& counts,
@@ -640,8 +640,8 @@ void parse_mex(const string& barcodesfile,
             ++feature_idx_subset;
             ++nfeatures_match;
         }
-        if (featuretype == "" && featuretype != ""){
-            unique_featuretype.insert(featuretype);
+        if (featuretype == "" && type != ""){
+            unique_featuretype.insert(type);
         }
         ++feature_idx;
     }
@@ -737,12 +737,94 @@ void parse_mex(const string& barcodesfile,
         }
     }
     if (featuretype == "" && unique_featuretype.size() > 1){
-        fprintf(stderr, "ERROR: no feature type filter provided, but %ld feature types\n", 
-            unique_featuretype.size());
-        fprintf(stderr, "encountered in MEX data\n");
-        exit(1);
+        fprintf(stderr, "ERROR: no feature type filter provided, but %ld feature types encountered in \
+MEX data\n", unique_featuretype.size());
+        return false;
     }
     fprintf(stderr, "Loaded %ld barcodes and %d features\n", barcodes.size(), nfeatures_match);
+    return true;
+}
+
+void write_mex(string& out_dir,
+    robin_hood::unordered_map<unsigned long, map<int, double> >& mtx,
+    vector<string>& features, 
+    bool round_counts,
+    string barcode_group, 
+    bool cellranger, 
+    bool seurat, 
+    bool underscore){
+    
+    if (out_dir[out_dir.length()-1] == '/'){
+        out_dir = out_dir.substr(0, out_dir.length()-1);
+    }
+
+    if (!mkdir(out_dir.c_str(), 0775)){
+        // Assume directory already exists
+    }
+
+    string out_barcodes = out_dir + "/barcodes.tsv.gz";
+    string out_features = out_dir + "/features.tsv.gz";
+    string out_mtx = out_dir + "/matrix.mtx.gz";
+
+    // Write features
+    gzFile out_features_f = gzopen(out_features.c_str(), "w");
+    for (int i = 0; i < features.size(); ++i){
+        gzwrite(out_features_f, features[i].c_str(), features[i].length());
+        gzwrite(out_features_f, "\n", 1); 
+    }
+    gzclose(out_features_f);
+    
+    gzFile out_barcodes_f = gzopen(out_barcodes.c_str(), "w");
+    
+    // Indices must be 1-based
+    int bc_idx = 1;
+
+    long int n_entries = 0;
+
+    vector<string> mtxlines;
+    
+    // This is wasteful but it's also 2024 and people have RAM
+    char mtxbuf[1024];
+
+    for (robin_hood::unordered_map<unsigned long, map<int, double> >::iterator x = mtx.begin();
+        x != mtx.end(); ++x){    
+        
+        string bc_str = bc2str(x->first);
+        mod_bc_libname(bc_str, barcode_group, cellranger, seurat, underscore);
+        
+        gzwrite(out_barcodes_f, bc_str.c_str(), bc_str.length());
+        gzwrite(out_barcodes_f, "\n", 1);
+        
+        // CellRanger format: features first, then barcodes, then entry
+        for (map<int, double>::iterator y = x->second.begin(); y != x->second.end(); ++y){
+            if (round_counts){
+                sprintf(&mtxbuf[0], "%d %d %d", y->first+1, bc_idx, (int)round(y->second));
+            }
+            else{
+                sprintf(&mtxbuf[0], "%d %d %.4f", y->first+1, bc_idx, y->second);
+            }
+            mtxlines.push_back(mtxbuf);
+            n_entries++;
+        }
+        ++bc_idx;
+    }
+    
+    gzclose(out_barcodes_f);
+
+    gzFile out_mtx_f = gzopen(out_mtx.c_str(), "w");
+    string hdrline = "%%MatrixMarket matrix coordinate real general\n";
+    if (round_counts){
+        hdrline = "%%MatrixMarket matrix coordinate integer general\n";
+    }
+    gzwrite(out_mtx_f, hdrline.c_str(), hdrline.length());
+    sprintf(&mtxbuf[0], "%ld %d %ld\n", features.size(), bc_idx-1, mtxlines.size());
+    string mtxline = mtxbuf;
+    gzwrite(out_mtx_f, mtxline.c_str(), mtxline.length());
+    for (int i = 0; i < mtxlines.size(); ++i){
+        gzwrite(out_mtx_f, mtxlines[i].c_str(), mtxlines[i].length());
+        gzwrite(out_mtx_f, "\n", 1);
+    } 
+    gzclose(out_mtx_f);
 
 }
 
@@ -760,16 +842,18 @@ double ll_dirichlet(const vector<double>& params,
     double term1 = 0.0;
     double term2 = 0.0;
     double term3 = 0.0;
+    
+    int signp;
     for (int i = 0; i < params.size(); ++i){
         sprintf(&buf[0], "f_%d", i);
         bufstr = buf;
         double f = data_d.at(bufstr);
         term1 += params[i];
-        term2 += lgammaf(params[i]);
+        term2 += lgammaf_r(params[i], &signp);
         term3 += (params[i] - 1.0)*log(f);
     }
     
-    return lgammaf(term1) - term2 + term3;
+    return lgammaf_r(term1, &signp) - term2 + term3;
 }
 
 /**

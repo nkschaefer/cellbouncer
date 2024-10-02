@@ -1,5 +1,5 @@
-#ifndef _CELLID_AMBIENT_RNA_H
-#define _CELLID_AMBIENT_RNA_H
+#ifndef _CELLBOUNCER_AMBIENT_RNA_H
+#define _CELLBOUNCER_AMBIENT_RNA_H
 #include <algorithm>
 #include <vector>
 #include <iterator>

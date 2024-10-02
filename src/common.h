@@ -1,5 +1,5 @@
-#ifndef _CELLID_COMMON_H
-#define _CELLID_COMMON_H
+#ifndef _CELLBOUNCER_COMMON_H
+#define _CELLBOUNCER_COMMON_H
 #include <string>
 #include <algorithm>
 #include <vector>
@@ -76,12 +76,22 @@ void derivative(std::map<double, double>& hist, std::map<double, double>& result
 double find_knee(std::map<double, double>& hist, double min_frac_to_allow);
 
 // Load a market exchange format (MEX) file
-void parse_mex(const std::string& barcodesfile,
+bool parse_mex(const std::string& barcodesfile,
     const std::string& featuresfile,
     const std::string& matrixfile, 
     robin_hood::unordered_map<unsigned long, map<int, long int> >& counts,
     std::vector<std::string>& labels,
     const std::string& featuretype = "");
+
+// Write a sparse matrix to disk in MEX format
+void write_mex(string& out_dir,
+    robin_hood::unordered_map<unsigned long, map<int, double> >& mtx,
+    std::vector<std::string>& features,
+    bool round_counts = false,
+    std::string barcode_group = "",
+    bool cellranger = false,
+    bool seurat = false,
+    bool underscore = false);
 
 void fit_dirichlet(std::vector<double>& mle_fracs,
     std::vector<std::vector<double> >& dirichlet_bootstraps,

@@ -1,5 +1,5 @@
-#ifndef _DEMUX_VCF_IO_H
-#define _DEMUX_VCF_IO_H
+#ifndef _CELLBOUNCER_DEMUX_VCF_IO_H
+#define _CELLBOUNCER_DEMUX_VCF_IO_H
 #include <string>
 #include <algorithm>
 #include <vector>
