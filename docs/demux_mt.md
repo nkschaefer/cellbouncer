@@ -92,6 +92,6 @@ If you really wanted to get wild, you could even run `utils/bam_indiv_rg` with t
 
 ### Refining variants
 
-If you have run the pipeline described above (inferring mitochondrial haplotypes, using them to tag individuals of origin via read groups, called variants segregating between these individuals, and using the variants to run `demux_vcf`), you are left with a fairly confident set of cell-individual assignments as well as a genotype VCF. If you want to refine the VCF to reflect maximum likelihood variant calls given the cell-individual assignments, you can run the program [`utils/refine_vcf`](utils_refine_vcf).
+If you have run the pipeline described above (inferring mitochondrial haplotypes, using them to tag individuals of origin via read groups, called variants segregating between these individuals, and using the variants to run `demux_vcf`), you are left with a fairly confident set of cell-individual assignments as well as a genotype VCF. If you want to refine the VCF to reflect maximum likelihood variant calls given the cell-individual assignments, you can run the program [`utils/refine_vcf`](utils_refine_vcf.md).
 
 [Back to main README](../README.md)
