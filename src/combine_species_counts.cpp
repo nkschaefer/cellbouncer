@@ -32,6 +32,8 @@ void help(int code){
     fprintf(stderr, "   load the combined counts.\n");
     fprintf(stderr, "[OPTIONS]:\n");
     fprintf(stderr, "   --output_dir -o The output directory used for all batch-specific runs.\n");
+    fprintf(stderr, "   --num_chunks -n The number of batches (there should be this many output\n");
+    fprintf(stderr, "       files, unless one or more failed.\n");
     exit(code);
 }
 
@@ -109,11 +111,13 @@ int main(int argc, char *argv[]) {
     // Define long-form program options 
     static struct option long_options[] = {
        {"output_directory", required_argument, 0, 'o'},
+       {"num_chunks", required_argument, 0, 'n'},
        {0, 0, 0, 0} 
     };
     
     // Set default values
     string outdir = "";
+    int nchunks = -1;
 
     int option_index = 0;
     int ch;
@@ -121,7 +125,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:h", 
+    while((ch = getopt_long(argc, argv, "o:n:h", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -132,7 +136,10 @@ int main(int argc, char *argv[]) {
                 break;
             case 'o':
                 outdir = optarg;
-                break;           
+                break;
+            case 'n':
+                nchunks = atoi(optarg);
+                break;
             default:
                 help(0);
                 break;
@@ -150,7 +157,11 @@ int main(int argc, char *argv[]) {
     else if (outdir != "" && outdir[outdir.length() - 1] != '/'){
         outdir += "/";
     }
-    
+    if (nchunks <= 0){
+        fprintf(stderr, "ERROR: --num_chunks/-n must be positive.\n");
+        exit(1);
+    }
+
     robin_hood::unordered_map<unsigned long, map<short, int> > bc_species_counts;
     
     // Multiome data uses different ATAC and RNA-seq barcodes
@@ -161,8 +172,6 @@ int main(int argc, char *argv[]) {
 
     map<short, string> species_names;
 
-    int idx = 1;
-    bool has_idx = true;
     char buf[50];
     
     string counts_out = outdir + "species_counts.txt";
@@ -171,9 +180,7 @@ int main(int argc, char *argv[]) {
     
     vector<string> rm;
     
-    bool first = true;
-
-    while (has_idx){
+    for (int idx = 1; idx <= nchunks; ++idx){
         sprintf(&buf[0], "%d", idx);
         string bufstr = buf;
         string countsfilename = outdir + "species_counts." + bufstr + ".txt";
@@ -192,7 +199,7 @@ species names.\n", idx);
                 rm.push_back(speciesfilename);
             }
             else{
-                fprintf(stderr, "ERROR: missing %s\n", speciesfilename.c_str());
+                fprintf(stderr, "ERROR: missing expected file %s\n", speciesfilename.c_str());
                 exit(1);
             }
             if (file_exists(convfilename)){
@@ -211,26 +218,11 @@ conversions from previous batches.\n", idx);
             }
         }
         else{
-            if (first){
-                fprintf(stderr, "ERROR: first file to merge, %s, does not exist.\n", countsfilename.c_str());
-            }
-            has_idx = false;
-            // Check ahead to see if future files exist - this would be evidence that some
-            // runs failed
-            for (int idx2 = idx + 1; idx2 <= idx + 100; ++idx2){
-                sprintf(&buf[0], "%d", idx);
-                string bufstr2 = buf;
-                string countsfn_future = outdir + "species_counts." + bufstr + ".txt";
-                if (file_exists(countsfn_future)){
-                    fprintf(stderr, "ERROR: there is no file %s, but the file %s exists.\n",
-                        countsfilename.c_str(), countsfn_future.c_str());
-                    fprintf(stderr, "This means it is likely that some runs failed.\n");
-                    fprintf(stderr, "You should re-run those jobs before concatenating files.\n");
-                    exit(1);
-                }
-            }
+            fprintf(stderr, "ERROR: missing expected file %s\n", countsfilename.c_str());
+            fprintf(stderr, "One or more jobs likely failed to complete. Please re-run demux_species\n");
+            fprintf(stderr, "on all missing batches.\n");
+            exit(1);
         }
-        first = false;
         ++idx;
     } 
    
