@@ -17,7 +17,10 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 
 <br>
 <p >
- <img src="img/viz_compare3.png" width=75 />
+ <img src="img/viz_compare3.png" width=50 />
+</p>
+<p>
+ <img src="img/heatmap.png" width=50 />
 </p>
 
 ### Visualizing and comparing results
