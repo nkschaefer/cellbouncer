@@ -118,7 +118,17 @@ The program `plot/contam.R` can create plots showing information about ambient R
 ```
 plot/contam.R [output_prefix]
 ```
-Two plots will be created: `[output_prefix].contam.pdf` (vector) and `[output_prefix].contam.png` (rasterized).
+Two plots will be created: `[output_prefix].contam.pdf` (vector) and `[output_prefix].contam.png` (rasterized). 
+
+It will also create a file called `[output_prefix].contam.stats` listing information about the difference in pool composition from an even mixture, and the difference between the makeup of ambient RNA and the makeup of the pool of cells. This file is as follows:
+* First column = name of data set
+* Second column = "`all`" or individual name
+* When second column = "`all`":
+  * Third column = "`H.amb`": [Shannon entropy](https://en.wikipedia.org/wiki/Entropy_(information_theory)) of the makeup of ambient RNA, divided by its maximum possible value. A value of 1 means an even mixture of all individuals; close to 0 means an uneven mixture.
+  * Third column = "`H.cells`": Shannon entropy of the makeup of cells in the pool, divided by its maximum possible value.
+  * Third column = "`KL.div`": [Kullback-Leibler divergence](https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence) between the makeup of cells and the makeup of ambient RNA. Closer to zero means very similar; further from zero means more different.
+* When second column = "`all`":
+    * Third column = "logdiff": the log ratio between the individual's presence in ambient RNA and the individual's presence in the pool of cells
 
 #### Example plots
 Low contamination data set (10X 40k NSCLC)| High contamination data set (Tetraploid composite iPSCs)|
@@ -126,7 +136,7 @@ Low contamination data set (10X 40k NSCLC)| High contamination data set (Tetrapl
 ![](../img/nsclc.contam.png)  |  ![](../img/tet_ipsc.contam.png) | 
 
 #### Information in the plots
-* The top left corner of the plot lists the mean and standard deviation of contamination rate per cell in the data set. 
+* The top left corner of the plot lists the mean and standard deviation of contamination rate per cell in the data set, along with the Kullback-Leibler divergence between the ambient RNA profile and the pool of cells.
 * The bar plot in the top left shows the fraction of ambient RNA inferred to have originated from each individual, in the form of stacked bars. If you have very many individuals, this information may overflow the space allocated in the plot; in that case, you will need to load `[output_prefix].contam_prof` and plot in your favorite plotting program.
 * The top right corner is a kernel density curve showing the contamination rate per cell across the data set. `quant_contam` uses an Empirical Bayes prior to shrink per-cell estimates toward the mean; provided per-cell estimates are maximum *a posteriori* rather than maximum likelihood estimates.
 * The panel below the density curve shows the contamination rate in each cell (Y-axis) against the log likelihood ratio of the cell's identity (X-axis). Error bars show uncertainty in contamination rate estimates (using Fisher information). Low confidence assignments may have higher inferred contamination rates, reflecting some incorrectly-assigned cells.
