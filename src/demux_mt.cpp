@@ -217,8 +217,10 @@ void help(int code){
     fprintf(stderr, "   This is a special use case: mitochondrial haplotypes are already known, some\n");
     fprintf(stderr, "       cells are known to contain more than one mitochondrial haplotype (i.e. \n");
     fprintf(stderr, "       tetraploid composite cell lines), and you want to infer the mixing proportion\n");
-    fprintf(stderr, "       of each mitochondrial haplotype within each cell. Inferred mixing proportions\n");
-    fprintf(stderr, "       will be written to [output_prefix].props.\n");
+    fprintf(stderr, "       of each mitochondrial haplotype within each cell. Rather than seek to infer\n");
+    fprintf(stderr, "       the mixing proportions here, we will write the count of informative reads that\n");
+    fprintf(stderr, "       could only belong to haplotype 1, as well as that which could only belong to\n");
+    fprintf(stderr, "       haplotype 2. These data will be written to stdout.\n");
     fprintf(stderr, "   ---------- I/O Options ----------\n");
     fprintf(stderr, "   --haps -H Cluster haplotypes from a previous run. Should be that\n");
     fprintf(stderr, "       run's [output_prefix].haps. (REQUIRED)\n");
@@ -2445,6 +2447,8 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
                 mixprops_mean.emplace(a->first, p);
                 mixprops_sd.emplace(a->first, solver.se); 
                 */
+                
+                /*
                 // Store for whole-ID tests
                 if (id_match1.count(a->second) == 0){
                     vector<int> v;
@@ -2456,10 +2460,11 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
                     id_match2.insert(make_pair(a->second, v));
                 }
                 id_match2[a->second].push_back(match2);
+                */
             }
         }
     }
-
+    /*
     for (map<int, vector<int> >::iterator im = id_match1.begin(); im != id_match1.end();
         ++im){
          
@@ -2475,6 +2480,7 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
         id_mixprop_sd.insert(make_pair(im->first, solver.se));
         
     }
+    */
 }
 
 void write_mixprops(FILE* outf,
@@ -2861,7 +2867,9 @@ int main(int argc, char *argv[]) {
         robin_hood::unordered_map<unsigned long, int> assignments;
         parse_assignments(assnfile, clust_ids, assignments, true);
         if (assignments.size() == 0){
-            fprintf(stderr, "ERROR: inferring mixture proportions, but no doublets \
+            fprintf(stderr, "ERROR: extracting read counts for doublet combinations, but \
+no doublets were found in input file %s\n", assnfile.c_str());
+            //fprintf(stderr, "ERROR: inferring mixture proportions, but no doublets \
 were found in input file %s\n", assnfile.c_str());
             exit(1); 
         }
@@ -2871,13 +2879,14 @@ were found in input file %s\n", assnfile.c_str());
         map<int, double> id_mixprop_sd;
         infer_mixprops(hap_counter, assignments, clusthaps, mask_global, nvars, mixprops_mean,
             mixprops_sd, id_mixprop_mean, id_mixprop_sd, clust_ids);
-        
+        /*
         // Spill to disk.
         string mixprops_out_name = output_prefix + ".props";
         FILE* mixprops_out = fopen(mixprops_out_name.c_str(), "w");
         write_mixprops(mixprops_out, barcode_group, cellranger, seurat, underscore, 
             mixprops_mean, mixprops_sd, assignments, clust_ids);
         fclose(mixprops_out);
+        */
         return 0;
     }
 
