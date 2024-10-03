@@ -51,6 +51,9 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 |**Subset** MEX-format data to a specific feature type | Single-cell expression data in [MEX format](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices) | [`utils/subs_mex_featuretype.py`](docs/mex_format.md#subsetting-to-a-data-type-or-barcode-list) |
 
 # Installation
+### Using Docker
+The included Dockerfile can be used to set up and compile everything required by CellBouncer.
+### Not using Docker
 To install ([see below](#get-the-repository)):
 
 * Clone the repository (and its submodules)
