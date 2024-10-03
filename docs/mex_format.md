@@ -4,7 +4,7 @@ The program [`demux_tags`](demux_tags.md) can load tag or sgRNA counts per cell 
 
 The program [`quant_contam`](quant_contam.md) can also optionally attempt to remove contamination from single-cell gene expression data.
 
-These data must be in [market exchange format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices), however. 
+These data must be in [market exchange format](https://kb.10xgenomics.com/hc/en-us/articles/115000794686-How-is-the-MEX-format-used-for-the-gene-barcode-matrices). This format consists of three files: one listing cell barcodes, one listing genes (and potentially other features, like antibody or cell hashing barcodes), and a third listing counts of features per cell barcodes (a matrix file). 
 
 ## h5 formats
 Some programs, such as [`kite`](https://github.com/pachterlab/kite) from `kallisto/bustools` and [`cellranger`](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/running-pipelines/cr-feature-bc-analysis) can also output data in the `.h5` file format. Additionally, `AnnData` objects used by `scanpy` can be stored in [a specific `h5` format](https://anndata.readthedocs.io/en/latest/generated/anndata.AnnData.write_h5ad.html) as well.
