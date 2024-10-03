@@ -85,9 +85,10 @@ If you wish to infer the gene expression profile of ambient RNA and remove ambie
 --features/-F (Optionally gzipped) gene/feature file in MEX format
 --matrix/-M (Optionally gzipped) matrix file in MEX format
 --feature_type/-t If multiple feature types exist in the MEX data (i.e. Antibody Capture and Gene Expression),
-    indicate which feature type corresponds to RNA-seq. Alternatively, you can subset the files before running
-    this program, by using [utils/subs_mex_featuretype.py](mex_format.md#subsetting-to-a-data-type-or-barcode-list)
+    indicate which feature type corresponds to RNA-seq.
 ```
+* If your expression data contains multiple feature types, then one alternative to supplying something like "Gene Expression" with the `-t` option is to subset the files before running this program, by using [utils/subs_mex_featuretype.py](mex_format.md#subsetting-to-a-data-type-or-barcode-list).
+  
 Optional additional arguments:
 ```
 --clusts/-c The program must infer an endogenous gene expression profile in the data in order to infer the
