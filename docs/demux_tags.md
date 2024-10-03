@@ -132,6 +132,6 @@ Then, you can combine all output tables as follows:
 ```
 utils/combine_sgrna_tables.py [lib1.table] [lib2.table] [lib3.table] ...
 ```
-Where `[lib1.table]`, `[lib2.table]`, `[lib3.table]`, and so on are the `.table` files output from each run of `demux_tags.` You can provide an arbitrary number of `.table` files, and output will be printed to `stdout`.
+Where `[lib1.table]`, `[lib2.table]`, `[lib3.table]`, and so on are the `.table` files output from each run of `demux_tags`. You can provide an arbitrary number of `.table` files, and output will be printed to `stdout`.
 
 [Back to main README](../README.md)
