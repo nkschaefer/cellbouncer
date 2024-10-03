@@ -71,13 +71,12 @@ Some useful optional arguments you can provide are:
 --bootstrap -b As a way to learn the variance of the mixture proportions of individuals in the ambient RNA
     pool, bootstrap resampling will be performed this many times. This will then add a third column to the
     output .contam_profile file listing Dirichlet concentration parameters. These indicate how sensitive the
-    mixture proportion estimates are to the specific data points used to infer them. If you run bootstrapping
-    here, the resulting file can then be used to test for significant differences with other files of
-    mixture proportions; see [here](utils_compare_props.md).
+    mixture proportion estimates are to the specific data points used to infer them. 
 ```
 * The `--no_weights/-w` option disables weighting cell-individual assignments by log likelihood ratio (confidence of assignment). This default setting will allow more confident assignments to contribute more to inference of the ambient RNA profile. You might want to disable this if, for example, you have very different numbers of cells per different individuals in your assignments and you are worried that some individuals might mostly be noise. This would allow all cells to contribute equally to the solution.
 * The `--other_species/-s` argument is designed for cases in which you have pooled together cells from multiple species, but then separated those cells by species (for example, using [`demux_species`](demux_species.md)) and mapped each group to a different reference genome. In this case, ambient RNA in each data set could have originated from another species that is not present in the data being examined. In this case, this option can include a "fake" individual in the pool consisting of only reference alleles (an approximation for another species, which should generally match the most common allele, wherever applicable).
 * The `--doublet_rate/-D` option here differs from that given to other programs (such as `demux_vcf`). In other programs, the doublet rate is often used only as a prior probability of encountering a doublet identity in the data set. In this program, however, it is used as a way to overcome many false doublet assignments in extremely contaminated data sets. If you notice many more doublet identities than you expected, you can set this parameter, and it will compute the expected proportion of singlets and doublets of each type in the pool. These expectations will then feed into the log likelihood ratios between each possible pair of identities when re-inferring cells, forcing the results to conform more to expected numbers of each type of identity. The expected counts assumed here are the same as in [`doublet_dragon`](doublet_dragon.md).
+* If you run bootstrapping here (enabled by default), the resulting file can then be used to test for significant differences with other files of mixture proportions; see [here](utils_compare_props.md).
 
 ### Decontaminating gene expression data
 If you wish to infer the gene expression profile of ambient RNA and remove ambient counts from a gene expression matrix, you must also provide the following arguments:
@@ -102,6 +101,7 @@ Optional additional arguments:
     ensure that a reasonable number of counts will be removed (i.e. if 10,000 all cells had 0.999 count for a gene,
     rounding normally would result in all 10,000 counts becoming 1, whereas this method would result in 10 cells
     expected to have counts of zero.
+```
 
 ### Output files
 This program (by default) outputs the following files:
