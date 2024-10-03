@@ -29,6 +29,10 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 | **Merge** two sets of labels on the same cells into one set of labels | Two `.assignments` files from CollBouncer programs run on the same data | [`utils/merge_assignments.R`](docs/utils_merge_assignments.md)
 | **Compare** two sets of pool proportions and assess significance if possible | Two files describing pool composition (i.e. from [`bulkprops`](#bulkprops) or contamination profile from [`quant_contam`](#quant_contam)), or one file describing pool composition and an `.assignments` file describing cell labels | [`utils/compare_props.R`](docs/utils_compare_props.md) |
 | **Refine** genotype calls to better match cell-individual labels | A preexisting set of genotypes in VCF format, a BAM file of aligned single-cell data, and an `.assignments` file mapping cells to individuals of origin | [`utils/refine_vcf`](docs/utils_refine_vcf.md) |
+| **Plot** species proportions | Output from [`demux_species`](docs/demux_species.md) | [`plot/species.R`](docs/demux_species.md#plotting) | 
+| **Plot** mitochondrial haplotypes | Output from [`demux_mt`](docs/demux_mt.md) | [`plot/demux_mt_clust.R`](docs/demux_mt.md#plotting-to-check-output) <br> [`plot/demux_mt_unclust.R`](docs/demux_mt.md#plotting-to-check-output) |
+| **Plot** ambient RNA profile | Output from [`quant_contam`](docs/quant_contam.md) | [`plot/contam.R'](docs/quant_contam.md#plotting) |
+| **Plot** proportions of individuals, according to different data types | Output from [`doublet_dragon`](docs/doublet_dragon.md) | [`plot/doublet_dragon.R`](docs/doublet_dragon.md#plotting) |
 
 <br>
 <p>
