@@ -35,22 +35,12 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 <img src="img/manipulate.png" width=50 />
 </p>
 
-### Manipulating BAM files
+### Manipulating input files
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
 |**Split** a BAM file into one file per cell identity | A BAM file of aligned single-cell sequencing data and a CellBouncer-format `.assignments` file | [`utils/bam_split_bcs`](docs/utils_bam_split_bcs.md) |
 |**Tag** reads in a BAM file to mark individual of origin | A BAM file of aligned single-cell sequencing data and a CellBouncer-format `.assignments` file | [`utils/bam_indiv_rg`](docs/demux_mt.md#utilsbam_indiv_rg) |
-
-<br>
-<p>
-<img src="img/manipulate.png" width=50 />
-</p>
-
-### Manipulating gene expression data
-
-|I want to...|I have...|Tool to use|
-|------------|---------|-----------|
 |**Convert** 10X or Scanpy (AnnData) data from `.h5` to [MEX](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices) format | A CellRanger-format [`.h5`](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-h5-matrices) or Scanpy-format [`.h5ad`](https://anndata.readthedocs.io/en/latest/tutorials/notebooks/getting-started.html) file | [`utils/h5tomex.py`](docs/mex_format.md#h5-formats) |
 |**Split** MEX-format data into one data set per library/run | Single-cell expression data in [MEX format](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices) | [`utils/split_mex_libs.py`](docs/mex_format.md#splitting-libraries)  |
 |**Subset** MEX-format data to specific cell barcodes | Single-cell expression data in [MEX format](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices) | [`utils/subs_mex_bc.py`](docs/mex_format.md#subsetting-to-a-data-type-or-barcode-list)  |
