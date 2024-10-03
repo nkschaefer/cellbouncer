@@ -1,6 +1,6 @@
 # plot/compare_assignments.R
 
-<img src="../img/vcf_vs_mito.png" width=500 alt="compare_assignments" />
+<img src="../img/vcf_vs_mito.png" width=400 alt="compare_assignments" />
 
 `plot/compare_assignments.R` compares two sets of assignments on the same cells. A typical use case for this program might be to compare the results of `demux_vcf` and `demux_mt` run on the same data set, to see whether the programs worked, and potentially to assign an individual of origin (from the VCF) to each mitochondrial haplotype. To generate this plot, run 
 
