@@ -52,7 +52,7 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 
 # Installation
 ### Using Docker
-The included Dockerfile can be used to set up and compile everything required by CellBouncer.
+The included [Dockerfile](Dockerfile) can be used to set up and compile everything required by CellBouncer.
 ### Not using Docker
 To install ([see below](#get-the-repository)):
 
