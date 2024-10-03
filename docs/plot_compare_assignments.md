@@ -32,3 +32,4 @@ It also computes the above values for singlets and doublets separately.
 
 It will also report cases where a label from one file has a highest-Jaccard partner in the other file for which the first label is not the reciprocal highest-Jaccard partner for the second label. This can be indicative of problems -- i.e. one mitochondrial cluster might correspond to two genotype-based identities, possibly because two individuals share a recent maternal ancestor. 
 
+[Back to main README](../README.md)
