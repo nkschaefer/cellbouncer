@@ -1,4 +1,4 @@
-# utils/compare_props.md
+## utils/compare_props.md
 
 If you have run a program (like [`bulkprops`](bulkprops.md)) that models the RNA as a mixture of individuals, you may wish to compare the output pool composition to another set of proportions (i.e. the same cells at a later time point or under another treatment). A difficulty here is how to compute significance: two sets of proportions can be visually compared, but it is less straightforward to determine whether any differences between them are statistically significant.
 
