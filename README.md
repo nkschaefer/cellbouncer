@@ -109,4 +109,4 @@ To load data from CellBouncer into a single cell analysis tool like [Seurat](htt
 `CellBouncer` programs take input from single libraries. If you have concatenated multiple single cell sequencing data sets, `CellBouncer` will interpret all cells with the same barcode sequence as the same cell, ignoring any unique IDs you have added to barcodes. If you need to load data in [MEX format](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices) (i.e. for `demux_tags`) and that data comes from multiple libraries that were concatenated together, you can separate the data by library using the program [`utils/split_mex_libs.py`](docs/utils_split_mex_libs.md).
 
 ## Acknowledgments
-We thank [Helena Pinheiro](https://www.hpinheiro.com/) for creating the icons for demux_species, demux_mt, demux_vcf, demux_tags, quant_contam, and bulkprops, and the cell drawing used throughout.
+We thank [Helena Pinheiro](https://www.hpinheiro.com/) for creating the icons for `demux_species`, `demux_mt`, `demux_vcf`, `demux_tags`, `quant_contam`, and `bulkprops`, and the cell drawing used throughout.
