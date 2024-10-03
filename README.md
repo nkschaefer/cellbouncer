@@ -74,19 +74,19 @@ cd cellbouncer
 ### Create conda environment
 #### Linux
 ```
-[conda/mamba] env create --file=[cellbouncer_minimum/cellbouncer_extra].yml
+conda env create --file=cellbouncer_minimum.yml
 conda activate cellbouncer
 conda env config vars set LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}" -n cellbouncer
 ```
 #### Mac OS X (M1)
 ```
-CONDA_SUBDIR=osx-arm64 [conda/mamba] env create --file=[cellbouncer_minimum/cellbouncer_extra_osx].yml
+CONDA_SUBDIR=osx-arm64 conda env create --file=cellbouncer_minimum.yml
 conda activate cellbouncer
 conda env config vars set DYLD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${DYLD_LIBRARY_PATH}" -n cellbouncer
 ```
 #### Mac OS X (Intel)
 ```
-[conda/mamba] env create --file=[cellbouncer_minimum/cellbouncer_extra_osx].yml
+conda env create --file=cellbouncer_minimum.yml
 conda activate cellbouncer
 conda env config vars set DYLD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${DYLD_LIBRARY_PATH}" -n cellbouncer
 ```
