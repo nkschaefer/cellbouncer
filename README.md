@@ -51,7 +51,7 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 
 |I want to...|I have...|Tool to use|
 |------------|---------|-----------|
-|**Convert** 10X or Scanpy (AnnData) data from `.h5` to [MEX](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices) format | A CellRanger-format [`.h5`](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-h5-matrices) or Scanpy-format [`.h5ad`](https://anndata.readthedocs.io/en/latest/tutorials/notebooks/getting-started.html) file | [`utils/h5tomex.py`](docs/mex_format.md#splitting-libraries) |
+|**Convert** 10X or Scanpy (AnnData) data from `.h5` to [MEX](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices) format | A CellRanger-format [`.h5`](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-h5-matrices) or Scanpy-format [`.h5ad`](https://anndata.readthedocs.io/en/latest/tutorials/notebooks/getting-started.html) file | [`utils/h5tomex.py`](docs/mex_format.md#h5-formats) |
 |**Subset** MEX-format data | Single-cell expression data in [MEX format](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/outputs/cr-outputs-mex-matrices) | [`utils/split_mex_libs.py`](docs/mex_format.md#splitting-libraries) <br> [`utils/subs_mex_bc.py`](docs/mex_format.md#subsetting-to-a-data-type-or-barcode-list) <br> [`utils/subs_mex_featuretype.py`](docs/mex_format.md#subsetting-to-a-data-type-or-barcode-list) |
 
 # Installation
