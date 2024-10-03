@@ -31,8 +31,8 @@ Tools for checking cell identities and keeping the riffraff out of pooled single
 | **Refine** genotype calls to better match cell-individual labels | A preexisting set of genotypes in VCF format, a BAM file of aligned single-cell data, and an `.assignments` file mapping cells to individuals of origin | [`utils/refine_vcf`](docs/utils_refine_vcf.md) |
 | **Plot** species proportions | Output from [`demux_species`](docs/demux_species.md) | [`plot/species.R`](docs/demux_species.md#plotting) | 
 | **Plot** mitochondrial haplotypes | Output from [`demux_mt`](docs/demux_mt.md) | [`plot/demux_mt_clust.R`](docs/demux_mt.md#plotting-to-check-output) <br> [`plot/demux_mt_unclust.R`](docs/demux_mt.md#plotting-to-check-output) |
-| **Plot** ambient RNA profile | Output from [`quant_contam`](docs/quant_contam.md) | [`plot/contam.R'](docs/quant_contam.md#plotting) |
-| **Plot** proportions of individuals, according to different data types | Output from [`doublet_dragon`](docs/doublet_dragon.md) | [`plot/doublet_dragon.R`](docs/doublet_dragon.md#plotting) |
+| **Plot** ambient RNA profile | Output from [`quant_contam`](docs/quant_contam.md) | [`plot/contam.R`](docs/quant_contam.md#plotting) |
+| **Plot** counts of cell identifications, according to different data types and to the consensus among them | Output from [`doublet_dragon`](docs/doublet_dragon.md) | [`plot/doublet_dragon.R`](docs/doublet_dragon.md#plotting) |
 
 <br>
 <p>
