@@ -114,7 +114,7 @@ void help(int code){
     fprintf(stderr, "       files anti_R1.fq.gz and anti_R2.fq.gz, you could specify:\n");
     fprintf(stderr, "       -x sgRNA_R1.fq.gz -X sgRNA_R2.fq.gz\n");
     fprintf(stderr, "       -x anti_R1.fq.gz -X anti_R2.fq.gz\n");
-    fprintf(stderr, "       -n CRISPR -n Antibody.\n");
+    fprintf(stderr, "       -N CRISPR -N Antibody.\n");
     fprintf(stderr, "\n   ===== BARCODE WHITELIST OPTIONS =====\n");
     fprintf(stderr, "   --whitelist_rna -w If multiome data and demultiplexing ATAC-seq reads,\n");
     fprintf(stderr, "       provide both the ATAC-seq barcode whitelist (-W) and the RNA-seq\n");
@@ -679,24 +679,27 @@ counts file options)\n");
             exit(1);
         }
     }
-    if (atac_r1files.size() > 0 && !assnfile_given && whitelist_atac_filename == ""){
+    if (atac_r1files.size() > 0 && !assnfile_given && whitelist_atac_filename == "" &&
+        !(dump && countsfile_given && speciesfile_given)){
         fprintf(stderr, "ERROR: if ATAC data is provided, you must provide an ATAC barcode whitelist, unless \
 you have already assigned cells to species\n");
         exit(1);
     }
-    if (rna_r1files.size() > 0 && !assnfile_given && whitelist_rna_filename == ""){
+    if (rna_r1files.size() > 0 && !assnfile_given && whitelist_rna_filename == "" &&
+        !(dump && countsfile_given && speciesfile_given)){
         fprintf(stderr, "ERROR: if RNA-seq is provided, you must provide an RNA-seq barcode whitelist, unless \
 you have already assigned cells to species\n");
         exit(1);
     }
-    if (custom_r1files.size() > 0 && !assnfile_given && whitelist_rna_filename == ""){
+    if (custom_r1files.size() > 0 && !assnfile_given && whitelist_rna_filename == "" &&
+        !(dump && countsfile_given && speciesfile_given)){
         fprintf(stderr, "ERROR: if a custom type of read data is provied, you must provide an RNA-seq barcode \
 whitelist, unless you have already assigned cells to species\n");
         exit(1);
     }
     if (kmerbase == "" && (!countsfile_given || !speciesfile_given)){
-        fprintf(stderr, "ERROR: you must either load counts from a prior run using \
--C and -S, or specify k-mer count files using -k.\n");
+        fprintf(stderr, "ERROR: you must either load counts from a prior run by setting -o to a preexisting \
+directory containing data, or specify k-mer count files using -k.\n");
         exit(1);
     }
     if (atac_r1files.size() != atac_r2files.size() || atac_r1files.size() != atac_r3files.size()){
@@ -963,7 +966,6 @@ data for %s with more species.\n", kmerbase.c_str());
         create_library_file(rna_r1files, atac_r1files, custom_r1files, 
             custom_names, idx2species, outdir);
     }
-    
     if (dump){
         // Our job is done here
         return 0;
@@ -1021,7 +1023,6 @@ data for %s with more species.\n", kmerbase.c_str());
         } 
         wl_out.init(ul_list);
     } 
-    
     // Now go through reads and demultiplex by species.
     reads_demuxer demuxer(wl_out, bc2species, idx2species, outdir);
     demuxer.set_threads(num_threads);
@@ -1029,7 +1030,6 @@ data for %s with more species.\n", kmerbase.c_str());
     if (atac_preproc){
         demuxer.preproc_atac(true);
     }
-
     for (int i = 0; i < atac_r1files.size(); ++i){
         fprintf(stderr, "Processing ATAC files %s, %s, and %s\n", 
             atac_r1files[i].c_str(), atac_r2files[i].c_str(), atac_r3files[i].c_str());

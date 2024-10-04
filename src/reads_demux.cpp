@@ -31,7 +31,6 @@ reads_demuxer::reads_demuxer(bc_whitelist& whitelist,
     robin_hood::unordered_map<unsigned long, short>& bc2species,
     map<short, string>& idx2species,
     string& outdir){
-    
     this->whitelist = &whitelist;
     this->bc2species = bc2species;
     this->idx2species = idx2species;
@@ -100,10 +99,11 @@ void reads_demuxer::init_rna_or_custom(string file_prefix, string& r1filename, s
     }
     // To keep the 10X pipeline happy, we'll create output files with the same name as
     // input files, separated in directories according to species of origin.
-    if (outdir[outdir.length()-1] != '/'){
-        outdir += "/";
+    if (outdir != ""){
+        if (outdir[outdir.length()-1] != '/'){
+            outdir += "/";
+        }
     }
-    
     n_outfiles = idx2species.size()*2;
     outfiles = (gzFile*)malloc(n_outfiles * sizeof(gzFile)); 
     
@@ -155,14 +155,12 @@ bool reads_demuxer::scan_rna(){
     }   
     while(scanner.next()){
         int species = bc2species[scanner.barcode];
-        
         write_fastq(scanner.seq_id, scanner.seq_id_len,
             scanner.barcode_read, scanner.barcode_read_len,
             scanner.barcode_read_qual, species*2);
         write_fastq(scanner.seq_id, scanner.seq_id_len,
             scanner.read_f, scanner.read_f_len,
            scanner.read_f_qual, species*2 + 1);
-
     }
     return true;  
 }
@@ -209,8 +207,10 @@ void reads_demuxer::init_atac(string& r1filename,
     }
     // To keep the 10X pipeline happy, we'll create output files with the same name as
     // input files, separated in directories according to species of origin.
-    if (outdir[outdir.length()-1] != '/'){
-        outdir += "/";
+    if (outdir != ""){
+        if (outdir[outdir.length()-1] != '/'){
+            outdir += "/";
+        }
     }
     
     n_outfiles = idx2species.size()*3;

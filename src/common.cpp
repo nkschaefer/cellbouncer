@@ -442,9 +442,17 @@ double logbinom(double n, double k, double p){
 bool file_exists(string filename){
     struct stat buf;
     if (stat(filename.c_str(), &buf) != 0){
-        return false;
+        // Not a file. Check if it's a symlink.
+        if (lstat(filename.c_str(), &buf) != 0){
+            return false;
+        }
+        else{
+            return true;
+        }
     }
-    return true;
+    else{
+        return true;
+    }
 }
 
 /**

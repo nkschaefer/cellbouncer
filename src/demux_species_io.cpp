@@ -15,6 +15,7 @@
 #include <set>
 #include <cstdlib>
 #include <utility>
+#include <regex>
 #include <htswrapper/bc.h>
 #include <htswrapper/robin_hood/robin_hood.h>
 #include "common.h"
@@ -40,6 +41,36 @@ bool isdigit(char ch){
  * can be used to access/write other files in the same group.
  */
 bool filename_base(string& filename, string& fnbase){
+    
+    // Stricter
+    static const std::regex fq_regex1("^(.+)_S([0-9]+)_L([0-9]+)_R(1|2|3)(_[0-9]{3})?(\\.[0-9]+)?\\.(fastq|fq)(\\.gz)?$");
+    // More permissive
+    static const std::regex fq_regex2("^(.+)_R(1|2|3)(_[0-9]{3})?(\\.[0-9]+)?\\.(fastq|fq)(\\.gz)?$");
+    smatch matches;
+    if (regex_match(filename, matches, fq_regex1)){
+        fnbase = matches[1].str();
+        return true;
+    }
+    else{
+        // Try more permissive matching
+        if (regex_match(filename, matches, fq_regex2)){
+            fnbase = matches[1].str();
+            return true;
+        }
+    }
+    return false;
+
+    /*
+    static const std::regex fq_regex("^(.+)(_S[0-9]+)?(_L[0-9]+)?_R(1|2|3)(_[0-9]{3})\.(fastq|fq)(\.gz)$");
+    smatch matches;
+
+    if (regex_match(filename, matches, fq_regex)){
+        string grp = matches[1].str();
+         
+        str2bc(matches[3].str().c_str(), as_bitset);
+        return as_bitset.to_ulong();
+    }
+    
     stringstream splitter(filename);
     string chunk;
     vector<string> chunks;
@@ -135,6 +166,7 @@ bool filename_base(string& filename, string& fnbase){
         } 
     }
     return true;
+    */
 }
 
 /**
@@ -274,16 +306,22 @@ void create_library_file(vector<string>& rna_r1files,
     const string& outdir){
 
     char fullpath[200];
-    if (rna_r1files.size() > 0 && (atac_r1files.size() > 0 || custom_r1files.size() > 0)){
+    //if (rna_r1files.size() > 0 && (atac_r1files.size() > 0 || custom_r1files.size() > 0)){
+    if (true){  
         // Multiple data types. Create a "library file" for each species
         for (map<short, string>::iterator i2s = idx2species.begin(); i2s != idx2species.end(); ++i2s){
-            realpath(outdir.c_str(), &fullpath[0]);
-            string fnprefix = fullpath;
-            if (fnprefix[fnprefix.length()-1] != '/'){
-                fnprefix += "/";
+            string fnprefix = "";
+            if (outdir == ""){
+                sprintf(&fullpath[0], "");
+            }
+            else{
+                realpath(outdir.c_str(), &fullpath[0]);
+                fnprefix = fullpath;
+                if (fnprefix[fnprefix.length()-1] != '/'){
+                    fnprefix += "/";
+                }
             }
             string libfilename = fnprefix + i2s->second + ".library";
-            
             if (file_exists(libfilename)){
                 // Don't create one.
                 // This allows us to, if running in batch mode, run once per file chunk to count,
@@ -296,7 +334,6 @@ void create_library_file(vector<string>& rna_r1files,
             fnprefix += i2s->second;
             FILE* libfile = fopen(libfilename.c_str(), "w");
             fprintf(libfile, "fastqs,sample,library_type\n");
-            
             set<string> atac_base_pre;
             for (int i = 0; i < atac_r1files.size(); ++i){
                 // Get base name

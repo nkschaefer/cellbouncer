@@ -114,11 +114,19 @@ bars <- ggplot(assnbothagg) + geom_bar(aes(x=type, y=Frac, fill=species), stat='
 
 row2 <- plot_grid(heatm$gtable, bars, ncol=2, rel_widths=c(0.6, 0.4))
 
-png(paste(basename, '/', 'species.png', sep=''), width=8, height=6, bg='white', units='in', res=150)
+name_png <- paste(basename, '/species.png', sep='')
+name_pdf <- paste(basename, '/species.pdf', sep='')
+
+if (args[1] == '.'){
+    name_png <- 'species.png'
+    name_pdf <- 'species.pdf'
+}
+
+png(name_png, width=8, height=6, bg='white', units='in', res=150)
 plot_grid(title, row2, nrow=2, rel_heights=c(0.1,0.9))
 dev.off()
 
-pdf(paste(basename, '/', 'species.pdf', sep=''), width=8, height=6, bg='white')
+pdf(name_pdf, width=8, height=6, bg='white')
 plot_grid(title, row2, nrow=2, rel_heights=c(0.1,0.9))
 dev.off()
 
