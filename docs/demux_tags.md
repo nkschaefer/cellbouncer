@@ -95,15 +95,9 @@ A few arguments affect how `demux_tags` will run after counts are computed or lo
 
 ```
 --cell_barcodes -B Filters the list of cell barcodes under consideration. If you counted reads without this argument, it will limit the number of cells assigned identities.
---filt -f Applies an optional filtering step at the end (see below) which can improve precision at the cost of decreasing recall.
 --comma -c By default, in all CellBouncer programs, cells identified as doublets receive two names, separated by +. This changes the separator to ,. If you specify --sgRNA, this is activated by default
 --sgRNA -s Assume input is sgRNA counts instead of cell hashing/MULTIseq type data (see below)
 ```
-
-* The `--filt/-f` argument performs an extra filtering step at the end of cell-identity assignment.
-  * After all cells have been assigned a most likely identity, `demux_tags` infers (via maximum likelihood estimation) the percent of tag counts for each cell that likely originated from background/ambient tags (these values are output in the `[output_prefix].bg` file).
-  * With the `--filt` option set, `demux_tags` then fits a two-way mixture model to the total ambient tag counts per cell. If there is reasonable evidence that this distribution is truly bimodal (the mean of the upper distribution must be at or above the point where the lower distribution's CDF reaches 0.9), then cells likelier to have their total ambient counts fall in the upper distribution are removed from the data set and do not receive assignments.
-  * The reasonining behind this is that incorrect assignments should produce unreasonably high numbers of ambient/off-target tag counts compared to correct assignments.
 
 ## Output files
 `demux_tags` creates several output files, with names defined by `[output_prefix]`, followed by an extension.
@@ -126,5 +120,18 @@ The columns of this file are:
   * Higher, exponential distribution lambda parameter (1/mean count)
     
 * The `[output_prefix].wells` file is created only if you counted tags in reads and provided both a sequence to intermediate ID mapping (i.e. MULTIseq barcode to MULTIseq well) along with an intermediate to final ID mapping (i.e. MULTIseq well to human-readable identity). This file lists each intermediate ID (i.e. sample well) sorted by decreasing number of times its barcode was found in reads, and with the label given for each well as the last column. This file allows you to inspect whether any unexpected barcodes (i.e. those tied to wells you thought went unused in this experiment) occurred more times than those you intended to use. If all is well, all labeled wells should be at the top of the list. If all is not well, you should have received a warning message about it when you ran `demux_tags`.
+
+## Combining multiple runs - sgRNA data
+
+If you run `demux_tags` on multiple sgRNA libraries corresponding to the same data set, you might want to combine the `.table` files from all the runs to use in a differential expression analysis. The end result will be a single file mapping cell barcodes to a vector of 0/1 for absence/presence of each sgRNA, so the effect of each can be tested independently.
+
+Before creating this file, ensure that each library was given a unique identifier, in order to avoid barcode collisions (where the same cell barcode was used to describe multiple real cells in multiple data sets). To do this, the `--libname/-n` flag can be passed to `demux_tags` to supply a different library name in each run.
+
+Then, you can combine all output tables as follows:
+
+```
+utils/combine_sgrna_tables.py [lib1.table] [lib2.table] [lib3.table] ...
+```
+Where `[lib1.table]`, `[lib2.table]`, `[lib3.table]`, and so on are the `.table` files output from each run of `demux_tags`. You can provide an arbitrary number of `.table` files, and output will be printed to `stdout`.
 
 [Back to main README](../README.md)

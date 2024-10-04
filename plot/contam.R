@@ -19,7 +19,7 @@ if (sum(checks) > 0){
 basename <- args[1]
 
 cr <- read.table(paste(basename, '.contam_rate', sep=''))
-assn <- read.table(paste(basename, '.assignments', sep=''))
+assn <- read.table(paste(basename, '.decontam.assignments', sep=''))
 
 # Strip library names, etc. from cell barcodes in case they don't match
 assn$V1 <- gsub("[^ACGT]+", "", assn$V1)
@@ -203,7 +203,7 @@ make_plot <- function(){
         stats <- data.frame(lib=basename, type=c("all", "all", "all"), var=c("H.amb", "H.cells", "KL.div"), 
             val=c(H_amb/H_max, H_cells/H_max, KL_div))
         stats <- rbind(stats, data.frame(lib=basename, type=beta_merge$var, var="logdiff", val=beta_merge$logdiff))
-        stats <- rbind(stats, data.frame(lib=basename, type=beta_merge$var, var="log.p.enriched", val=beta_merge$p))
+        #stats <- rbind(stats, data.frame(lib=basename, type=beta_merge$var, var="log.p.enriched", val=beta_merge$p))
 
         write.table(stats, file=paste(basename, '.contam.stats', sep=''), sep='\t', quote=FALSE, row.names=FALSE,
             col.names=FALSE)
