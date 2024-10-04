@@ -312,7 +312,8 @@ void create_library_file(vector<string>& rna_r1files,
         for (map<short, string>::iterator i2s = idx2species.begin(); i2s != idx2species.end(); ++i2s){
             string fnprefix = "";
             if (outdir == ""){
-                sprintf(&fullpath[0], "");
+                //sprintf(&fullpath[0], "");
+                fullpath[0] = '\0';
             }
             else{
                 realpath(outdir.c_str(), &fullpath[0]);
