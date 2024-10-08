@@ -93,6 +93,12 @@ Please check ${params.atac_map} and ensure you have named libraries correctly.
 """)
     }
 }
+else{
+    new File(params.libs).eachLine { line ->
+        def linetrim = line.trim()
+        atac_map[linetrim] = linetrim
+}
+}
 
 if (params.custom_map){
     new File(params.custom_map).eachLine { line -> 
@@ -115,17 +121,25 @@ if (params.custom_map){
             }
         }
     }
-    def countmatch = 0
-    new File(params.libs).eachLine { line -> 
-        if ( line.trim() in custom_map ){
-            countmatch++
+    if (custom_map.size() == 0){
+        new File(params.lib).eachLine{ line -> 
+            def linetrim = line.trim()
+            custom_map[linetrim] = linetrim
         }
     }
-    if (countmatch == 0){
-        error("""
-No RNA-seq libraries found in ${params.libs} matching those listed in ${params.custom_map}.
-Please check ${params.custom_map} and ensure you have named libraries correctly.
-""")
+    else{
+        def countmatch = 0
+        new File(params.libs).eachLine { line -> 
+            if ( line.trim() in custom_map ){
+                countmatch++
+            }
+        }
+        if (countmatch == 0){
+            error("""
+    No RNA-seq libraries found in ${params.libs} matching those listed in ${params.custom_map}.
+    Please check ${params.custom_map} and ensure you have named libraries correctly.
+    """)
+        }
     }
 }
 
@@ -224,7 +238,9 @@ process split_custom_reads{
  * Count species specific k-mers across an entire file pair.
  */
 process count_kmers{
-
+    cpus params.threads
+    memory params.memgb + ' GB'
+    
     input:
     tuple val(file_idx), 
         val(lib_id),
@@ -253,6 +269,8 @@ process count_kmers{
  * Count species specific k-mers in one input file chunk.
  */
 process count_kmers_chunk{
+    cpus params.threads
+    memory params.memgb + ' GB'
 
     input:
     tuple val(file_idx), 
@@ -578,6 +596,8 @@ process fit_model_gex_atac_custom{
  * Splits an entire (non-split) file of RNA-seq reads by species
  */
 process demux_rna_reads{
+    cpus params.threads
+
     input:
     tuple val(libname), 
         file(R1), 
@@ -602,6 +622,8 @@ process demux_rna_reads{
  * Splits an RNA-seq read pair chunk by species
  */
 process demux_rna_reads_chunk{
+    cpus params.threads
+
     input:
     tuple val(uid), 
         val(libname), 
@@ -628,6 +650,8 @@ process demux_rna_reads_chunk{
  * Splits an entire (non-split) file of ATAC-seq reads by species
  */
 process demux_atac_reads{
+    cpus params.threads
+
     input:
     tuple val(libname), 
         file(R1), 
@@ -654,6 +678,8 @@ process demux_atac_reads{
  * Splits an ATAC_seq read triplet chunk by species
  */
 process demux_atac_reads_chunk{
+    cpus params.threads
+
     input:
     tuple val(uid), 
         val(libname_atac), 
@@ -684,6 +710,8 @@ process demux_atac_reads_chunk{
  * Splits an entire (non-split) file of custom type reads by species
  */
 process demux_custom_reads{
+    cpus params.threads
+
     input:
     tuple val(libname),
         val(libtype), 
@@ -709,6 +737,8 @@ process demux_custom_reads{
  * Splits a custom-type read pair chunk by species
  */
 process demux_custom_reads_chunk{
+    cpus params.threads
+
     input:
     tuple val(uid), 
         val(libname_custom), 
