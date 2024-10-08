@@ -1,0 +1,60 @@
+##### REFERENCE DATA #####
+#
+# Path to the base file name of the unique k-mer files
+#  (this is the -o argument to utils/get_unique_kmers)
+kmers: "/path/to/human_mouse_35"
+# Path to cell barcode whitelist (i.e. from CellRanger)
+#   (can be gzipped)
+whitelist: "/path/to/valid_barcodes.txt.gz"
+# If demultiplexing ATAC-seq, path to ATAC-seq barcode
+#   whitelist (i.e. from CellRanger). If not, omit
+whitelist_atac: "/path/to/atac_barcodes.txt.gz"
+
+##### INPUT DATA #####
+
+# File listing library names, 1 per line
+libs: "libnames.txt"
+# Path to directory containing RNA-seq data
+rna_dir: "/path/to/RNAseq"
+# Path to directory containing ATAC-seq data (or omit)
+atac_dir: "/path/to/ATACseq"
+# If ATAC lib names are different from RNA-seq lib names,
+#   pass a file mapping ATAC seq library to RNA-seq library,
+#   tab separated. If not, omit
+atac_map: "/path/to/ATACseq_to_RNAseq_library_names.txt"
+# Path to directory containing custom type (i.e.
+#    CRISPR guide capture, Antibody capture, etc.) reads
+custom_dir: "/path/to/custom_seq"
+# Required if providing custom-type data: first two columns
+#    map custom library name to data type (i.e. "CRISPR").
+#    Third column, mapping custom library name to RNA-seq
+#    library name, is required if names of libraries differ.
+custom_map: "/path/to/custom_to_RNAseq_library_names.txt"
+
+##### SETTINGS #####
+
+# Directory to write output data
+output_directory: "out"
+# Should cell barcodes have library names appended to them in
+#    the output species assignment files?
+append_libname: true
+# Should lib names be appended in CellRanger format (numeric index?)
+cellranger: true
+# Should lib names be prepended to barcodes in Seurat format?
+seurat: false
+# How many pieces should input data be broken up into and processed
+#    in parallel? default = 100
+num_chunks: 100
+# Should reads also be separated into individual files per species?
+#    Alternative: write out species assignments but do not split up
+#    FASTQ files. Default = true
+demux_reads: true
+# Should reads being demultiplexed (if demux_reads: true) be split
+#    into pieces, demultiplexed, and then joined back together? 
+#    Default = true
+demux_pieces: true
+# How many parallel threads should each job be given? 
+threads: 2
+# What is the maximum expected memory consumption per job in the 
+#    k-mer counting step, in GB?
+memgb: 80
