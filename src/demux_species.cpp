@@ -681,9 +681,11 @@ counts file options)\n");
     }
     if (atac_r1files.size() > 0 && !assnfile_given && whitelist_atac_filename == "" &&
         !(dump && countsfile_given && speciesfile_given)){
-        fprintf(stderr, "ERROR: if ATAC data is provided, you must provide an ATAC barcode whitelist, unless \
+        if (!convfile_given){
+            fprintf(stderr, "ERROR: if ATAC data is provided, you must provide an ATAC barcode whitelist, unless \
 you have already assigned cells to species\n");
-        exit(1);
+            exit(1);
+        }
     }
     if (rna_r1files.size() > 0 && !assnfile_given && whitelist_rna_filename == "" &&
         !(dump && countsfile_given && speciesfile_given)){
@@ -717,34 +719,6 @@ directory containing data, or specify k-mer count files using -k.\n");
     if (custom_r1files.size() != custom_names.size()){
         fprintf(stderr, "ERROR: you must provide a name/data type for each custom read \
 file to demultiplex\n");
-        exit(1);
-    }
-    if (atac_r1files.size() > 0 && (whitelist_atac_filename == "" || whitelist_rna_filename == "")){
-        fprintf(stderr, "ERROR: if demultiplexing ATAC-seq reads from multiome data, \
-both -w and -W are required.\n");
-        exit(1);
-    }
-    if (rna_r1files.size() > 0 && whitelist_rna_filename == "" && (!countsfile_given || !speciesfile_given)){
-        fprintf(stderr, "ERROR: if demultiplexing RNA-seq data and you are not loading pre-computed \
-            k-mer counts, you must provide an RNA-seq bc whitelist (-W)\n");
-        exit(1);
-    }
-    if (atac_r1files.size() > 0 && rna_r1files.size() > 0 && !dump){
-        // Demultiplexing multiome data.
-        if (whitelist_rna_filename == "" || whitelist_atac_filename == ""){
-            // Missing at least one whitelist file.
-            if (!convfile_given){
-                fprintf(stderr, "ERROR: demultiplexing multiome (ATAC and RNA-seq) data, but you \
-have not provided the two required (RNA-seq and ATAC-seq) whitelists, and no data from a previous \
-run was detected. Please provide the required whitelists.\n");
-                exit(1);
-            }
-        }
-    }
-    if (atac_r1files.size() > 0 && rna_r1files.size() > 0 && 
-        (whitelist_atac_filename == "" || whitelist_rna_filename == "")){
-        fprintf(stderr, "ERROR: demultiplexing combined ATAC and RNA-seq data (multiome), \
-but whitelist files (-w and -W) not provided. Exiting.\n");
         exit(1);
     }
     if (num_threads > 100){
@@ -847,7 +821,8 @@ data for %s with more species.\n", kmerbase.c_str());
 
         // Init species k-mer counter 
         species_kmer_counter counter(num_threads, k, kmerfiles.size(), &wl, &bc_species_counts);
-        
+        counter.set_n_samp(5000000);
+
         if (disable_umis){
             fprintf(stderr, "Running without collapsing UMIs\n");
             counter.disable_umis();

@@ -98,6 +98,9 @@ class species_kmer_counter{
         kmer_tree_p kt;
         int k;
         
+        // -1 (all k-mers) or a number to sample from each species
+        int n_samp;
+                
         int umi_start;
         int umi_len;
 
@@ -152,6 +155,8 @@ class species_kmer_counter{
 
         void disable_umis(); 
         void enable_umis();
+        
+        void set_n_samp(int ns);
 
         void process_gex_files(std::string& r1filename, std::string& r2filename);
         

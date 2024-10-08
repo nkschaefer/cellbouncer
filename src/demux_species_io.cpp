@@ -48,6 +48,7 @@ bool filename_base(string& filename, string& fnbase){
     static const std::regex fq_regex2("^(.+)_R(1|2|3)(_[0-9]{3})?(\\.[0-9]+)?\\.(fastq|fq)(\\.gz)?$");
     smatch matches;
     if (regex_match(filename, matches, fq_regex1)){
+        //fnbase = matches[1].str() + "_S" + matches[2].str() + "_L" + matches[3].str();
         fnbase = matches[1].str();
         return true;
     }
@@ -351,7 +352,7 @@ void create_library_file(vector<string>& rna_r1files,
                     fprintf(libfile, "%s,%s,Chromatin Accessibility\n", fnprefix.c_str(),
                         fn_base.c_str());  
                 }
-                atac_base_pre.insert(fnprefix);
+                atac_base_pre.insert(fn_base);
             }
             set<string> rna_base_pre;
             for (int i = 0; i < rna_r1files.size(); ++i){

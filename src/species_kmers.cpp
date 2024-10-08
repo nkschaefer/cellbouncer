@@ -26,6 +26,7 @@
 #include <htswrapper/bc.h>
 #include <htswrapper/umi.h>
 #include <htswrapper/gzreader.h>
+#include <random>
 #include "common.h"
 #include "species_kmers.h"
 #include "kmsuftree.h"
@@ -102,6 +103,8 @@ species_kmer_counter::species_kmer_counter(int nt,
     this->umi_start = umi_start;
     this->umi_len = umi_len;
     
+    this->n_samp = -1;
+
     this->use_umis = true;
     if (umi_start == -1 || umi_len == -1){
         use_umis = false;
@@ -123,6 +126,10 @@ species_kmer_counter::~species_kmer_counter(){
         x->second = NULL;
     }
     bc_species_umis.clear();
+}
+
+void species_kmer_counter::set_n_samp(int ns){
+    this->n_samp = ns;
 }
 
 void species_kmer_counter::init(short species_idx, string& kmerfile){
@@ -504,19 +511,21 @@ void species_kmer_counter::scan_gex_data(const char* seq_f,
         if (use_umis && umi_start >= 0 && umi_len > 0){
             umi u(seq_f + umi_start, umi_len);
             
+            umi_set_exact* us; 
             {
                unique_lock<mutex> lock(umi_mutex);
                  
                if (bc_species_umis.count(bc_key) == 0){
-
-                   umi_set_exact* us = new umi_set_exact();
-                   bc_species_umis.emplace(bc_key, us);
-                   
+                   us = new umi_set_exact();
+                   bc_species_umis.emplace(bc_key, us); 
+                }
+                else{
+                    us = bc_species_umis[bc_key];
                 }
             }
             {
-                unique_lock<mutex> lock(bc_species_umis[bc_key]->umi_mutex);
-                dup_read = bc_species_umis[bc_key]->add(u);
+                unique_lock<mutex> lock(us->umi_mutex);
+                dup_read = us->add(u);
             }
         }
         
@@ -561,6 +570,21 @@ char complement(char base){
 void species_kmer_counter::parse_kmer_counts_serial(string& countsfilename,
     short species_idx){
     
+    double samp_prob = 1.0;
+    if (n_samp > 0){
+        // First, count the number of k-mers
+        int ntot = 0;
+        gzreader reader_count(countsfilename);
+        while(reader_count.next()){
+            ntot++;
+        }
+        samp_prob = (double)ntot/(double)n_samp;
+    }
+    
+    random_device dev;
+    mt19937 rng(dev());
+    uniform_real_distribution<> rand_dist = uniform_real_distribution<>(0.0, 1.0);
+
     gzreader reader(countsfilename);
     char buf[1024];
     int k = -1;
@@ -571,246 +595,249 @@ void species_kmer_counter::parse_kmer_counts_serial(string& countsfilename,
         if (k == -1){
             k = strlen(reader.line);
         }
-
-        kmer_node_ptr* n = (kmer_node_ptr*) malloc(sizeof(kmer_node_ptr));
-        // Initialize.
-        n->f_A = NULL;
-        n->f_C = NULL;
-        n->f_G = NULL;
-        n->f_T = NULL;
-        n->r_A = NULL;
-        n->r_C = NULL;
-        n->r_G = NULL;
-        n->r_T = NULL;
-        n->f_A_flip = false;
-        n->f_C_flip = false;
-        n->f_G_flip = false;
-        n->f_T_flip = false;
-        n->r_A_flip = false;
-        n->r_C_flip = false;
-        n->r_G_flip = false;
-        n->r_T_flip = false;
-
-        bool rc = is_rc_first(&reader.line[0], kt->k);
         
-        // Check whether any 1-base-away k-mer (moving backward or forward)
-        //  has already been created. Link them up if so.
+        if (samp_prob == 1 || rand_dist(rng) < samp_prob){
+            kmer_node_ptr* n = (kmer_node_ptr*) malloc(sizeof(kmer_node_ptr));
+            // Initialize.
+            n->f_A = NULL;
+            n->f_C = NULL;
+            n->f_G = NULL;
+            n->f_T = NULL;
+            n->r_A = NULL;
+            n->r_C = NULL;
+            n->r_G = NULL;
+            n->r_T = NULL;
+            n->f_A_flip = false;
+            n->f_C_flip = false;
+            n->f_G_flip = false;
+            n->f_T_flip = false;
+            n->r_A_flip = false;
+            n->r_C_flip = false;
+            n->r_G_flip = false;
+            n->r_T_flip = false;
 
-        // Rules: moving forward in sequence:
-        //  b1 = last base being added
-        //  b2 = complement of first base
-        //  is current k-mer rc? 
-        //      yes -> link from cur k-mer b1, reverse
-        //          flip = !next_rc
-        //      no -> link from cur k-mer b1, forward
-        //          flip = next_rc
-        //  is next k-mer rc?
-        //      yes -> link from next k-mer b2, forward
-        //          flip = !cur_rc
-        //      no -> link from next k-mer b2, reverse
-        //          flip = cur_rc
-
-        // Check moving forward
-        strncpy(&buf[0], &reader.line[1], k-1);
-        buf[k] = '\0';
-        
-        for (int i = 0; i < 4; ++i){
-            kmer_node_ptr* ptr = NULL; 
-            bool ptr_rc = false;
-        
-            buf[k-1] = bases[i];
+            bool rc = is_rc_first(&reader.line[0], kt->k);
             
-            if (is_rc_first(&buf[0], kt->k)){
-                void* res = kmer_tree_lookup(&buf[0], kt, 1);
-                if (res != NULL){
-                    ptr = (kmer_node_ptr*)res;
-                    ptr_rc = true;
-                }
-            }
-            else{
-                void* res = kmer_tree_lookup(&buf[0], kt, 0);
-                if (res != NULL){
-                    ptr = (kmer_node_ptr*)res;
-                    ptr_rc = false;
-                }
-            }
-            if (ptr != NULL){
-                if (rc){
-                    if (bases[i] == 'A'){
-                        n->r_A = ptr;
-                        n->r_A_flip = !ptr_rc;
-                    }   
-                    else if (bases[i] == 'C'){
-                        n->r_C = ptr;
-                        n->r_C_flip = !ptr_rc;
-                    }
-                    else if (bases[i] == 'G'){
-                        n->r_G = ptr;
-                        n->r_G_flip = !ptr_rc;
-                    }
-                    else if (bases[i] == 'T'){
-                        n->r_T = ptr;
-                        n->r_T_flip = !ptr_rc;
-                    }
-                }
-                else{
-                    if (bases[i] == 'A'){
-                        n->f_A = ptr;
-                        n->f_A_flip = ptr_rc;
-                    }
-                    else if (bases[i] == 'C'){
-                        n->f_C = ptr;
-                        n->f_C_flip = ptr_rc;
-                    }
-                    else if (bases[i] == 'G'){
-                        n->f_G = ptr;
-                        n->f_G_flip = ptr_rc;
-                    }
-                    else if (bases[i] == 'T'){
-                        n->f_T = ptr;
-                        n->f_T_flip = ptr_rc;
-                    }
-                }
-                if (ptr_rc){
-                    if (reader.line[0] == 'A'){
-                        ptr->f_T = n;
-                        ptr->f_T_flip = !rc;
-                    }
-                    else if (reader.line[0] == 'C'){
-                        ptr->f_G = n;
-                        ptr->f_G_flip = !rc;
-                    }
-                    else if (reader.line[0] == 'G'){
-                        ptr->f_C = n;
-                        ptr->f_C_flip = !rc;
-                    }
-                    else if (reader.line[0] == 'T'){
-                        ptr->f_A = n;
-                        ptr->f_A_flip = !rc;
-                    }
-                }
-                else{
-                    if (reader.line[0] == 'A'){
-                        ptr->r_T = n;
-                        ptr->r_T_flip = rc;
-                    }
-                    else if (reader.line[0] == 'C'){
-                        ptr->r_G = n;
-                        ptr->r_G_flip = rc;
-                    }
-                    else if (reader.line[0] == 'G'){
-                        ptr->r_C = n;
-                        ptr->r_C_flip = rc;
-                    }
-                    else if (reader.line[0] == 'T'){
-                        ptr->r_A = n;
-                        ptr->r_A_flip = rc;
-                    }
-                }
-            }
-        }
-    
-        // Check moving backward
-        strncpy(&buf[1], &reader.line[0], k-1);
-        buf[k] = '\0';
-        for (int i = 0; i < 4; ++i){
-            kmer_node_ptr* ptr = NULL; 
-            bool ptr_rc = false;
-            buf[0] = bases[i];
-            
-            if (is_rc_first(&buf[0], kt->k)){
-                void* res = kmer_tree_lookup(&buf[0], kt, 1);
-                if (res != NULL){
-                    ptr = (kmer_node_ptr*)res;
-                    ptr_rc = true;
-                }
-            }
-            else{
-                void* res = kmer_tree_lookup(&buf[0], kt, 0);
-                if (res != NULL){
-                    ptr = (kmer_node_ptr*)res;
-                    ptr_rc = false;
-                }
-            }
-            if (ptr != NULL){
-                // Same rules as above, but now buf and line are reversed.
-                if (ptr_rc){
-                    if (reader.line[k-1] == 'A'){
-                        ptr->r_A = n;
-                        ptr->r_A_flip = !rc;
-                    }   
-                    else if (reader.line[k-1] == 'C'){
-                        ptr->r_C = n;
-                        ptr->r_C_flip = !rc;
-                    }
-                    else if (reader.line[k-1] == 'G'){
-                        ptr->r_G = n;
-                        ptr->r_G_flip = !rc;
-                    }
-                    else if (reader.line[k-1] == 'T'){
-                        ptr->r_T = n;
-                        ptr->r_T_flip = !rc;
-                    }
-                }
-                else{
-                    if (reader.line[k-1] == 'A'){
-                        ptr->f_A = n;
-                        ptr->f_A_flip = rc;
-                    }
-                    else if (reader.line[k-1] == 'C'){
-                        ptr->f_C = n;
-                        ptr->f_C_flip = rc;
-                    }
-                    else if (reader.line[k-1] == 'G'){
-                        ptr->f_G = n;
-                        ptr->f_G_flip = rc;
-                    }
-                    else if (reader.line[k-1] == 'T'){
-                        ptr->f_T = n;
-                        ptr->f_T_flip = rc;
-                    }
-                }
-                if (rc){
-                    if (bases[i] == 'A'){
-                        n->f_T = ptr;
-                        n->f_T_flip = !ptr_rc;
-                    }
-                    else if (bases[i] == 'C'){
-                        n->f_G = ptr;
-                        n->f_G_flip = !ptr_rc;
-                    }
-                    else if (bases[i] == 'G'){
-                        n->f_C = ptr;
-                        n->f_C_flip = !ptr_rc;
-                    }
-                    else if (bases[i] == 'T'){
-                        n->f_A = ptr;
-                        n->f_A_flip = !ptr_rc;
-                    }
-                }
-                else{
-                    if (bases[i] == 'A'){
-                        n->r_T = ptr;
-                        n->r_T_flip = ptr_rc;
-                    }
-                    else if (bases[i] == 'C'){
-                        n->r_G = ptr;
-                        n->r_G_flip = ptr_rc;
-                    }
-                    else if (bases[i] == 'G'){
-                        n->r_C = ptr;
-                        n->r_C_flip = ptr_rc;
-                    }
-                    else if (bases[i] == 'T'){
-                        n->r_A = ptr;
-                        n->r_A_flip = ptr_rc;
-                    }
-                }
-            }
-        }
+            // Check whether any 1-base-away k-mer (moving backward or forward)
+            //  has already been created. Link them up if so.
 
-        // Store the node in the suffix array.
-        kmer_tree_add(reader.line, kt, (void*)n, rc);
+            // Rules: moving forward in sequence:
+            //  b1 = last base being added
+            //  b2 = complement of first base
+            //  is current k-mer rc? 
+            //      yes -> link from cur k-mer b1, reverse
+            //          flip = !next_rc
+            //      no -> link from cur k-mer b1, forward
+            //          flip = next_rc
+            //  is next k-mer rc?
+            //      yes -> link from next k-mer b2, forward
+            //          flip = !cur_rc
+            //      no -> link from next k-mer b2, reverse
+            //          flip = cur_rc
+
+            // Check moving forward
+            strncpy(&buf[0], &reader.line[1], k-1);
+            buf[k] = '\0';
+            
+            for (int i = 0; i < 4; ++i){
+                kmer_node_ptr* ptr = NULL; 
+                bool ptr_rc = false;
+            
+                buf[k-1] = bases[i];
+                
+                if (is_rc_first(&buf[0], kt->k)){
+                    void* res = kmer_tree_lookup(&buf[0], kt, 1);
+                    if (res != NULL){
+                        ptr = (kmer_node_ptr*)res;
+                        ptr_rc = true;
+                    }
+                }
+                else{
+                    void* res = kmer_tree_lookup(&buf[0], kt, 0);
+                    if (res != NULL){
+                        ptr = (kmer_node_ptr*)res;
+                        ptr_rc = false;
+                    }
+                }
+                if (ptr != NULL){
+                    if (rc){
+                        if (bases[i] == 'A'){
+                            n->r_A = ptr;
+                            n->r_A_flip = !ptr_rc;
+                        }   
+                        else if (bases[i] == 'C'){
+                            n->r_C = ptr;
+                            n->r_C_flip = !ptr_rc;
+                        }
+                        else if (bases[i] == 'G'){
+                            n->r_G = ptr;
+                            n->r_G_flip = !ptr_rc;
+                        }
+                        else if (bases[i] == 'T'){
+                            n->r_T = ptr;
+                            n->r_T_flip = !ptr_rc;
+                        }
+                    }
+                    else{
+                        if (bases[i] == 'A'){
+                            n->f_A = ptr;
+                            n->f_A_flip = ptr_rc;
+                        }
+                        else if (bases[i] == 'C'){
+                            n->f_C = ptr;
+                            n->f_C_flip = ptr_rc;
+                        }
+                        else if (bases[i] == 'G'){
+                            n->f_G = ptr;
+                            n->f_G_flip = ptr_rc;
+                        }
+                        else if (bases[i] == 'T'){
+                            n->f_T = ptr;
+                            n->f_T_flip = ptr_rc;
+                        }
+                    }
+                    if (ptr_rc){
+                        if (reader.line[0] == 'A'){
+                            ptr->f_T = n;
+                            ptr->f_T_flip = !rc;
+                        }
+                        else if (reader.line[0] == 'C'){
+                            ptr->f_G = n;
+                            ptr->f_G_flip = !rc;
+                        }
+                        else if (reader.line[0] == 'G'){
+                            ptr->f_C = n;
+                            ptr->f_C_flip = !rc;
+                        }
+                        else if (reader.line[0] == 'T'){
+                            ptr->f_A = n;
+                            ptr->f_A_flip = !rc;
+                        }
+                    }
+                    else{
+                        if (reader.line[0] == 'A'){
+                            ptr->r_T = n;
+                            ptr->r_T_flip = rc;
+                        }
+                        else if (reader.line[0] == 'C'){
+                            ptr->r_G = n;
+                            ptr->r_G_flip = rc;
+                        }
+                        else if (reader.line[0] == 'G'){
+                            ptr->r_C = n;
+                            ptr->r_C_flip = rc;
+                        }
+                        else if (reader.line[0] == 'T'){
+                            ptr->r_A = n;
+                            ptr->r_A_flip = rc;
+                        }
+                    }
+                }
+            }
+        
+            // Check moving backward
+            strncpy(&buf[1], &reader.line[0], k-1);
+            buf[k] = '\0';
+            for (int i = 0; i < 4; ++i){
+                kmer_node_ptr* ptr = NULL; 
+                bool ptr_rc = false;
+                buf[0] = bases[i];
+                
+                if (is_rc_first(&buf[0], kt->k)){
+                    void* res = kmer_tree_lookup(&buf[0], kt, 1);
+                    if (res != NULL){
+                        ptr = (kmer_node_ptr*)res;
+                        ptr_rc = true;
+                    }
+                }
+                else{
+                    void* res = kmer_tree_lookup(&buf[0], kt, 0);
+                    if (res != NULL){
+                        ptr = (kmer_node_ptr*)res;
+                        ptr_rc = false;
+                    }
+                }
+                if (ptr != NULL){
+                    // Same rules as above, but now buf and line are reversed.
+                    if (ptr_rc){
+                        if (reader.line[k-1] == 'A'){
+                            ptr->r_A = n;
+                            ptr->r_A_flip = !rc;
+                        }   
+                        else if (reader.line[k-1] == 'C'){
+                            ptr->r_C = n;
+                            ptr->r_C_flip = !rc;
+                        }
+                        else if (reader.line[k-1] == 'G'){
+                            ptr->r_G = n;
+                            ptr->r_G_flip = !rc;
+                        }
+                        else if (reader.line[k-1] == 'T'){
+                            ptr->r_T = n;
+                            ptr->r_T_flip = !rc;
+                        }
+                    }
+                    else{
+                        if (reader.line[k-1] == 'A'){
+                            ptr->f_A = n;
+                            ptr->f_A_flip = rc;
+                        }
+                        else if (reader.line[k-1] == 'C'){
+                            ptr->f_C = n;
+                            ptr->f_C_flip = rc;
+                        }
+                        else if (reader.line[k-1] == 'G'){
+                            ptr->f_G = n;
+                            ptr->f_G_flip = rc;
+                        }
+                        else if (reader.line[k-1] == 'T'){
+                            ptr->f_T = n;
+                            ptr->f_T_flip = rc;
+                        }
+                    }
+                    if (rc){
+                        if (bases[i] == 'A'){
+                            n->f_T = ptr;
+                            n->f_T_flip = !ptr_rc;
+                        }
+                        else if (bases[i] == 'C'){
+                            n->f_G = ptr;
+                            n->f_G_flip = !ptr_rc;
+                        }
+                        else if (bases[i] == 'G'){
+                            n->f_C = ptr;
+                            n->f_C_flip = !ptr_rc;
+                        }
+                        else if (bases[i] == 'T'){
+                            n->f_A = ptr;
+                            n->f_A_flip = !ptr_rc;
+                        }
+                    }
+                    else{
+                        if (bases[i] == 'A'){
+                            n->r_T = ptr;
+                            n->r_T_flip = ptr_rc;
+                        }
+                        else if (bases[i] == 'C'){
+                            n->r_G = ptr;
+                            n->r_G_flip = ptr_rc;
+                        }
+                        else if (bases[i] == 'G'){
+                            n->r_C = ptr;
+                            n->r_C_flip = ptr_rc;
+                        }
+                        else if (bases[i] == 'T'){
+                            n->r_A = ptr;
+                            n->r_A_flip = ptr_rc;
+                        }
+                    }
+                }
+            }
+
+            // Store the node in the suffix array.
+            kmer_tree_add(reader.line, kt, (void*)n, rc);
+            
+        }
     } 
 }
 
