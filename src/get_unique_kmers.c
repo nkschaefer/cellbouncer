@@ -441,13 +441,9 @@ int main(int argc, char* argv[]){
     
     // Store all counts of k-mers, which can later be sorted in descending order
     struct counts counts_tables[num_tables];
-    int* INIT0;
-    int* INIT1;
     for (int i = 0; i < num_tables; ++i){
         counts_init(&counts_tables[i], 1048576);
     }
-    INIT0 = counts_tables[0].vals;
-    INIT1 = counts_tables[1].vals;
     
     // Write out species names
     char namebuf[1024];
