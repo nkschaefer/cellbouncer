@@ -253,16 +253,19 @@ void counts_init(struct counts* c, int s){
 
 void counts_destroy(struct counts* c){
     free(c->vals);
+    c->vals = NULL;
+    c->size = 0;
+    c->nvals = 0;
 }
 
 void counts_add(struct counts* c, int item){
-    if (c->nvals == c->size){
-        c->size *= 2;
-        c->vals = realloc(c->vals, c->size*sizeof(int));
-    }
     // Make negative so that sorting will be largest-smallest
     c->vals[c->nvals] = -item;
     c->nvals++;
+    if (c->nvals == c->size){
+        c->size *= 2;
+        c->vals = realloc((void*)c->vals, c->size*sizeof(int));
+    }
 }
 
 int counts_get(struct counts* c, int idx){
@@ -438,19 +441,23 @@ int main(int argc, char* argv[]){
     
     // Store all counts of k-mers, which can later be sorted in descending order
     struct counts counts_tables[num_tables];
+    int* INIT0;
+    int* INIT1;
     for (int i = 0; i < num_tables; ++i){
         counts_init(&counts_tables[i], 1048576);
     }
+    INIT0 = counts_tables[0].vals;
+    INIT1 = counts_tables[1].vals;
     
     // Write out species names
-    char namebuf[strlen(output_prefix) + 7];
+    char namebuf[1024];
     sprintf(&namebuf[0], "%s.names", output_prefix);
     FILE* f = fopen(&namebuf[0], "w");
     for (int i = 0; i < num_tables; ++i){
         fprintf(f, "%s\n", names[i]);
     }
     fclose(f);
-
+    
     // prepare output files
     gzFile outs[num_tables];
     FILE* outs_tmp[num_tables];
@@ -468,9 +475,11 @@ int main(int argc, char* argv[]){
             exit(1);
         }
     }
+
     for (int i = 0; i < num_tables; ++i){
         First_Kmer_Entry(tables[i]);
     }
+
     char kmer_text[kmer+1]; 
     int ntie = 0;
     int ties[num_tables];
@@ -512,6 +521,7 @@ int main(int argc, char* argv[]){
                     }
                 }
             }
+            
             // If no tie, print the lowest.
             if (ntie == 0){
                 char* b = Current_Kmer(tables[min_idx], &kmer_text[0]);
@@ -631,6 +641,8 @@ int main(int argc, char* argv[]){
             }
         }
         gzclose(outs[i]);
+        sprintf(&namebuf[0], "%s.%d.tmp", output_prefix, i);
+        remove(namebuf);
         //remove(outs_tmp[i]);
     }
     
