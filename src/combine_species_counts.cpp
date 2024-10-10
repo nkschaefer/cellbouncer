@@ -58,11 +58,12 @@ bool load_species(string& filename, map<short, string>& species_prev){
     return true;
 }
 
-void load_counts(string& filename, 
+bool load_counts(string& filename, 
     robin_hood::unordered_map<unsigned long, map<short, int> >& bc_species_counts){
     
     ifstream inf(filename.c_str());
     string line;
+    int nlines = 0;
     while (getline(inf, line)){
         istringstream splitter(line);
         string elt;
@@ -86,6 +87,13 @@ void load_counts(string& filename,
             }
             ++idx;
         }
+        ++nlines;
+    }
+    if (nlines > 0){
+        return true;
+    }
+    else{
+        return false;
     }
 }
 
@@ -187,33 +195,41 @@ int main(int argc, char *argv[]) {
         string speciesfilename = outdir + "species_names." + bufstr + ".txt";
         string convfilename = outdir + "bcmap." + bufstr + ".txt";
         if (file_exists(countsfilename)){
-            load_counts(countsfilename, bc_species_counts);
-            rm.push_back(countsfilename);
-            if (file_exists(speciesfilename)){
-                bool ok = load_species(speciesfilename, species_names);
-                if (!ok){
-                    fprintf(stderr, "ERROR: species names from batch %d do not match previous \
-species names.\n", idx);
+            bool ok1 = load_counts(countsfilename, bc_species_counts);
+            if (ok1){
+                rm.push_back(countsfilename);
+                if (file_exists(speciesfilename)){
+                    bool ok = load_species(speciesfilename, species_names);
+                    if (!ok){
+                        fprintf(stderr, "ERROR: species names from batch %d do not match previous \
+    species names.\n", idx);
+                        exit(1);
+                    }
+                    rm.push_back(speciesfilename);
+                }
+                else{
+                    fprintf(stderr, "ERROR: missing expected file %s\n", speciesfilename.c_str());
                     exit(1);
                 }
-                rm.push_back(speciesfilename);
+                if (file_exists(convfilename)){
+                    bool ok = load_conversion(convfilename, bc_conversion);                
+                    if (!ok){
+                        fprintf(stderr, "ERROR: barcode conversion file for batch %d does not match \
+    conversions from previous batches.\n", idx);
+                        exit(1);
+                    }
+                    has_conversion = true;
+                    rm.push_back(convfilename);
+                }
+                else if (has_conversion){
+                    fprintf(stderr, "ERROR: barcode conversion file not found for batch %d\n", idx);
+                    exit(1);
+                }
             }
             else{
-                fprintf(stderr, "ERROR: missing expected file %s\n", speciesfilename.c_str());
-                exit(1);
-            }
-            if (file_exists(convfilename)){
-                bool ok = load_conversion(convfilename, bc_conversion);                
-                if (!ok){
-                    fprintf(stderr, "ERROR: barcode conversion file for batch %d does not match \
-conversions from previous batches.\n", idx);
-                    exit(1);
-                }
-                has_conversion = true;
-                rm.push_back(convfilename);
-            }
-            else if (has_conversion){
-                fprintf(stderr, "ERROR: barcode conversion file not found for batch %d\n", idx);
+                fprintf(stderr, "ERROR: empty file: %s\n", countsfilename.c_str());
+                fprintf(stderr, "This job likely failed to complete. Please re-run demux_species\n");
+                fprintf(stderr, "on all missing batches.\n");
                 exit(1);
             }
         }
@@ -223,7 +239,6 @@ conversions from previous batches.\n", idx);
             fprintf(stderr, "on all missing batches.\n");
             exit(1);
         }
-        ++idx;
     } 
    
     // Now write combined data to disk
