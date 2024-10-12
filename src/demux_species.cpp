@@ -721,10 +721,12 @@ directory containing data, or specify k-mer count files using -k.\n");
 file to demultiplex\n");
         exit(1);
     }
+    /*
     if (num_threads > 100){
         fprintf(stderr, "ERROR: maximum number of threads (100) exceeded.\n");
         exit(1);
     }
+    */
     if (doublet_rate <= 0 || doublet_rate >= 1){
         fprintf(stderr, "ERROR: doublet rate must be between 0 and 1, exclusive.\n");
         exit(1);
@@ -821,7 +823,6 @@ data for %s with more species.\n", kmerbase.c_str());
 
         // Init species k-mer counter 
         species_kmer_counter counter(num_threads, k, kmerfiles.size(), &wl, &bc_species_counts);
-        counter.set_n_samp(5000000);
 
         if (disable_umis){
             fprintf(stderr, "Running without collapsing UMIs\n");
@@ -845,7 +846,10 @@ data for %s with more species.\n", kmerbase.c_str());
             
             for (int i = 0; i < rna_r1files.size(); ++i){
                 // The object handles multi-threading, if enabled
+                fprintf(stderr, "Counting read pair %s, %s\n", rna_r1files[i].c_str(), 
+                    rna_r2files[i].c_str());
                 counter.process_gex_files(rna_r1files[i], rna_r2files[i]); 
+                fprintf(stderr, "done\n");
             }
         }
 
