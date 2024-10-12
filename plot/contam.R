@@ -13,7 +13,7 @@ if (sum(checks) > 0){
     write("After you have run quant_contam on a data set and have the files", stderr())
     write("    [output_prefix].contam_rate and [output_prefix].contam_prof,", stderr())
     write("    run this program to plot summary information about ambient RNA.", stderr())
-    write("It will create a plot in the file [output_prefix].contam.png.", stderr())
+    write("It will create two plots: [output_prefix].contam.png and [output_prefix].contam.pdf.", stderr())
     q()
 }
 basename <- args[1]
