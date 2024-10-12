@@ -27,9 +27,11 @@
 #include <mixtureDist/functions.h>
 #include <optimML/multivar_ml.h>
 #include <htswrapper/robin_hood/robin_hood.h>
+#include <iomanip>
 #include "common.h"
 #include "demux_vcf_io.h"
 #include "demux_vcf_hts.h"
+#include "refine_vcf.h"
 
 using std::cout;
 using std::endl;
@@ -58,8 +60,64 @@ void help(int code){
     fprintf(stderr, "       jump to each variant position. This will be faster if you \n");
     fprintf(stderr, "       have relatively few SNPs, and much slower if you have a lot \n");
     fprintf(stderr, "       of SNPs.\n");
+    fprintf(stderr, "    --p_thresh -p After re-genotyping a site, refine_vcf will compute the\n");
+    fprintf(stderr, "       total reference and alt alleles observed at the site, along with the\n");
+    fprintf(stderr, "       expected reference and alt alleles, given the total and the inferred\n");
+    fprintf(stderr, "       genotypes. It then computes a 2-tailed Binomial p-value of the observed\n");
+    fprintf(stderr, "       counts given the expected ratio. Sites with p below this threshold will\n");
+    fprintf(stderr, "       be removed. Default = 0.01\n");
+    fprintf(stderr, "    --num_threads -T Number of threads to use\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
+}
+
+regenotyper::regenotyper(int ns, map<int, string>& t2c, map<int, double>& w, int nt, double p){
+    if (nt > 1){
+        n_samples = ns;
+        tid2chrom = t2c;
+        weights = w;
+        nthread = nt;
+        p_thresh = p;
+    }
+
+    threads_init = false;
+    terminate_threads = false;
+
+}
+
+void regenotyper::launch_threads(){
+    terminate_threads = false;
+    for (int i = 0; i < nthread; ++i){
+        threads.push_back(thread(&regenotyper::worker, this));
+    }   
+}
+
+void regenotyper::close_pool(){
+    {
+        unique_lock<mutex> lock(queue_mutex);
+        terminate_threads = true;
+    }
+    has_jobs.notify_all();
+    for (int i = 0; i < threads.size(); ++i){
+        threads[i].join();
+    }
+    threads.clear();
+}
+
+void regenotyper::add_job(int chrom, int pos, var* v, map<int, pair<float, float> >* m){
+    unique_lock<mutex> lock(queue_mutex);
+    jobs.emplace_back(m, chrom, pos, v);
+
+    unique_lock<mutex> lock2(output_mutex);
+    pair<int, int> key = make_pair(chrom, pos);
+    output_lines.insert(make_pair(key, ""));
+    job_status js;
+    js.finished = false;
+    js.rm = false;
+    js.changed = false;
+    output_success.insert(make_pair(key, js));
+
+    has_jobs.notify_one(); 
 }
 
 void parse_assignments(string& filename, 
@@ -233,11 +291,13 @@ void dll_regt(const vector<double>& params,
  */
 bool regt_snp(const string& chrom,
     int pos,
-    var& v,
+    const var& v,
     int n_samples,
-    map<int, pair<float, float> >& id_dat,
+    const map<int, pair<float, float> >& id_dat,
     bool& removed,
-    map<int, double>& weights){
+    map<int, double>& weights,
+    string& result,
+    double p_thresh){
     
     // Solve for maximum likelihood alt allele fractions, and then
     // convert these to discrete genotypes
@@ -253,7 +313,7 @@ bool regt_snp(const string& chrom,
     map<int, float> ind_alts;
     map<int, int> n_doub_seen;
     
-    for (map<int, pair<float, float> >::iterator x = id_dat.begin(); x != id_dat.end(); ++x){
+    for (map<int, pair<float, float> >::const_iterator x = id_dat.begin(); x != id_dat.end(); ++x){
         if (x->second.first + x->second.second > 0){
             if (x->first >= n_samples){
                 pair<int, int> comb = idx_to_hap_comb(x->first, n_samples);
@@ -357,7 +417,7 @@ bool regt_snp(const string& chrom,
     double tot = 0.0; 
     double alt_tot = 0.0;
     
-    for (map<int, pair<float, float> >::iterator x = id_dat.begin(); x != id_dat.end(); ++x){
+    for (map<int, pair<float, float> >::const_iterator x = id_dat.begin(); x != id_dat.end(); ++x){
         if (x->second.first + x->second.second > 0){
             tot += x->second.first + x->second.second;
             alt_tot += x->second.second;
@@ -396,56 +456,10 @@ bool regt_snp(const string& chrom,
             solver.constrain_01(i);
         }
         
-
         try{
             bool success = solver.solve();
             
             if (success){
-                
-                //double ll = solver.log_likelihood;
-                //vector<int> gtresults;
-                /*
-                for (int i = 0; i < solver.results.size(); ++i){
-                    fprintf(stderr, "RESULT %d) %f\n", i, solver.results[i]);
-                    
-                }
-                */
-                /*
-                for (int i = 0; i < solver.results.size(); ++i){
-                    double orig = solver.results[i];
-                    if (solver.results[i] < 0.5){
-                        solver.set_param(i, 0.001);
-                        double ll1 = solver.eval_ll_all();
-                        solver.set_param(i, 0.5);
-                        double ll2 = solver.eval_ll_all();
-                        if (ll1 > ll2){
-                            gtresults.push_back(0);
-                        }
-                        else if (ll1 == ll2){
-                            gtresults.push_back(-1);
-                        }
-                        else{
-                            gtresults.push_back(1);
-                        }
-                    }
-                    else if (solver.results[i] > 0.5){
-                        solver.set_param(i, 0.5);
-                        double ll1 = solver.eval_ll_all();
-                        solver.set_param(i, 0.999);
-                        double ll2 = solver.eval_ll_all();
-                        if (ll1 > ll2){
-                            gtresults.push_back(1);
-                        }
-                        else if (ll1 == ll2){
-                            gtresults.push_back(-1);
-                        }
-                        else{
-                            gtresults.push_back(2);
-                        }
-                    }
-                    solver.set_param(i, orig);
-                }
-                */
                 
                 solved = true;
                 newalt.clear();
@@ -477,74 +491,8 @@ bool regt_snp(const string& chrom,
                         gts[s] = "1/1";
                         gts_pass.insert(2);
                     }
-                    /*  
-                    if (gtresults[i] == -1){
-                        gts[s] = "./.";
-                    }
-                    else if (gtresults[i] == 0){
-                        gts[s] = "0/0";
-                        gts_pass.insert(0);
-                        newalt.insert(make_pair(s, 0.001));
-                    }
-                    else if (gtresults[i] == 1){
-                        gts[s] = "0/1";
-                        gts_pass.insert(1);
-                        newalt.insert(make_pair(s, 0.5));
-                    }
-                    else if (gtresults[i] == 2){
-                        gts[s] = "1/1";
-                        gts_pass.insert(2);
-                        newalt.insert(make_pair(s, 0.999));
-                    }
-                    */
-                    /*
-                    double alt = solver.results[i];
-                    double d0 = dbinom(2, 0, alt);
-                    double d1 = dbinom(2, 1, alt);
-                    double d2 = dbinom(2, 2, alt);
-                    fprintf(stderr, "idx %d alt %f d %f %f %f\n", i, alt, d0, d1, d2);
-
-                    if (d0 > d1 && d0 > d2){
-                        gts[s] = "0/0";
-                        newalt.insert(make_pair(s, 0.001));
-                        gts_pass.insert(0);
-                    }
-                    else if (d1 > d0 && d1 > d2){
-                        gts[s] = "0/1";
-                        newalt.insert(make_pair(s, 0.5));
-                        gts_pass.insert(1);
-                    }
-                    else if (d2 > d0 && d2 > d1){
-                        gts[s] = "1/1";
-                        newalt.insert(make_pair(s, 0.999));
-                        gts_pass.insert(2);
-                    }
-                    else{
-                        gts[s] = "./.";
-                    }
-                    */
+                    
                 }
-                /*
-                if (chrom == "chr1" && pos +1 == 841742){
-
-                    fprintf(stderr, "%f %f\n", id_dat[0].first, id_dat[0].second);
-                    fprintf(stderr, "AF %f\n", solver.results[samp2param[0]]);
-                    for (map<int, pair<float, float> >::iterator x = id_dat.begin(); x != id_dat.end(); ++x){
-                        if (x->first < n_samples){
-                            fprintf(stderr, "  %d) %f %f\n", x->first, x->second.first, x->second.second);
-                            fprintf(stderr, "  GT: %s\n", gts[x->first].c_str());
-                        } 
-                        else{
-                            pair<int, int> y = idx_to_hap_comb(x->first, n_samples);
-                            fprintf(stderr, "  %d+%d) %f %f\n", y.first, y.second, x->second.first, x->second.second);
-                            fprintf(stderr, "  GT: %s %s\n", gts[y.first].c_str(), gts[y.second].c_str());
-                        }
-                    }
-                    fprintf(stderr, "solved? %d\n", solved);
-                    fprintf(stderr, "gts_pass %ld\n", gts_pass.size());
-                    exit(0);
-                }
-                */
             }
         }
         catch(int x){
@@ -553,58 +501,90 @@ bool regt_snp(const string& chrom,
         }
     }
     
-    /*
-    double ll_all_ref = 0.0;
-    double ll_not_all_ref = 0.0;
-
-    for (map<int, pair<float, float> >::iterator x = id_dat.begin(); x != id_dat.end(); ++x){
-        if (x->first >= n_samples){
-            pair<int, int> comb = idx_to_hap_comb(x->first, n_samples);
-            if (newalt.count(comb.first) > 0 && newalt.count(comb.second) > 0){
-                ll_all_ref += dbinom(x->second.first + x->second.second, x->second.second, 0.001);
-                double alt2 = 0.5*newalt[comb.first] + 0.5*newalt[comb.second];
-                ll_not_all_ref += dbinom(x->second.first + x->second.second, x->second.second, alt2);                
-            }
-        }
-        else{
-            if (newalt.count(x->first) > 0){
-                ll_all_ref += dbinom(x->second.first + x->second.second, x->second.second, 0.001);
-                ll_not_all_ref += dbinom(x->second.first + x->second.second, x->second.second, newalt[x->first]);
-            }
-        }
-   }
-    */
-
-   // Check whether it's a variable SNP unlikely to just be errors.
    if (gts_pass.size() > 1){
-        removed = false;
-        /* 
-        double qual;
-        double prob = pbinom(tot, alt_tot, 0.001);
-        if (prob == 1){
-            qual = 1e6;
+        
+        double ref_expected = 1.0;
+        double alt_expected = 1.0;
+        double ref_observed = 0.0;
+        double alt_observed = 0.0;
+        
+        for (map<int, pair<float, float> >::const_iterator x = id_dat.begin(); x != id_dat.end(); ++x){
+            double samptot = x->second.first + x->second.second;
+            if (x->first >= n_samples){
+                pair<int, int> comb = idx_to_hap_comb(x->first, n_samples);
+                if (gts[comb.first] != "./." && gts[comb.second] != "./."){
+                    int nalt = 0;
+                    if (gts[comb.first] == "0/1"){
+                        nalt += 1;
+                    }
+                    else if (gts[comb.first] == "1/1"){
+                        nalt += 2;
+                    }
+                    if (gts[comb.second] == "0/1"){
+                        nalt += 1;
+                    }
+                    else if (gts[comb.second] == "1/1"){
+                        nalt += 2;
+                    }
+                    ref_expected += (1.0 - (double)nalt/4.0)*samptot;
+                    alt_expected += ((double)nalt/4.0)*samptot;
+                    ref_observed += x->second.first;
+                    alt_observed += x->second.second;
+                }
+            }
+            else if (gts[x->first] != "./."){
+                int nalt = 0;
+                if (gts[x->first] == "0/1"){
+                    nalt += 1;
+                }
+                else if (gts[x->first] == "1/1"){
+                    nalt += 2;
+                }
+                ref_expected += (1.0 - (double)nalt/2.0)*samptot;
+                alt_expected += ((double)nalt/2.0)*samptot;
+                ref_observed += x->second.first;
+                alt_observed += x->second.second;
+            }
         }
-        else{
-            qual = -10*log10(1.0-prob);
+        
+        int ro = (int)round(ref_observed);
+        int ao = (int)round(alt_observed);
+        
+        double p = 0.0; 
+        if (ro + ao > 0){
+            p = pbinom(ro+ao, ao, alt_expected/(alt_expected+ref_expected));
+            if (p > 0.5){
+                p = 1.0 - p;
+            }
+            p = 2*p;
         }
-        */
-        /*
-         double prob = pow(2,ll_not_all_ref)/(pow(2,ll_not_all_ref) + pow(2,ll_all_ref));
-        double qual;
-        if (prob == 1){
-            qual = 10000;
-        }
-        else{
-            qual = -10*log10(1.0-prob);
-        }
-        */
+        if (p > p_thresh){
+            removed = false;
+            
+            ostringstream oss;
+            oss << fixed << setprecision(3);
+            string gtstr;
+            for (int i = 0; i < gts.size(); ++i){
+                gtstr += "\t" + gts[i];
+            }
+            oss << chrom << "\t" << pos + 1 << "\t" << ".\t" << v.ref << "\t" << v.alt << "\t" << \
+                v.vq << "\t.\t.\t" << "GT" << gtstr;
+            
+            result = oss.str();
 
-        fprintf(stdout, "%s\t%d\t.\t%c\t%c\t%.3f\t.\t.\tGT", chrom.c_str(), pos+1, 
-            v.ref, v.alt, v.vq);
-        for (int i = 0; i < gts.size(); ++i){
-            fprintf(stdout, "\t%s", gts[i].c_str());
-        }    
-        fprintf(stdout, "\n");
+
+            //fprintf(stdout, "%s\t%d\t.\t%c\t%c\t%.3f\t.\t.\tGT", chrom.c_str(), pos+1, 
+            //    v.ref, v.alt, v.vq);
+            //for (int i = 0; i < gts.size(); ++i){
+            //    fprintf(stdout, "\t%s", gts[i].c_str());
+            //}    
+            //fprintf(stdout, "\n");
+        }
+        else{
+            removed = true;
+            solved = false;
+            changed = false;
+        }
     }
     else{
         removed = true;
@@ -612,6 +592,49 @@ bool regt_snp(const string& chrom,
         changed = false;
     }
     return changed;
+}
+
+void regenotyper::worker(){
+    while(true){
+        int tid = -1;
+        string chrom;
+        int pos;
+        var* v = NULL;
+        map<int, pair<float, float> >* dat = NULL;
+        {
+            unique_lock<mutex> lock(this->queue_mutex);
+            this->has_jobs.wait(lock, [this]{ return jobs.size() > 0 || terminate_threads;});
+            if (this->jobs.size() == 0 && terminate_threads){
+                return;
+            }
+            tid = jobs[0].tid;
+            chrom = tid2chrom[jobs[0].tid];
+            pos = jobs[0].pos;
+            v = jobs[0].v;
+            dat = jobs[0].data;
+            jobs.pop_front();
+        }
+        if (v != NULL && dat != NULL){
+            string* s = NULL;
+            bool* finished = NULL;
+            bool* rm = NULL;
+            bool* changed = NULL;
+            {
+                unique_lock<mutex> lock(this->output_mutex);
+                pair<int, int> key = make_pair(tid, pos);
+                s = &output_lines[key];
+                finished = &output_success[key].finished;
+                rm = &output_success[key].rm;
+                changed = &output_success[key].changed;
+            }
+            bool chg = regt_snp(chrom, pos, *v, n_samples, *dat, *rm, weights, *s, p_thresh);
+            unique_lock<mutex> lock(this->output_mutex);
+            *changed = chg;
+            *finished = true;
+            //*changed = regt_snp(chrom, pos, *v, n_samples, *dat, *rm, weights, *s);   
+            //*finished = true;
+        }
+    }
 }
 
 void compute_weights(robin_hood::unordered_map<unsigned long, int>& assignments,
@@ -632,13 +655,39 @@ void compute_weights(robin_hood::unordered_map<unsigned long, int>& assignments,
     }
 }
 
+void check_print_lines(regenotyper& rgt, 
+    map<int, map<int, map<int, pair<float, float> > > >& snp_id_counts,
+    int& n_rm,
+    int& n_updated){
+
+    // Check whether there's anything to print
+    unique_lock<mutex> lock(rgt.output_mutex);
+    map<pair<int, int>, job_status>::const_iterator it = rgt.output_success.begin(); 
+    while (it != rgt.output_success.end() && it->second.finished){
+        if (it->second.rm){
+            n_rm++;
+        }
+        else{
+            if (it->second.changed){
+                n_updated++;
+            }
+            fprintf(stdout, "%s\n", rgt.output_lines.at(it->first).c_str());
+        }
+        rgt.output_lines.erase(it->first);
+        rgt.output_success.erase(it++);
+        //snp_id_counts[it->first.first].erase(it->first.second);
+    }
+}
+
 int main(int argc, char *argv[]) {    
-   
+    
     static struct option long_options[] = {
        {"bam", required_argument, 0, 'b'},
        {"vcf", required_argument, 0, 'v'},
        {"assignments", required_argument, 0, 'a'},
        {"index_jump", no_argument, 0, 'j'},
+       {"num_threads", required_argument, 0, 'T'},
+       {"p_thresh", required_argument, 0, 'p'},
        {0, 0, 0, 0} 
     };
     
@@ -647,6 +696,8 @@ int main(int argc, char *argv[]) {
     string vcf_file = "";
     string assnfile = "";
     bool stream = true;
+    int nthreads = 0;
+    double p_thresh = 0.01;
 
     int option_index = 0;
     int ch;
@@ -654,7 +705,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:a:jh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:v:a:T:p:jh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -673,6 +724,12 @@ int main(int argc, char *argv[]) {
                 break;
             case 'j':
                 stream = false;
+                break;
+            case 'T':
+                nthreads = atoi(optarg);
+                break;
+            case 'p':
+                p_thresh = atof(optarg);
                 break;
             default:
                 help(0);
@@ -693,8 +750,14 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: assignments file required\n");
         exit(1);
     }
+    if (nthreads <= 1){
+        nthreads = 0;
+    }
+    if (p_thresh < 0 || p_thresh > 1.0){
+        fprintf(stderr, "ERROR: --p_thresh/-p must be between 0 and 1.\n");
+        exit(1);
+    }
 
-    
     // Init BAM reader
     bam_reader reader = bam_reader();
     reader.set_file(bamfile);
@@ -758,14 +821,22 @@ int main(int argc, char *argv[]) {
     int n_updated = 0;
     int n_rm = 0;
     int n_tot = 0;
-
+    
     int nsnp_processed = 0;
+    
+    regenotyper rgt(samples.size(), tid2chrom, weights, nthreads, p_thresh);
+    string outline;
+    
+    if (nthreads > 1){
+        rgt.launch_threads();
+    }
+
     if (stream){
 
         // Read through entire BAM file and look for informative SNPs along the way
         // (default setting, appropriate for large numbers of SNPs).
         int curtid = -1;
-        
+
         map<int, var>::iterator cursnp;
         while (reader.next()){
             if (curtid != reader.tid()){
@@ -773,23 +844,37 @@ int main(int argc, char *argv[]) {
                 if (curtid != -1){
                     while (cursnp != snpdat[curtid].end()){
                         if (snpdat[curtid].count(cursnp->first) > 0){        
-                            bool rm = false; 
-                            bool updated = regt_snp(tid2chrom[curtid], cursnp->first,
-                                snpdat[curtid][cursnp->first],
-                                samples.size(),
-                                snp_id_counts[curtid][cursnp->first],
-                                rm,
-                                weights);
-                            if (updated){
-                                n_updated++;
+                            if (nthreads <= 1){
+                                bool rm = false; 
+                                bool updated = regt_snp(tid2chrom[curtid], cursnp->first,
+                                    snpdat[curtid][cursnp->first],
+                                    samples.size(),
+                                    snp_id_counts[curtid][cursnp->first],
+                                    rm,
+                                    weights,
+                                    outline,
+                                    p_thresh);
+                                if (!rm){
+                                    fprintf(stdout, "%s\n", outline.c_str());
+                                }
+                                if (updated){
+                                    n_updated++;
+                                }
+                                else if (rm){
+                                    n_rm++;
+                                }
+                                n_tot++;
+                                snp_id_counts[curtid].erase(cursnp->first);
                             }
-                            else if (rm){
-                                n_rm++;
+                            else{
+                                rgt.add_job(curtid, cursnp->first, 
+                                    &snpdat[curtid][cursnp->first], &snp_id_counts[curtid][cursnp->first]);
+                                check_print_lines(rgt, snp_id_counts, n_rm, n_updated);
+                                n_tot++;
                             }
-                            n_tot++;
                         }
-                        ++nsnp_processed;
                         ++cursnp;
+                        ++nsnp_processed;
                     }
                 }
                 cursnp = snpdat[reader.tid()].begin();
@@ -799,18 +884,31 @@ int main(int argc, char *argv[]) {
             while (cursnp != snpdat[reader.tid()].end() && 
                 cursnp->first < reader.reference_start){
                 if (snp_id_counts[reader.tid()].count(cursnp->first) > 0){ 
-                    bool rm = false;
-                    bool updated = regt_snp(tid2chrom[reader.tid()], cursnp->first,
-                        cursnp->second,
-                        samples.size(),
-                        snp_id_counts[reader.tid()][cursnp->first],
-                        rm,
-                        weights);
-                    if (updated){
-                        n_updated++;
+                    if (nthreads <= 1){
+                        bool rm = false;
+                        bool updated = regt_snp(tid2chrom[reader.tid()], cursnp->first,
+                            cursnp->second,
+                            samples.size(),
+                            snp_id_counts[reader.tid()][cursnp->first],
+                            rm,
+                            weights,
+                            outline,
+                            p_thresh);
+                        if (!rm){
+                            fprintf(stdout, "%s\n", outline.c_str());
+                        }
+                        if (updated){
+                            n_updated++;
+                        }
+                        else if (rm){
+                            n_rm++;
+                        }
+                        snp_id_counts[reader.tid()].erase(cursnp->first);
                     }
-                    else if (rm){
-                        n_rm++;
+                    else{
+                        rgt.add_job(reader.tid(), cursnp->first, 
+                            &snpdat[reader.tid()][cursnp->first], &snp_id_counts[reader.tid()][cursnp->first]);
+                        check_print_lines(rgt, snp_id_counts, n_rm, n_updated);
                     }
                     n_tot++;
                 }
@@ -835,19 +933,32 @@ int main(int argc, char *argv[]) {
         // Handle any final SNPs.
         if (curtid != -1){
             while (cursnp != snpdat[curtid].end()){
-                if (snpdat[curtid].count(cursnp->first) > 0){        
-                    bool rm = false; 
-                    bool updated = regt_snp(tid2chrom[curtid], cursnp->first,
-                        snpdat[curtid][cursnp->first],
-                        samples.size(),
-                        snp_id_counts[curtid][cursnp->first],
-                        rm,
-                        weights);
-                    if (updated){
-                        n_updated++;
+                if (snpdat[curtid].count(cursnp->first) > 0){
+                    if (nthreads <= 1){
+                        bool rm = false; 
+                        bool updated = regt_snp(tid2chrom[curtid], cursnp->first,
+                            snpdat[curtid][cursnp->first],
+                            samples.size(),
+                            snp_id_counts[curtid][cursnp->first],
+                            rm,
+                            weights,
+                            outline,
+                            p_thresh);
+                        if (!rm){
+                            fprintf(stdout, "%s\n", outline.c_str());
+                        }
+                        if (updated){
+                            n_updated++;
+                        }
+                        else if (rm){
+                            n_rm++;
+                        }
+                        snp_id_counts[curtid].erase(cursnp->first);
                     }
-                    else if (rm){
-                        n_rm++;
+                    else{
+                         rgt.add_job(curtid, cursnp->first, 
+                            &snpdat[curtid][cursnp->first], &snp_id_counts[curtid][cursnp->first]);
+                        check_print_lines(rgt, snp_id_counts, n_rm, n_updated);
                     }
                     n_tot++;
                 }
@@ -872,19 +983,31 @@ int main(int argc, char *argv[]) {
                     process_bam_record_bysnp(reader, cursnp->first, cursnp->second,
                         assignments, snp_id_counts[reader.tid()][cursnp->first]);
                 }
-                
-                bool rm;
-                bool updated = regt_snp(tid2chrom[tid], cursnp->first,
-                    cursnp->second,
-                    samples.size(),
-                    snp_id_counts[tid][cursnp->first],
-                    rm,
-                    weights);
-                if (updated){
-                    n_updated++;
+                if (nthreads <= 1){
+                    bool rm = false;
+                    bool updated = regt_snp(tid2chrom[tid], cursnp->first,
+                        cursnp->second,
+                        samples.size(),
+                        snp_id_counts[tid][cursnp->first],
+                        rm,
+                        weights,
+                        outline,
+                        p_thresh);
+                    if (!rm){
+                        fprintf(stdout, "%s\n", outline.c_str());
+                    }
+                    if (updated){
+                        n_updated++;
+                    }
+                    else if (rm){
+                        n_rm++;
+                    }
+                    snp_id_counts[tid].erase(cursnp->first);
                 }
-                else if (rm){
-                    n_rm++;
+                else{
+                    rgt.add_job(tid, cursnp->first, 
+                        &snpdat[tid][cursnp->first], &snp_id_counts[tid][cursnp->first]);
+                    check_print_lines(rgt, snp_id_counts, n_rm, n_updated);
                 }
                 n_tot++;
                 ++nsnp_processed;        
@@ -898,7 +1021,11 @@ int main(int argc, char *argv[]) {
         }
     }
     hts_close(outf);
-
+    
+    if (nthreads > 1){
+        rgt.close_pool();
+        check_print_lines(rgt, snp_id_counts, n_rm, n_updated);
+    }
     fprintf(stderr, "Processed %d of %d SNPs\n", nsnp_processed, nsnps);    
    
     fprintf(stderr, "Updated %d of %d (%.2f%%)\n", n_updated, n_tot, 100*(double)n_updated/(double)n_tot);
