@@ -771,8 +771,8 @@ be inaccurate if there is much cell type heterogeneity).\n");
         if (!load_gex){
             fprintf(stderr, "ERROR: previous run detected, and no gene expression data \
 provided. Nothing to do.\n");
-            fprintf(stderr, "To repeat the run, either change --output_prefix/-o or remove \
-%s and %s.\n", prof_name.c_str(), rate_name.c_str());
+            fprintf(stderr, "To repeat the run, remove %s and %s.\n", prof_name.c_str(), 
+                rate_name.c_str());
             exit(1);
         }
         fprintf(stderr, "Previous run detected. Loading profile\n");

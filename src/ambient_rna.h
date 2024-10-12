@@ -70,8 +70,8 @@ class contamFinder{
         
         // Prior distribution mean for contamination rate per cell
         double contam_cell_prior;
-        // Prior distribution sigma for contamination rate per cell
-        double contam_cell_prior_se;
+        // Prior distribution variance for contamination rate per cell
+        double contam_cell_prior_var;
        
         // Error rate for ref alleles (rate at which they are misread as alt)
         double e_r;

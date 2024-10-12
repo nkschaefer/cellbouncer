@@ -420,7 +420,7 @@ contamFinder::contamFinder(robin_hood::unordered_map<unsigned long,
     this->inter_species = false;
 
     this->contam_cell_prior = -1;
-    this->contam_cell_prior_se = -1;
+    this->contam_cell_prior_var = -1;
 
     this->delta_thresh = 0.1;
     this->maxits = 100;
@@ -904,7 +904,7 @@ void contamFinder::est_contam_cells_global(){
     c_global.constrain_01();
     c_global.set_maxiter(-1);
     contam_cell_prior = c_global.solve(0,1);
-    contam_cell_prior_se = -1;
+    contam_cell_prior_var = -1;
     fprintf(stderr, "MLE global contamination rate: %f\n", contam_cell_prior);
 }
 
@@ -956,10 +956,12 @@ void contamFinder::est_contam_cells(){
         c_cell.add_data("p_e", p_e);
         c_cell.add_data("p_c", p_c);
         c_cell.constrain_01();
-        if (contam_cell_prior > 0 && contam_cell_prior_se > 0){
-            // The last two parameters indicate that this is a truncated normal distribution
-            // on the interval [0,1]
-            c_cell.add_normal_prior(contam_cell_prior, contam_cell_prior_se, 0, 1);
+        if (contam_cell_prior > 0 && contam_cell_prior_var > 0){
+            // We already ran once to get all per-cell maximum likelihood estimates.
+            // Now fit a Beta distribution to these values and use it as a prior to shrink
+            // per-cell estimates (Empirical Bayes)
+            pair<double, double> bm = beta_moments(contam_cell_prior, contam_cell_prior_var);
+            c_cell.add_beta_prior(bm.first, bm.second);
         }
         c_cell.set_maxiter(-1);
         double c_cell_map = c_cell.solve(0,1);
@@ -995,7 +997,7 @@ void contamFinder::est_contam_cells(){
         mu_var = welford(cell_c_maps);
     }
     if (mu_var.second > 1e-6){
-        if (contam_cell_prior > 0 && contam_cell_prior_se > 0){
+        if (contam_cell_prior > 0 && contam_cell_prior_var > 0){
             fprintf(stderr, "Shrunken per-cell contamination rates:\n");
         }
         else{
@@ -1003,7 +1005,7 @@ void contamFinder::est_contam_cells(){
         }
         fprintf(stderr, "  Mean: %f Std dev: %f\n", mu_var.first, sqrt(mu_var.second));
         contam_cell_prior = mu_var.first;
-        contam_cell_prior_se = sqrt(mu_var.second);
+        contam_cell_prior_var = mu_var.second;
     }
 
     map<int, double> idcsum;
@@ -1547,6 +1549,11 @@ bool contamFinder::reclassify_cells(){
     
     bool reweight_doublets = (doublet_rate > 0 && doublet_rate < 1);
     
+    pair<double, double> betaparams;
+    if (contam_cell_prior > 0 && contam_cell_prior_var > 0){
+        betaparams = beta_moments(contam_cell_prior, contam_cell_prior_var);
+    }
+
     map<int, double> priorweights;
     map<int, double>* priorweights_ptr = NULL;
     if (reweight_doublets){
@@ -1720,10 +1727,8 @@ bool contamFinder::reclassify_cells(){
                     c_cell.add_data("p_e", p_e);
                     c_cell.add_data("p_c", p_c);
                     c_cell.constrain_01();
-                    if (contam_cell_prior > 0 && contam_cell_prior_se > 0){
-                        // The last two parameters indicate that this is a truncated normal distribution
-                        // on the interval [0,1]
-                        c_cell.add_normal_prior(contam_cell_prior, contam_cell_prior_se, 0, 1);
+                    if (contam_cell_prior > 0 && contam_cell_prior_var > 0){
+                        c_cell.add_beta_prior(betaparams.first, betaparams.second);
                     }
                     c_cell.set_maxiter(-1);
                     double c_cell_map = c_cell.solve(0,1);
@@ -1854,6 +1859,7 @@ pair<double, double> contamFinder::est_error_rates(bool init){
 double contamFinder::compute_ll(){
     // Compute log likelihood of data set
     double loglik = 0.0;
+    pair<double, double> betaparams = beta_moments(contam_cell_prior, contam_cell_prior_var);
     for (int i = 0; i < n_all.size(); ++i){
         if (contam_rate.count(idx_to_cell[i]) > 0){
             double c = contam_rate[idx_to_cell[i]];
@@ -1863,8 +1869,9 @@ double contamFinder::compute_ll(){
             loglik += logbinom(n_all[i], k_all[i], binom_p);
             
             // Add in prior prob of cell contam rates
-            double a = (c - contam_cell_prior) / contam_cell_prior_se;
-            loglik += (-0.5*pow(a, 2)) - log(contam_cell_prior_se) - log(sqrt(2*3.14159265358979));
+            //double a = (c - contam_cell_prior) / contam_cell_prior_se;
+            //loglik += (-0.5*pow(a, 2)) - log(contam_cell_prior_se) - log(sqrt(2*3.14159265358979));
+            loglik += (dbeta(c, betaparams.first, betaparams.second)/log2(exp(1.0)));
         }
     }
     return loglik;
