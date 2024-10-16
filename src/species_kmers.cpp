@@ -26,10 +26,10 @@
 #include <htswrapper/bc.h>
 #include <htswrapper/umi.h>
 #include <htswrapper/gzreader.h>
+#include <htswrapper/khashtable.h>
 #include <random>
 #include "common.h"
 #include "species_kmers.h"
-#include "kmsuftree.h"
 
 KSEQ_INIT(gzFile, gzread);
 
@@ -90,7 +90,7 @@ species_kmer_counter::species_kmer_counter(int nt,
     bc_whitelist* wl,
     robin_hood::unordered_map<unsigned long, map<short, int> >* bsc,
     int umi_start,
-    int umi_len){
+    int umi_len): tab(k){
     
     this->terminate_threads = false;
     this->num_threads = nt;
@@ -117,7 +117,8 @@ species_kmer_counter::~species_kmer_counter(){
         this->on = false;
     }
     if (this->initialized){
-        kmsuftree_destruct(kt, 0);
+        //kmsuftree_destruct(kt, 0);
+        tab.clear();
     }
     // Free all UMI counters
     for (robin_hood::unordered_map<unsigned long, umi_set_exact* >::iterator x = bc_species_umis.begin();
@@ -135,21 +136,32 @@ void species_kmer_counter::set_n_samp(int ns){
 void species_kmer_counter::init(short species_idx, string& kmerfile){
     this->terminate_threads = false;
 
-    this_species = species_idx;
+    //this_species = species_idx;
 
     if (this->initialized){
-        kmsuftree_destruct(kt, 0);
+        tab.clear();
+        //kmsuftree_destruct(kt, 0);
     }
-    kt = init_kmer_tree(k);
+    //tab = khashtable<short>(k); 
     parse_kmer_counts_serial(kmerfile, species_idx);
     
     this->initialized = true;
 }
 
+void species_kmer_counter::add(short species_idx, string& kmerfile){
+    if (!this->initialized){
+        //tab = khashtable<short>(k);
+        //kt = init_kmer_tree(k);
+        this->initialized = true;
+        this->terminate_threads = false;
+    }
+    parse_kmer_counts_serial(kmerfile, species_idx);
+}
+
 /**
  * Only using canonical k-mers = first in sort order relative to reverse complement.
  * Check if a given k-mer or its reverse complement comes first in alphabetical sort order.
- */
+ *
 bool species_kmer_counter::is_rc_first(const char* kmer, int k){
     for (int i = 0; i < k; ++i){
         char char_f = kmer[k];
@@ -209,6 +221,7 @@ bool species_kmer_counter::is_rc_first(const char* kmer, int k){
     }
     return false;
 }
+*/
 
 void species_kmer_counter::disable_umis(){
     this->use_umis = false;
@@ -226,7 +239,15 @@ void species_kmer_counter::process_gex_files(string& r1filename,
     
     if (num_threads > 1){
         launch_gex_threads();
-    } 
+    }
+    else{
+        vector<int> v;
+        for (int i = 0; i < num_species; ++i){
+            v.push_back(0);
+        }
+        species_counts.push_back(v);
+        khashkeys.emplace_back(k);
+    }
 
     // Now iterate through read files, find/match barcodes, and assign to the correct files.
     // Prep input file(s).
@@ -262,7 +283,7 @@ void species_kmer_counter::process_gex_files(string& r1filename,
         }
         else{
             // Just count normally, without wasting overhead counting sequences
-            scan_gex_data(seq_f->seq.s, seq_f->seq.l, seq_r->seq.s, seq_r->seq.l);
+            scan_gex_data(seq_f->seq.s, seq_f->seq.l, seq_r->seq.s, seq_r->seq.l, 0);
         }
     }
 
@@ -325,69 +346,97 @@ void species_kmer_counter::add_rt_job(rt_info& info){
 }
 
 // Count k-mers for one species in a specific read.
-int species_kmer_counter::scan_seq_kmers(const char* seq, int len){
-    
-    int species_count = 0;
-    
-    // Only one species per job.
-    short this_species;
-
+void species_kmer_counter::scan_seq_kmers(const char* seq, int len, int* result_counts, khashkey& key){
+    key.reset();
+    int pos = 0;
+    while(key.scan_kmers(seq, len, pos)){
+        short spec;
+        if (tab.lookup(key, spec)){
+            result_counts[spec]++;
+            return;
+        }
+        else{
+            //key.print(false);
+        }
+    }
+    /*
     kmer_node_ptr* cur = NULL;
     bool cur_rc = false;
-    
+
     static int tot = 0;
     static int pointed = 0;
     static int lookedup = 0;
     
     int N_pos = -1;
+    
+    size_t k_idx;
+    size_t k_idx_rev;
+    bool rebuild = true;
 
     for (int i = 0; i < len - kt->k; ++i){
-        
+            
         // If contains N, then can't have valid k-mer.
-        if (i == 0){
-            /*
-            // Check the whole k-mer.
-            // We want to note the last position in the k-mer with an N.
-            for (int j = i + kt->k - 1; j >= i; j--){
-                if (seq[j] == 'N'){
-                    N_pos = j;
-                    break;
-                }
-            }
-            */
-        }
-        else{
-            // Just check the last base.
-            if (seq[i + kt->k - 1] == 'N'){
-                N_pos = i + kt->k - 1;
-            }
+        if (seq[i + kt->k - 1] == 'N'){
+            N_pos = i + kt->k - 1;
         }
         if (N_pos >= i){
             // N will occur in this k-mer.
             cur = NULL;
-            cur_rc = false;
         }
         else{
             if (cur == NULL){
                 // Attempt to look up.
-                if (species_kmer_counter::is_rc_first(&seq[i], kt->k)){
-                    void* dat = kmer_tree_lookup(&seq[i], kt, true);
-                    if (dat != NULL){
-                        ++species_count;
-                        cur = (kmer_node_ptr*)dat;
-                        cur_rc = true;
-                        lookedup++;
+                void* dat = NULL;
+                if (rebuild){
+                    if ( kmer2inx( seq + i, kt->k_ar_size, &k_idx, 0, kt->k ) ){
+                        kmer2inx( seq + i, kt->k_ar_size, &k_idx_rev, 1, kt->k );
+                        rebuild = false;
+                        if (is_rc_first( seq + i, kt->k )){
+                            dat = kmer_tree_lookup_aux(seq + i, kt, 1, &k_idx_rev);
+                            if (dat != NULL){
+                                cur_rc = true;
+                            }
+                        }
+                        else{
+                            dat = kmer_tree_lookup_aux(seq + i, kt, 0, &k_idx);  
+                            if (dat != NULL){
+                                cur_rc = false;
+                            }
+                        }
+                    }
+                    else{
+                        // Still need to rebuild.
                     }
                 }
                 else{
-                    void* dat = kmer_tree_lookup(&seq[i], kt, false);
-                    if (dat != NULL){
-                        ++species_count;
-                        cur = (kmer_node_ptr*)dat;
-                        cur_rc = false;
-                        lookedup++;
+                    if ( kmer2inx_continue( seq + i, kt->k_ar_size, &k_idx, 0, kt->k ) ){
+                        kmer2inx_continue( seq + i, kt->k_ar_size, &k_idx_rev, 1, kt->k );
+                        rebuild = false;
+                        if (is_rc_first( seq + i, kt->k )){
+                            dat = kmer_tree_lookup_aux(seq + i, kt, 1, &k_idx_rev);
+                            if (dat != NULL){
+                                cur_rc = true;
+                            }
+                        }
+                        else{
+                            dat = kmer_tree_lookup_aux(seq + i, kt, 0, &k_idx);
+                            if (dat != NULL){
+                                cur_rc = false;
+                            }
+                        }
                     }
-                }
+                    else{
+                        // N encountered; rebuild
+                        rebuild = true;
+                    }
+                }        
+                if (dat != NULL){
+                    //++species_count;
+                    cur = (kmer_node_ptr*)dat;
+                    result_counts[cur->species]++;
+                    lookedup++;
+                    return;
+               } 
             }
             else{
                 // We already have a k-mer to start from. See if we can follow
@@ -398,7 +447,8 @@ int species_kmer_counter::scan_seq_kmers(const char* seq, int len){
                         if (cur->r_A != NULL){
                             cur_rc = !cur->r_A_flip;
                             cur = cur->r_A;
-                            species_count++;
+                            //species_count++;
+                            result_counts[cur->species]++;
                             pointed++;
                         }
                         else{
@@ -410,7 +460,8 @@ int species_kmer_counter::scan_seq_kmers(const char* seq, int len){
                         if (cur->r_C != NULL){
                             cur_rc = !cur->r_C_flip;
                             cur = cur->r_C;
-                            species_count++;
+                            //species_count++;
+                            result_counts[cur->species]++;
                             pointed++;
                         }
                         else{
@@ -422,10 +473,12 @@ int species_kmer_counter::scan_seq_kmers(const char* seq, int len){
                         if (cur->r_G != NULL){
                             cur_rc = !cur->r_G_flip;
                             cur = cur->r_G;
-                            species_count++;
+                            //species_count++;
+                            result_counts[cur->species]++;
                             pointed++;
                         }
                         else{
+
                             cur = NULL;
                             cur_rc = false;
                         }
@@ -434,7 +487,8 @@ int species_kmer_counter::scan_seq_kmers(const char* seq, int len){
                         if (cur->r_T != NULL){
                             cur_rc = !cur->r_T_flip;
                             cur = cur->r_T;
-                            species_count++;
+                            //species_count++;
+                            result_counts[cur->species]++;
                             pointed++;
                         }
                         else{
@@ -446,9 +500,10 @@ int species_kmer_counter::scan_seq_kmers(const char* seq, int len){
                 else{
                     if (newbase == 'A'){
                         if (cur->f_A != NULL){
+                            cur = cur->f_A;        
                             cur_rc = cur->f_A_flip;
-                            cur = cur->f_A;
-                            species_count++;
+                            //species_count++;
+                            result_counts[cur->species]++;
                             pointed++;
                         }
                         else{
@@ -458,9 +513,10 @@ int species_kmer_counter::scan_seq_kmers(const char* seq, int len){
                     }
                     else if (newbase == 'C'){
                         if (cur->f_C != NULL){
-                            cur_rc = cur->f_C_flip;
                             cur = cur->f_C;
-                            species_count++;
+                            cur_rc = cur->f_C_flip;
+                            result_counts[cur->species]++;
+                            //species_count++;
                             pointed++;
                         }
                         else{
@@ -470,9 +526,10 @@ int species_kmer_counter::scan_seq_kmers(const char* seq, int len){
                     }
                     else if (newbase == 'G'){
                         if (cur->f_G != NULL){
-                            cur_rc = cur->f_G_flip;
                             cur = cur->f_G;
-                            species_count++;
+                            cur_rc = cur->f_G_flip;
+                            //species_count++;
+                            result_counts[cur->species]++;
                             pointed++;
                         }
                         else{
@@ -482,9 +539,10 @@ int species_kmer_counter::scan_seq_kmers(const char* seq, int len){
                     }
                     else if (newbase == 'T'){
                         if (cur->f_T != NULL){
-                            cur_rc = cur->f_T_flip;
                             cur = cur->f_T;
-                            species_count++;
+                            cur_rc = cur->f_T_flip;
+                            //species_count++;
+                            result_counts[cur->species]++;
                             pointed++;
                         }
                         else{
@@ -496,8 +554,7 @@ int species_kmer_counter::scan_seq_kmers(const char* seq, int len){
             }
         }
     }
-
-    return species_count;
+    */
 }
 
 void species_kmer_counter::scan_gex_data(const char* seq_f, 
@@ -505,6 +562,7 @@ void species_kmer_counter::scan_gex_data(const char* seq_f,
     
     unsigned long bc_key = 0;
     bool exact;
+    
     if (wl->lookup(seq_f, bc_key, exact, seq_f_len)){
         
         bool dup_read = false;
@@ -535,18 +593,26 @@ void species_kmer_counter::scan_gex_data(const char* seq_f,
 
         // In 10x scRNA-seq data, only the reverse read contains information
         // forward read is barcode
-        int nk = scan_seq_kmers(seq_r, seq_r_len);
-
-        if (nk > 0){    
-            unique_lock<mutex> lock(this->counts_mutex);
-            if (bc_species_counts->count(bc_key) == 0){
-                map<short, int> m;
-                bc_species_counts->emplace(bc_key, m);
+        for (int j = 0; j < num_species; ++j){
+            species_counts[thread_idx][j] = 0;
+        }
+        scan_seq_kmers(seq_r, seq_r_len, species_counts[thread_idx].data(), khashkeys[thread_idx]);
+        
+        for (int j = 0; j < num_species; ++j){
+            if (species_counts[thread_idx][j] > 0){
+                int this_species = j;
+                int nk = species_counts[thread_idx][j];
+                unique_lock<mutex> lock(this->counts_mutex);
+                if (bc_species_counts->count(bc_key) == 0){
+                    map<short, int> m;
+                    bc_species_counts->emplace(bc_key, m);
+                }
+                if ((*bc_species_counts)[bc_key].count(this_species) == 0){
+                    (*bc_species_counts)[bc_key].insert(make_pair(this_species, 0));
+                }
+                //(*bc_species_counts)[bc_key][this_species]++;
+                (*bc_species_counts)[bc_key][this_species] += nk;
             }
-            if ((*bc_species_counts)[bc_key].count(this_species) == 0){
-                (*bc_species_counts)[bc_key].insert(make_pair(this_species, 0));
-            }
-            (*bc_species_counts)[bc_key][this_species]++;
         }
     }
 }
@@ -567,278 +633,400 @@ char complement(char base){
     return 'N';
 }
 
+/**
+ * Assumes we're adding both forward and RC versions of every k-mer.
+ * User must reverse complement the sequence and then call this function;
+ * assumes forward orientation.
+ *
+void species_kmer_counter::add_node_to_tree_simple(char* kmer, char* kmer_buf, kmer_tree_p kt, short species_idx){
+    char bases[4] = {'A', 'C', 'G', 'T'};
+
+    kmer_node_ptr* n = (kmer_node_ptr*) malloc(sizeof(kmer_node_ptr));
+    // Initialize.
+    n->f_A = NULL;
+    n->f_C = NULL;
+    n->f_G = NULL;
+    n->f_T = NULL;
+    n->r_A = NULL;
+    n->r_C = NULL;
+    n->r_G = NULL;
+    n->r_T = NULL;
+    n->f_A_flip = false;
+    n->f_C_flip = false;
+    n->f_G_flip = false;
+    n->f_T_flip = false;
+    n->r_A_flip = false;
+    n->r_C_flip = false;
+    n->r_G_flip = false;
+    n->r_T_flip = false;
+    n->species = species_idx;
+
+    // Check whether any 1-base-away k-mer (moving backward or forward)
+    //  has already been created. Link them up if so.
+
+    // Rules: moving forward in sequence:
+    //  b1 = last base being added
+    //  b2 = complement of first base
+    //  is current k-mer rc? 
+    //      yes -> link from cur k-mer b1, reverse
+    //          flip = !next_rc
+    //      no -> link from cur k-mer b1, forward
+    //          flip = next_rc
+    //  is next k-mer rc?
+    //      yes -> link from next k-mer b2, forward
+    //          flip = !cur_rc
+    //      no -> link from next k-mer b2, reverse
+    //          flip = cur_rc
+    
+    // Check moving forward
+    strncpy(&kmer_buf[0], kmer + 1, kt->k-1);
+    kmer_buf[kt->k] = '\0';
+    
+    for (int i = 0; i < 4; ++i){
+        kmer_node_ptr* ptr = NULL; 
+    
+        kmer_buf[kt->k-1] = bases[i];
+        
+        void* res = kmer_tree_lookup(&kmer_buf[0], kt, 0);
+        if (res != NULL){
+            ptr = (kmer_node_ptr*)res;
+        }
+        
+        if (ptr != NULL){
+            if (bases[i] == 'A'){
+                n->f_A = ptr;
+            }
+            else if (bases[i] == 'C'){
+                n->f_C = ptr;
+            }
+            else if (bases[i] == 'G'){
+                n->f_G = ptr;
+            }
+            else if (bases[i] == 'T'){
+                n->f_T = ptr;
+            }
+            if (kmer[0] == 'A'){
+                ptr->r_T = n;
+            }
+            else if (kmer[0] == 'C'){
+                ptr->r_G = n;
+            }
+            else if (kmer[0] == 'G'){
+                ptr->r_C = n;
+            }
+            else if (kmer[0] == 'T'){
+                ptr->r_A = n;
+            }
+        }
+    }
+
+    // Check moving backward
+    strncpy(&kmer_buf[1], kmer, kt->k-1);
+    kmer_buf[kt->k] = '\0';
+    for (int i = 0; i < 4; ++i){
+        kmer_node_ptr* ptr = NULL; 
+        kmer_buf[0] = bases[i];
+        
+        void* res = kmer_tree_lookup(&kmer_buf[0], kt, 0);
+        if (res != NULL){
+            ptr = (kmer_node_ptr*)res;
+        }
+        
+        if (ptr != NULL){
+            // Same rules as above, but now buf and line are reversed.
+            if (kmer[kt->k-1] == 'A'){
+                ptr->f_A = n;
+            }
+            else if (kmer[kt->k-1] == 'C'){
+                ptr->f_C = n;
+            }
+            else if (kmer[kt->k-1] == 'G'){
+                ptr->f_G = n;
+            }
+            else if (kmer[kt->k-1] == 'T'){
+                ptr->f_T = n;
+            }
+            if (bases[i] == 'A'){
+                n->r_T = ptr;
+            }
+            else if (bases[i] == 'C'){
+                n->r_G = ptr;
+            }
+            else if (bases[i] == 'G'){
+                n->r_C = ptr;
+            }
+            else if (bases[i] == 'T'){
+                n->r_A = ptr;
+            }
+        }
+    }
+
+    // Store the node in the suffix array.
+    kmer_tree_add(kmer, kt, (void*)n, false);
+}
+*/
+/** 
+ * Only adds nodes in the orientation (F,RC) that comes alphabetically first
+ *
+void species_kmer_counter::add_node_to_tree_canonical(char* kmer, char* buf, kmer_tree_p kt, short species_idx){
+    char bases[4] = {'A', 'C', 'G', 'T'};
+
+    kmer_node_ptr* n = (kmer_node_ptr*) malloc(sizeof(kmer_node_ptr));
+    // Initialize.
+    n->f_A = NULL;
+    n->f_C = NULL;
+    n->f_G = NULL;
+    n->f_T = NULL;
+    n->r_A = NULL;
+    n->r_C = NULL;
+    n->r_G = NULL;
+    n->r_T = NULL;
+    n->f_A_flip = false;
+    n->f_C_flip = false;
+    n->f_G_flip = false;
+    n->f_T_flip = false;
+    n->r_A_flip = false;
+    n->r_C_flip = false;
+    n->r_G_flip = false;
+    n->r_T_flip = false;
+    n->species = species_idx;
+
+    bool rc = is_rc_first(kmer, kt->k);
+    
+    // Check whether any 1-base-away k-mer (moving backward or forward)
+    //  has already been created. Link them up if so.
+
+    // Rules: moving forward in sequence:
+    //  b1 = last base being added
+    //  b2 = complement of first base
+    //  is current k-mer rc? 
+    //      yes -> link from cur k-mer b1, reverse
+    //          flip = !next_rc
+    //      no -> link from cur k-mer b1, forward
+    //          flip = next_rc
+    //  is next k-mer rc?
+    //      yes -> link from next k-mer b2, forward
+    //          flip = !cur_rc
+    //      no -> link from next k-mer b2, reverse
+    //          flip = cur_rc
+
+    // Check moving forward
+    strncpy(&buf[0], kmer + 1, kt->k-1);
+    buf[kt->k] = '\0';
+    
+    for (int i = 0; i < 4; ++i){
+        kmer_node_ptr* ptr = NULL; 
+        bool ptr_rc = false;
+    
+        buf[kt->k-1] = bases[i];
+        
+        if (is_rc_first(&buf[0], kt->k)){
+            void* res = kmer_tree_lookup(&buf[0], kt, 1);
+            if (res != NULL){
+                ptr = (kmer_node_ptr*)res;
+                ptr_rc = true;
+            }
+        }
+        else{
+            void* res = kmer_tree_lookup(&buf[0], kt, 0);
+            if (res != NULL){
+                ptr = (kmer_node_ptr*)res;
+                ptr_rc = false;
+            }
+        }
+        if (ptr != NULL){
+            if (rc){
+                if (bases[i] == 'A'){
+                    n->r_A = ptr;
+                    n->r_A_flip = !ptr_rc;
+                }   
+                else if (bases[i] == 'C'){
+                    n->r_C = ptr;
+                    n->r_C_flip = !ptr_rc;
+                }
+                else if (bases[i] == 'G'){
+                    n->r_G = ptr;
+                    n->r_G_flip = !ptr_rc;
+                }
+                else if (bases[i] == 'T'){
+                    n->r_T = ptr;
+                    n->r_T_flip = !ptr_rc;
+                }
+            }
+            else{
+                if (bases[i] == 'A'){
+                    n->f_A = ptr;
+                    n->f_A_flip = ptr_rc;
+                }
+                else if (bases[i] == 'C'){
+                    n->f_C = ptr;
+                    n->f_C_flip = ptr_rc;
+                }
+                else if (bases[i] == 'G'){
+                    n->f_G = ptr;
+                    n->f_G_flip = ptr_rc;
+                }
+                else if (bases[i] == 'T'){
+                    n->f_T = ptr;
+                    n->f_T_flip = ptr_rc;
+                }
+            }
+            if (ptr_rc){
+                if (kmer[0] == 'A'){
+                    ptr->f_T = n;
+                    ptr->f_T_flip = !rc;
+                }
+                else if (kmer[0] == 'C'){
+                    ptr->f_G = n;
+                    ptr->f_G_flip = !rc;
+                }
+                else if (kmer[0] == 'G'){
+                    ptr->f_C = n;
+                    ptr->f_C_flip = !rc;
+                }
+                else if (kmer[0] == 'T'){
+                    ptr->f_A = n;
+                    ptr->f_A_flip = !rc;
+                }
+            }
+            else{
+                if (kmer[0] == 'A'){
+                    ptr->r_T = n;
+                    ptr->r_T_flip = rc;
+                }
+                else if (kmer[0] == 'C'){
+                    ptr->r_G = n;
+                    ptr->r_G_flip = rc;
+                }
+                else if (kmer[0] == 'G'){
+                    ptr->r_C = n;
+                    ptr->r_C_flip = rc;
+                }
+                else if (kmer[0] == 'T'){
+                    ptr->r_A = n;
+                    ptr->r_A_flip = rc;
+                }
+            }
+        }
+    }
+
+    // Check moving backward
+    strncpy(&buf[1], kmer, kt->k-1);
+    buf[kt->k] = '\0';
+    for (int i = 0; i < 4; ++i){
+        kmer_node_ptr* ptr = NULL; 
+        bool ptr_rc = false;
+        buf[0] = bases[i];
+        
+        if (is_rc_first(&buf[0], kt->k)){
+            void* res = kmer_tree_lookup(&buf[0], kt, 1);
+            if (res != NULL){
+                ptr = (kmer_node_ptr*)res;
+                ptr_rc = true;
+            }
+        }
+        else{
+            void* res = kmer_tree_lookup(&buf[0], kt, 0);
+            if (res != NULL){
+                ptr = (kmer_node_ptr*)res;
+                ptr_rc = false;
+            }
+        }
+        if (ptr != NULL){
+            // Same rules as above, but now buf and line are reversed.
+            if (ptr_rc){
+                if (kmer[k-1] == 'A'){
+                    ptr->r_A = n;
+                    ptr->r_A_flip = !rc;
+                }   
+                else if (kmer[k-1] == 'C'){
+                    ptr->r_C = n;
+                    ptr->r_C_flip = !rc;
+                }
+                else if (kmer[k-1] == 'G'){
+                    ptr->r_G = n;
+                    ptr->r_G_flip = !rc;
+                }
+                else if (kmer[k-1] == 'T'){
+                    ptr->r_T = n;
+                    ptr->r_T_flip = !rc;
+                }
+            }
+            else{
+                if (kmer[k-1] == 'A'){
+                    ptr->f_A = n;
+                    ptr->f_A_flip = rc;
+                }
+                else if (kmer[k-1] == 'C'){
+                    ptr->f_C = n;
+                    ptr->f_C_flip = rc;
+                }
+                else if (kmer[k-1] == 'G'){
+                    ptr->f_G = n;
+                    ptr->f_G_flip = rc;
+                }
+                else if (kmer[k-1] == 'T'){
+                    ptr->f_T = n;
+                    ptr->f_T_flip = rc;
+                }
+            }
+            if (rc){
+                if (bases[i] == 'A'){
+                    n->f_T = ptr;
+                    n->f_T_flip = !ptr_rc;
+                }
+                else if (bases[i] == 'C'){
+                    n->f_G = ptr;
+                    n->f_G_flip = !ptr_rc;
+                }
+                else if (bases[i] == 'G'){
+                    n->f_C = ptr;
+                    n->f_C_flip = !ptr_rc;
+                }
+                else if (bases[i] == 'T'){
+                    n->f_A = ptr;
+                    n->f_A_flip = !ptr_rc;
+                }
+            }
+            else{
+                if (bases[i] == 'A'){
+                    n->r_T = ptr;
+                    n->r_T_flip = ptr_rc;
+                }
+                else if (bases[i] == 'C'){
+                    n->r_G = ptr;
+                    n->r_G_flip = ptr_rc;
+                }
+                else if (bases[i] == 'G'){
+                    n->r_C = ptr;
+                    n->r_C_flip = ptr_rc;
+                }
+                else if (bases[i] == 'T'){
+                    n->r_A = ptr;
+                    n->r_A_flip = ptr_rc;
+                }
+            }
+        }
+    }
+
+    // Store the node in the suffix array.
+    kmer_tree_add(kmer, kt, (void*)n, rc);
+}
+*/
+
 void species_kmer_counter::parse_kmer_counts_serial(string& countsfilename,
     short species_idx){
     
-    double samp_prob = 1.0;
-    if (n_samp > 0){
-        // First, count the number of k-mers
-        int ntot = 0;
-        gzreader reader_count(countsfilename);
-        while(reader_count.next()){
-            ntot++;
-        }
-        samp_prob = (double)ntot/(double)n_samp;
-    }
-    
-    random_device dev;
-    mt19937 rng(dev());
-    uniform_real_distribution<> rand_dist = uniform_real_distribution<>(0.0, 1.0);
-
     gzreader reader(countsfilename);
-    char buf[1024];
     int k = -1;
     
-    char bases[4] = {'A', 'C', 'G', 'T'};
-
     while (reader.next()){
         if (k == -1){
             k = strlen(reader.line);
         }
-        
-        if (samp_prob == 1 || rand_dist(rng) < samp_prob){
-            kmer_node_ptr* n = (kmer_node_ptr*) malloc(sizeof(kmer_node_ptr));
-            // Initialize.
-            n->f_A = NULL;
-            n->f_C = NULL;
-            n->f_G = NULL;
-            n->f_T = NULL;
-            n->r_A = NULL;
-            n->r_C = NULL;
-            n->r_G = NULL;
-            n->r_T = NULL;
-            n->f_A_flip = false;
-            n->f_C_flip = false;
-            n->f_G_flip = false;
-            n->f_T_flip = false;
-            n->r_A_flip = false;
-            n->r_C_flip = false;
-            n->r_G_flip = false;
-            n->r_T_flip = false;
-
-            bool rc = is_rc_first(&reader.line[0], kt->k);
-            
-            // Check whether any 1-base-away k-mer (moving backward or forward)
-            //  has already been created. Link them up if so.
-
-            // Rules: moving forward in sequence:
-            //  b1 = last base being added
-            //  b2 = complement of first base
-            //  is current k-mer rc? 
-            //      yes -> link from cur k-mer b1, reverse
-            //          flip = !next_rc
-            //      no -> link from cur k-mer b1, forward
-            //          flip = next_rc
-            //  is next k-mer rc?
-            //      yes -> link from next k-mer b2, forward
-            //          flip = !cur_rc
-            //      no -> link from next k-mer b2, reverse
-            //          flip = cur_rc
-
-            // Check moving forward
-            strncpy(&buf[0], &reader.line[1], k-1);
-            buf[k] = '\0';
-            
-            for (int i = 0; i < 4; ++i){
-                kmer_node_ptr* ptr = NULL; 
-                bool ptr_rc = false;
-            
-                buf[k-1] = bases[i];
-                
-                if (is_rc_first(&buf[0], kt->k)){
-                    void* res = kmer_tree_lookup(&buf[0], kt, 1);
-                    if (res != NULL){
-                        ptr = (kmer_node_ptr*)res;
-                        ptr_rc = true;
-                    }
-                }
-                else{
-                    void* res = kmer_tree_lookup(&buf[0], kt, 0);
-                    if (res != NULL){
-                        ptr = (kmer_node_ptr*)res;
-                        ptr_rc = false;
-                    }
-                }
-                if (ptr != NULL){
-                    if (rc){
-                        if (bases[i] == 'A'){
-                            n->r_A = ptr;
-                            n->r_A_flip = !ptr_rc;
-                        }   
-                        else if (bases[i] == 'C'){
-                            n->r_C = ptr;
-                            n->r_C_flip = !ptr_rc;
-                        }
-                        else if (bases[i] == 'G'){
-                            n->r_G = ptr;
-                            n->r_G_flip = !ptr_rc;
-                        }
-                        else if (bases[i] == 'T'){
-                            n->r_T = ptr;
-                            n->r_T_flip = !ptr_rc;
-                        }
-                    }
-                    else{
-                        if (bases[i] == 'A'){
-                            n->f_A = ptr;
-                            n->f_A_flip = ptr_rc;
-                        }
-                        else if (bases[i] == 'C'){
-                            n->f_C = ptr;
-                            n->f_C_flip = ptr_rc;
-                        }
-                        else if (bases[i] == 'G'){
-                            n->f_G = ptr;
-                            n->f_G_flip = ptr_rc;
-                        }
-                        else if (bases[i] == 'T'){
-                            n->f_T = ptr;
-                            n->f_T_flip = ptr_rc;
-                        }
-                    }
-                    if (ptr_rc){
-                        if (reader.line[0] == 'A'){
-                            ptr->f_T = n;
-                            ptr->f_T_flip = !rc;
-                        }
-                        else if (reader.line[0] == 'C'){
-                            ptr->f_G = n;
-                            ptr->f_G_flip = !rc;
-                        }
-                        else if (reader.line[0] == 'G'){
-                            ptr->f_C = n;
-                            ptr->f_C_flip = !rc;
-                        }
-                        else if (reader.line[0] == 'T'){
-                            ptr->f_A = n;
-                            ptr->f_A_flip = !rc;
-                        }
-                    }
-                    else{
-                        if (reader.line[0] == 'A'){
-                            ptr->r_T = n;
-                            ptr->r_T_flip = rc;
-                        }
-                        else if (reader.line[0] == 'C'){
-                            ptr->r_G = n;
-                            ptr->r_G_flip = rc;
-                        }
-                        else if (reader.line[0] == 'G'){
-                            ptr->r_C = n;
-                            ptr->r_C_flip = rc;
-                        }
-                        else if (reader.line[0] == 'T'){
-                            ptr->r_A = n;
-                            ptr->r_A_flip = rc;
-                        }
-                    }
-                }
-            }
-        
-            // Check moving backward
-            strncpy(&buf[1], &reader.line[0], k-1);
-            buf[k] = '\0';
-            for (int i = 0; i < 4; ++i){
-                kmer_node_ptr* ptr = NULL; 
-                bool ptr_rc = false;
-                buf[0] = bases[i];
-                
-                if (is_rc_first(&buf[0], kt->k)){
-                    void* res = kmer_tree_lookup(&buf[0], kt, 1);
-                    if (res != NULL){
-                        ptr = (kmer_node_ptr*)res;
-                        ptr_rc = true;
-                    }
-                }
-                else{
-                    void* res = kmer_tree_lookup(&buf[0], kt, 0);
-                    if (res != NULL){
-                        ptr = (kmer_node_ptr*)res;
-                        ptr_rc = false;
-                    }
-                }
-                if (ptr != NULL){
-                    // Same rules as above, but now buf and line are reversed.
-                    if (ptr_rc){
-                        if (reader.line[k-1] == 'A'){
-                            ptr->r_A = n;
-                            ptr->r_A_flip = !rc;
-                        }   
-                        else if (reader.line[k-1] == 'C'){
-                            ptr->r_C = n;
-                            ptr->r_C_flip = !rc;
-                        }
-                        else if (reader.line[k-1] == 'G'){
-                            ptr->r_G = n;
-                            ptr->r_G_flip = !rc;
-                        }
-                        else if (reader.line[k-1] == 'T'){
-                            ptr->r_T = n;
-                            ptr->r_T_flip = !rc;
-                        }
-                    }
-                    else{
-                        if (reader.line[k-1] == 'A'){
-                            ptr->f_A = n;
-                            ptr->f_A_flip = rc;
-                        }
-                        else if (reader.line[k-1] == 'C'){
-                            ptr->f_C = n;
-                            ptr->f_C_flip = rc;
-                        }
-                        else if (reader.line[k-1] == 'G'){
-                            ptr->f_G = n;
-                            ptr->f_G_flip = rc;
-                        }
-                        else if (reader.line[k-1] == 'T'){
-                            ptr->f_T = n;
-                            ptr->f_T_flip = rc;
-                        }
-                    }
-                    if (rc){
-                        if (bases[i] == 'A'){
-                            n->f_T = ptr;
-                            n->f_T_flip = !ptr_rc;
-                        }
-                        else if (bases[i] == 'C'){
-                            n->f_G = ptr;
-                            n->f_G_flip = !ptr_rc;
-                        }
-                        else if (bases[i] == 'G'){
-                            n->f_C = ptr;
-                            n->f_C_flip = !ptr_rc;
-                        }
-                        else if (bases[i] == 'T'){
-                            n->f_A = ptr;
-                            n->f_A_flip = !ptr_rc;
-                        }
-                    }
-                    else{
-                        if (bases[i] == 'A'){
-                            n->r_T = ptr;
-                            n->r_T_flip = ptr_rc;
-                        }
-                        else if (bases[i] == 'C'){
-                            n->r_G = ptr;
-                            n->r_G_flip = ptr_rc;
-                        }
-                        else if (bases[i] == 'G'){
-                            n->r_C = ptr;
-                            n->r_C_flip = ptr_rc;
-                        }
-                        else if (bases[i] == 'T'){
-                            n->r_A = ptr;
-                            n->r_A_flip = ptr_rc;
-                        }
-                    }
-                }
-            }
-
-            // Store the node in the suffix array.
-            kmer_tree_add(reader.line, kt, (void*)n, rc);
-            
-        }
-    } 
+        tab.add(reader.line, species_idx);
+        //add_node_to_tree_canonical(reader.line, buf2, kt, species_idx);
+    }
 }
 
 /**
@@ -867,7 +1055,7 @@ void species_kmer_counter::gex_thread(int thread_idx){
             this->rp_jobs.pop_front();
         }
         if (seq_f != NULL && seq_r != NULL){
-            scan_gex_data(seq_f, seq_f_len, seq_r, seq_r_len, -1);
+            scan_gex_data(seq_f, seq_f_len, seq_r, seq_r_len, thread_idx);
             free(seq_f);
             free(seq_r);
         }
@@ -885,9 +1073,19 @@ void species_kmer_counter::launch_gex_threads(){
 
     for (int i = 0; i < this->num_threads; ++i){
         
+        vector<int> v;
+        this->species_counts.push_back(v);
+        for (int j = 0; j < num_species; ++j){
+            this->species_counts[this->species_counts.size()-1].push_back(0);
+        }
+        this->khashkeys.emplace_back(k);
+
         this->threads.push_back(thread(&species_kmer_counter::gex_thread,
             this, i));
+        
+    
     }
+
     this->on = true;
 }
 

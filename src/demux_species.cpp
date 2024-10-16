@@ -50,6 +50,9 @@ void help(int code){
     fprintf(stderr, "[OPTIONS]:\n");
     fprintf(stderr, "\n   ===== GENERAL OPTIONS =====\n");
     fprintf(stderr, "   --help -h Display this message and exit.\n");
+    fprintf(stderr, "   --limit_ram -l Default behavior is to load all species kmers at once. This\n");
+    fprintf(stderr, "       maximizes speed at the cost of memory. If you have many pooled species,\n");
+    fprintf(stderr, "       enabling this option will limit RAM, but cost more processing time.\n");
     fprintf(stderr, "   --doublet_rate -D What is the prior expected doublet rate?\n");
     fprintf(stderr, "       (OPTIONAL; default = 0.1). Must be a decimal between 0 and 1,\n");
     fprintf(stderr, "       exclusive.\n");
@@ -457,7 +460,7 @@ void fit_model(robin_hood::unordered_map<unsigned long, map<short, int> >& bc_sp
 }
 
 int main(int argc, char *argv[]) {    
-    
+   
     // Define long-form program options 
     static struct option long_options[] = {
        {"output_directory", required_argument, 0, 'o'},
@@ -478,6 +481,7 @@ int main(int argc, char *argv[]) {
        {"batch_num", required_argument, 0, 'b'},
        {"exact", no_argument, 0, 'e'},
        {"disable_umis", no_argument, 0, 'u'},
+       {"limit_ram", no_argument, 0, 'l'},
        {"libname", required_argument, 0, 'n'},
        {"cellranger", no_argument, 0, 'C'},
        {"seurat", no_argument, 0, 'S'},
@@ -511,6 +515,7 @@ int main(int argc, char *argv[]) {
     bool underscore = false;
     bool disable_umis = false;
     bool atac_preproc = false;
+    bool limit_ram = false;
 
     int option_index = 0;
     int ch;
@@ -518,7 +523,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "T:o:n:1:2:3:r:R:x:X:N:k:w:W:D:b:AueCSUdh", 
+    while((ch = getopt_long(argc, argv, "T:o:n:1:2:3:r:R:x:X:N:k:w:W:D:b:lAueCSUdh", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -595,6 +600,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'u':
                 disable_umis = true;
+                break;
+            case 'l':
+                limit_ram = true;
                 break;
             default:
                 help(0);
@@ -805,7 +813,10 @@ data for %s with more species.\n", kmerbase.c_str());
     robin_hood::unordered_map<unsigned long, unsigned long> bc_conversion;
 
     if (!countsfile_given){
-
+        if (exact_matches){
+            wl.exact_matches_only();
+        }
+        
         // Read barcode whitelist(s)
         if (whitelist_rna_filename != "" && whitelist_atac_filename != ""){
             wl.init(whitelist_rna_filename, whitelist_atac_filename);
@@ -817,10 +828,6 @@ data for %s with more species.\n", kmerbase.c_str());
             wl.init(whitelist_atac_filename);
         }
         
-        if (exact_matches){
-            wl.exact_matches_only();
-        }
-
         // Init species k-mer counter 
         species_kmer_counter counter(num_threads, k, kmerfiles.size(), &wl, &bc_species_counts);
 
@@ -838,12 +845,28 @@ data for %s with more species.\n", kmerbase.c_str());
             
             // Parse k-mer file 
             fprintf(stderr, "Loading %s-specific k-mers\n", speciesnames[i].c_str());
-            counter.init(i, kmerfiles[i]);
+            if (limit_ram){
+                counter.init(i, kmerfiles[i]);
+            }
+            else{
+                counter.add(i, kmerfiles[i]);
+            }
             fprintf(stderr, "done\n");
             
             idx2species.insert(make_pair(i, speciesnames[i]));
             species2idx.insert(make_pair(speciesnames[i], i));
             
+            if (limit_ram){ 
+                for (int i = 0; i < rna_r1files.size(); ++i){
+                    // The object handles multi-threading, if enabled
+                    fprintf(stderr, "Counting read pair %s, %s\n", rna_r1files[i].c_str(), 
+                        rna_r2files[i].c_str());
+                    counter.process_gex_files(rna_r1files[i], rna_r2files[i]); 
+                    fprintf(stderr, "done\n");
+                }
+            }
+        }
+        if (!limit_ram){
             for (int i = 0; i < rna_r1files.size(); ++i){
                 // The object handles multi-threading, if enabled
                 fprintf(stderr, "Counting read pair %s, %s\n", rna_r1files[i].c_str(), 
@@ -924,7 +947,7 @@ data for %s with more species.\n", kmerbase.c_str());
     else{
         // Fit a mixture model to the data
         robin_hood::unordered_set<unsigned long> bcs_pass;
-
+        
         fit_model(bc_species_counts, bc2species, bc2doublet, bc2llr, bcs_pass,
             idx2species, doublet_rate, model_out_name);
         

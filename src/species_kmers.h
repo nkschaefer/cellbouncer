@@ -28,8 +28,8 @@
 #include <htswrapper/bc.h>
 #include <htswrapper/umi.h>
 #include <htswrapper/robin_hood/robin_hood.h>
+#include <htswrapper/khashtable.h>
 #include "common.h"
-#include "kmsuftree.h"
 
 // ===== species_kmers.h
 // Contains functions used to scan reads for species-specific kmers
@@ -56,7 +56,7 @@ struct rt_info{
     std::string seq_2;
     std::string seq_3;
 };
-
+/*
 struct kmer_node_ptr{
     kmer_node_ptr* f_A;
     kmer_node_ptr* f_C;
@@ -75,8 +75,10 @@ struct kmer_node_ptr{
     bool r_C_flip;
     bool r_G_flip;
     bool r_T_flip;
-
+    
+    short species;
 };
+*/
 
 // Define a class for parallel processing stuff
 class species_kmer_counter{
@@ -90,14 +92,19 @@ class species_kmer_counter{
         bool terminate_threads;
         int num_threads;
         std::vector<std::thread> threads;
+        std::vector<std::vector<int> > species_counts;
+        std::deque<khashkey> khashkeys;
+
         bool initialized;
         bool on;
         std::string out_base;
         int num_species;
-        short this_species;
-        kmer_tree_p kt;
+        khashtable<short> tab;
         int k;
         
+        char* kmer_buf;
+        bool kmer_buf_init;
+         
         // -1 (all k-mers) or a number to sample from each species
         int n_samp;
                 
@@ -127,12 +134,15 @@ class species_kmer_counter{
         // Parameter queue for three-read (ATAC) jobs
         std::deque<rt_info> rt_jobs;
         
+        //void add_node_to_tree_simple(char* kmer, char* buf, kmer_tree_p kt, short species_idx);
+        //void add_node_to_tree_canonical(char* kmer, char* buf, kmer_tree_p kt, short species_idx);
+
         // Function to process RNA-seq reads
         void gex_thread(int thread_idx);
         
-        int scan_seq_kmers(const char* seq, int len);
+        void scan_seq_kmers(const char* seq, int len, int* species_counts, khashkey& key);
         
-        void scan_gex_data(const char* seq_f, int seq_f_len, const char* seq_r, int seq_r_len, int thread_idx=-1);
+        void scan_gex_data(const char* seq_f, int seq_f_len, const char* seq_r, int seq_r_len, int thread_idx=0);
         
         void add_rp_job(const char* seq_f, int seq_f_len, const char* seq_r, int seq_r_len);
 
@@ -152,6 +162,7 @@ class species_kmer_counter{
         ~species_kmer_counter();
 
         void init(short species_idx, std::string& kmerfile);
+        void add(short species_idx, std::string& kmerfile);
 
         void disable_umis(); 
         void enable_umis();

@@ -32,8 +32,8 @@ demux_vcf: src/demux_vcf.cpp build/common.o build/demux_vcf_io.o build/demux_vcf
 demux_mt: src/demux_mt.cpp src/common.h build/common.o build/demux_vcf_llr.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -D MAX_SITES=$(MAX_SITES) build/common.o build/demux_vcf_llr.o src/demux_mt.cpp -o demux_mt $(LFLAGS) $(DEPS) $(DEPS2)
 
-demux_species: src/demux_species.cpp src/kmsuftree.h src/common.h build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o $(DEPS)
-	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g build/kmsuftree.o build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o src/demux_species.cpp $(LFLAGS) $(DEPS) -pthread -o demux_species $(DEPS2)
+demux_species: src/demux_species.cpp src/common.h build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o $(DEPS)
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -O3 -g build/common.o build/demux_species_io.o build/species_kmers.o build/reads_demux.o src/demux_species.cpp $(LFLAGS) $(DEPS) -pthread -o demux_species $(DEPS2)
 
 demux_tags: src/demux_tags.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o src/demux_tags.cpp $(LFLAGS) $(DEPS) -D PROJ_ROOT=$(PROJROOT) -o demux_tags $(DEPS2)
@@ -58,9 +58,6 @@ utils/bam_split_bcs: src/bam_split_bcs.cpp src/common.h build/common.o $(DEPS)
 
 utils/get_unique_kmers: src/get_unique_kmers.c src/FASTK/libfastk.c build/libfastk.o
 	$(CCOMP) $(CIFLAGS) $(CFLAGS) build/libfastk.o src/get_unique_kmers.c -o utils/get_unique_kmers $(LFLAGS) -lz
-
-utils/kmsuftree_test: src/kmsuftree_test.cpp src/kmsuftree.h build/kmsuftree.o
-	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) build/kmsuftree.o src/kmsuftree_test.cpp $(LFLAGS) $(DEPS) -o utils/kmsuftree_test -lz
 
 utils/atac_fq_preprocess: src/atac_fq_preprocess.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) build/common.o src/atac_fq_preprocess.cpp $(LFLAGS) $(DEPS) -o utils/atac_fq_preprocess $(DEPS2)
@@ -92,17 +89,14 @@ build/ambient_rna.o: src/ambient_rna.cpp src/ambient_rna.h src/common.h $(DEPS)
 build/ambient_rna_gex.o: src/ambient_rna_gex.cpp src/ambient_rna_gex.h src/common.h $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) src/ambient_rna_gex.cpp -c -o build/ambient_rna_gex.o 
 
-build/species_kmers.o: src/species_kmers.cpp src/species_kmers.h src/common.h src/kmsuftree.h
-	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g src/species_kmers.cpp -c -o build/species_kmers.o
+build/species_kmers.o: src/species_kmers.cpp src/species_kmers.h src/common.h
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -O3 -g src/species_kmers.cpp -c -o build/species_kmers.o
 
 build/reads_demux.o: src/reads_demux.cpp src/reads_demux.h src/common.h lib/libhtswrapper.a
-	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g src/reads_demux.cpp -c -o build/reads_demux.o
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -O3 -g src/reads_demux.cpp -c -o build/reads_demux.o
 
 build/demux_species_io.o: src/demux_species_io.cpp src/demux_species_io.h src/common.h lib/libhtswrapper.a
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g src/demux_species_io.cpp -c -o build/demux_species_io.o
-
-build/kmsuftree.o: src/kmsuftree.c src/kmsuftree.h
-	$(CCOMP) $(CFLAGS) src/kmsuftree.c -c -o build/kmsuftree.o
 
 build/libfastk.o: src/FASTK/libfastk.c src/FASTK/libfastk.h
 	$(CCOMP) $(CFLAGS) src/FASTK/libfastk.c -c -o build/libfastk.o
@@ -126,7 +120,7 @@ lib/liboptimml.a:
 	cd dependencies/optimML && $(MAKE) install PREFIX=../..
 
 clean: clean_deps
-	rm -f build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o build/ambient_rna.o build/species_kmers.o build/reads_demux.o build/demux_species_io.o build/kmsuftree.o build/libfastk.o build/gene_core.o
+	rm -f build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o build/ambient_rna.o build/species_kmers.o build/reads_demux.o build/demux_species_io.o build/libfastk.o build/gene_core.o
 	rm lib/libmixturedist.a
 	rm lib/liboptimml.a
 	rm lib/libhtswrapper.a
