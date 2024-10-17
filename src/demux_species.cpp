@@ -740,6 +740,9 @@ file to demultiplex\n");
         exit(1);
     }
 
+    // Override user -- do exact matches only for k-mer counting
+    exact_matches = true;
+
     // Attempt to read unique kmer data
     if (kmerbase != ""){
         string sname = kmerbase + ".names";

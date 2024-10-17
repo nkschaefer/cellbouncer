@@ -1343,7 +1343,7 @@ workflow{
     }
     else{
         // Just need to join model and dump.
-        fit_model_nodemux(joined)     
+        fit_model_dump(joined)     
     }
 }
 
