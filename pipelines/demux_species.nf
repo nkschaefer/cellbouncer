@@ -384,10 +384,8 @@ process fit_model_dump{
     
     script:
     def extra = get_fit_model_script_extra(libname)
-    def r1str = get_fn_arg_str(gexR1, '-r')
-    def r2str = get_fn_arg_str(gexR2, '-R')
     """
-    ${demux_species} -d -o . ${r1str} ${r2str}${extra}
+    ${demux_species} -d -o . ${extra}
     if [ \$( cat species.filt.assignments | wc -l ) -gt 0 ]; then
         ${plot} . 
     else
