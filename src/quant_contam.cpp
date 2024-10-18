@@ -444,15 +444,20 @@ void process_gex_data(string& output_prefix,
                     clusts.emplace(a->first, a->second);
                 }
             }
+            nclusts = samples.size();
         }
         else{
             // A file listing specific allowed doublet identities was given.
-            // Treat doublet identities as true identities.
+            // Treat doublets as unique identities rather than combinations of
+            // singlets.
+
+            // This is to make cluster IDs sorted alphabetically.
             set<pair<string, int> > name_set;
             for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin();
                 a != assn.end(); ++a){
                 name_set.insert(make_pair(idx2name(a->second, samples), a->second));
             }
+            nclusts = name_set.size();
             int idx = 0;
             map<int, int> idx2idx;
             for (set<pair<string, int> >::iterator n = name_set.begin(); n != name_set.end(); ++n){
@@ -465,15 +470,12 @@ void process_gex_data(string& output_prefix,
                 clusts.emplace(a->first, idx2idx[a->second]);
             }
         }
-        nclusts = samples.size();
     }
-    
     contam_profiler_gex contam_profiler(contam_rate, contam_prof, 
         assn, samples.size(), idfile_doublet_given);
     contam_profiler.set_threads(num_threads);
     contam_profiler.set_mtx(mtx, features.size());
     contam_profiler.set_clusts(clusts, nclusts);
-    
     if (round){
         contam_profiler.round_counts();
     }
