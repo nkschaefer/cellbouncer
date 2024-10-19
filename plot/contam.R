@@ -19,7 +19,14 @@ if (sum(checks) > 0){
 basename <- args[1]
 
 cr <- read.table(paste(basename, '.contam_rate', sep=''))
-assn <- read.table(paste(basename, '.decontam.assignments', sep=''))
+
+assn_name_decontam <- paste(basename, '.decontam.assignments', sep='')
+assn_name_orig <- paste(basename, '.assignments', sep='')
+if (file.exists(assn_name_decontam)){
+    assn <- read.table(assn_name_decontam)
+} else{
+    assn <- read.table(assn_name_orig)
+}
 
 # Strip library names, etc. from cell barcodes in case they don't match
 assn$V1 <- gsub("[^ACGT]+", "", assn$V1)

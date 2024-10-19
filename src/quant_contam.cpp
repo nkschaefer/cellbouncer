@@ -336,12 +336,18 @@ on mixture proportions...\n");
     }
     */
     // Write refined assignments to disk
-    {
+    // If run_once is set, assume the user is happy with the preliminary, un-refined
+    // assignments.
+    if (!run_once){
         string fname = output_prefix + ".decontam.assignments";
         FILE* outf = fopen(fname.c_str(), "w");
         dump_assignments(outf, assn, assn_llr, samples, libname, 
             cellranger, seurat, underscore);
         fclose(outf); 
+    }
+    else if (file_exists(output_prefix + ".decontam.assignments")){
+        string fn = output_prefix + ".decontam.assignments";
+        unlink(fn.c_str());
     }
 }
 
