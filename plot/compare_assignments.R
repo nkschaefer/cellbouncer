@@ -67,13 +67,19 @@ nmiss2 <- length(rownames(assn2)) - length(rownames(merged))
 
 tab <- as.data.frame(table(merged[,c(2,4)]))
 mfilt <- NA
+d1 <- FALSE
+d2 <- FALSE
 if (length(args) > 3){
     if (args[4] == "D"){
         mfilt <- merged
-    } else if (args[4] == "D1" | args[4] == "S2D1"){
+        d1 <- TRUE
+        d2 <- TRUE
+    } else if (args[4] == "D1" | args[4] == "S2D1" | args[4] == "D1S2"){
         mfilt <- merged[which(merged$type2=="S"),]
-    } else if (args[4] == "D2" | args[4] == "S1D2"){
+        d1 <- TRUE
+    } else if (args[4] == "D2" | args[4] == "S1D2" | args[4] == "D2S1"){
         mfilt <- merged[which(merged$type1=="S"),]
+        d2 <- TRUE
     } else{
         mfilt <- merged[which(merged$type1=="S" & merged$type2=="S"),]
     }
@@ -203,10 +209,16 @@ t2Dtot <- length(rownames(merged[which(merged$type2=="D"),]))
 # If some labels agree, assume that we are comparing the same sets of labels.
 if (tot_match == 0){
     # Otherwise, try to decide on matching labels using Jaccard index
-    jmax <- aggregate(tab[grep("+", tab$assn1, fixed=T, invert=T),]$jaccard, 
-        by=list(assn1=tab[grep("+", tab$assn1, fixed=T, invert=T),]$assn1), FUN=max)
-    jmax2 <- aggregate(tab[grep("+", tab$assn2, fixed=T, invert=T),]$jaccard,
-        by=list(assn2=tab[grep("+", tab$assn2, fixed=T, invert=T),]$assn2), FUN=max)
+    jmax_dat1 <- tab[grep("+", tab$assn1, fixed=T, invert=T),]
+    jmax_dat2 <- tab[grep("+", tab$assn2, fixed=T, invert=T),]
+    if (d1){
+        jmax_dat1 <- tab
+    }
+    if (d2){
+        jmax_dat2 <- tab
+    }
+    jmax <- aggregate(jmax_dat1$jaccard, by=list(assn1=jmax_dat1$assn1), FUN=max)
+    jmax2 <- aggregate(jmax_dat2$jaccard, by=list(assn2=jmax_dat2$assn2), FUN=max)
     colnames(jmax)[2] <- "jaccard.max"
     colnames(jmax2)[2] <- "jaccard.max2"
     tab2 <- merge(tab, jmax)
