@@ -23,6 +23,11 @@ names <- read.table(namesfile)
 assn <- read.table(assnfile)
 assnfull <- read.table(assnfile_full)
 
+#if (length(rownames(assnfull)) > 80000){
+#    write("Too many cells to cluster.", stderr())
+#    q()
+#}
+
 # Strip extra stuff off of cell barcodes to ensure counts & assignments
 # files can match barcodes
 assn$V1 <- gsub("[^ACGT]+", "", assn$V1)

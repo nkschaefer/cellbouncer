@@ -240,7 +240,8 @@ process split_custom_reads{
 process count_kmers{
     cpus params.threads
     memory params.memgb + ' GB'
-    
+    time '24h'
+      
     input:
     tuple val(file_idx), 
         val(lib_id),
@@ -271,6 +272,7 @@ process count_kmers{
 process count_kmers_chunk{
     cpus params.threads
     memory params.memgb + ' GB'
+    time '4h'
 
     input:
     tuple val(file_idx), 
@@ -387,7 +389,13 @@ process fit_model_dump{
     """
     ${demux_species} -d -o . ${extra}
     if [ \$( cat species.filt.assignments | wc -l ) -gt 0 ]; then
-        ${plot} . 
+        ${plot} .
+        if [ ! -e species.pdf ]; then
+            echo "" > species.pdf
+        fi 
+        if [ ! -e species.png ]; then
+            echo "" > species.png
+        fi
     else
         echo "" > species.pdf
         echo "" > species.png
@@ -429,7 +437,13 @@ process fit_model_gex{
     """
     ${demux_species} -d -o . ${r1str} ${r2str}${extra}
     if [ \$( cat species.filt.assignments | wc -l ) -gt 0 ]; then
-        ${plot} . 
+        ${plot} .
+        if [ ! -e species.pdf ]; then
+           echo "" > species.pdf
+        fi
+        if [ ! -e species.png ]; then
+           echo "" > species.png
+        fi 
     else
         echo "" > species.pdf
         echo "" > species.png
@@ -479,6 +493,12 @@ process fit_model_gex_atac{
     ${demux_species} -d -o . ${r1str} ${r2str} ${ar1str} ${ar2str} ${ar3str}${extra}
     if [ \$( cat species.filt.assignments | wc -l ) -gt 0 ]; then
         ${plot} . 
+        if [ ! -e species.pdf ]; then
+            echo "" > species.pdf
+        fi
+        if [ ! -e species.png ]; then
+            echo "" > species.png
+        fi
     else
         echo "" > species.pdf
         echo "" > species.png
@@ -528,6 +548,12 @@ process fit_model_gex_custom{
     ${demux_species} -d -o . ${r1str} ${r2str} ${c1str} ${c2str} ${nstr}${extra}
     if [ \$( cat species.filt.assignments | wc -l ) -gt 0 ]; then
         ${plot} . 
+        if [ ! -e species.pdf ]; then
+            echo "" > species.pdf
+        fi
+        if [ ! -e species.png ]; then
+            echo "" > species.png
+        fi
     else
         echo "" > species.pdf
         echo "" > species.png
@@ -583,7 +609,13 @@ process fit_model_gex_atac_custom{
     """
     ${demux_species} -d -o . ${r1str} ${r2str} ${a1str} ${a2str} ${a3str} ${c1str} ${c2str} ${nstr}${extra}
     if [ \$( cat species.filt.assignments | wc -l ) -gt 0 ]; then
-        ${plot} . 
+        ${plot} .
+        if [ ! -e species.pdf ]; then
+           echo "" > species.pdf
+        fi
+        if [ ! -e species.png ]; then
+           echo "" > species.png
+        fi 
     else
         echo "" > species.pdf
         echo "" > species.png
@@ -902,9 +934,18 @@ def get_rna_channel(extensions, suffixes, include_index){
         //   base name R2 (when files are merged again)
         //   R1 file
         //   R2 file
-        def file_idx = -1 
+        //def file_idx = -1 
+        def file_indices = [:]
         return library_ids.cross(rna_pairs).map{ x ->
-            file_idx++
+            //file_idx++
+            def file_idx = 0
+            if (x[0] in file_indices){
+                file_idx = file_indices[x[0]]
+                file_indices[x[0]]++
+            }
+            else{
+                file_indices[x[0]] = 1
+            }
             def match = (x[1][1][0].toString() =~ /(.*)\/(.*)\_R1(_\d+)?\.(fastq|fq)(\.gz)?/)[0]
             def end = ""
             if (match[3] != null){
@@ -981,9 +1022,18 @@ def get_atac_channel(atac_map, include_index){
         //   R1 file
         //   R2 file
         //   R3 file
-        def file_idx = -1 
+        //def file_idx = -1 
+        def file_indices = [:]
         return atac_library_ids.cross(atac_triples).map{ x, y -> 
-            file_idx++
+            //file_idx++
+            def file_idx = 0
+            if (x[1] in file_indices){
+                file_idx = file_indices[x[1]]
+                file_indices[x[1]]++
+            }
+            else{
+                file_indices[x[1]] = 1
+            }
             return [file_idx, x[0], x[1], y[1], y[2], y[3], y[4], y[5], y[6]]
         }
     }
@@ -1035,9 +1085,17 @@ def get_custom_channel(extensions, suffixes, custom_map, custom_names, include_i
         //   base name R2 (when files are merged again)
         //   R1 file
         //   R2 file
-        def file_idx = -1 
+        //def file_idx = -1 
+        def file_indices = [:]
         def indexed_custom_pairs = custom_library_ids.cross(custom_pairs).map{ x, y ->
-            file_idx++
+            def file_idx = 0
+            if (x[1] in file_indices){
+                file_idx = file_indices[x[1]]
+                file_indices[x[1]]++
+            }
+            else{
+                file_indices[x[1]] = 1
+            }
             def match = (y[1][0].toString() =~ /(.*)\/(.*)\_R1(_\d+)?\.(fastq|fq)(\.gz)?/)[0]
             def end = ""
             if (match[3] != ""){
