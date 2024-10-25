@@ -35,7 +35,7 @@ void help(int code){
     fprintf(stderr, "     in the same order (specify -n multiple names). Names should not\n");
     fprintf(stderr, "     contain spaces or special characters.\n");
     fprintf(stderr, "  -N Sample this many unique k-mers per species (in decreasing order\n");
-    fprintf(stderr, "     of frequency). -1 = include all unique k-mers.\n");
+    fprintf(stderr, "     of frequency). -1 = include all unique k-mers (default).\n");
     fprintf(stderr, "  -o Where to write species-specific kmers. Files will be\n");
     fprintf(stderr, "     in the format {outprefix}.{index}.kmers (gzip compressed).\n"); 
     fprintf(stderr, "  -d Maximum allowable DUST score (measure of sequence complexity;\n");
@@ -346,7 +346,9 @@ int main(int argc, char* argv[]){
     readsfile[0] = '\0';
     output_prefix[0] = '\0';
     double maxdust = 2;
-    int num_samp = 10000000;
+    //int num_samp = 10000000;
+    // Default to retrieving all usable k-mers
+    int num_samp = -1;
 
     int option_index = 0;
     int ch;

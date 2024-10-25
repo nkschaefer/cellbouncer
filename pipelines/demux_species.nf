@@ -367,6 +367,9 @@ def get_fn_arg_str(fns, arg){
  * For use when there are no reads to separate.
  */
 process fit_model_dump{
+    memory '10 GB'
+    time '30m'
+
     input:
     tuple val(libname),
         file(countsfile),
@@ -410,6 +413,9 @@ process fit_model_dump{
  * For use when there are only regular RNA-seq reads to separate.
  */
 process fit_model_gex{
+    memory '10 GB'
+    time '30m'
+    
     input: 
     tuple val(libname), 
         file(gexR1), 
@@ -458,6 +464,9 @@ process fit_model_gex{
  * For use when there are RNA-seq and ATAC-seq reads to separate.
  */
 process fit_model_gex_atac{
+    memory '10 GB'
+    time '30m'
+    
     input: 
     tuple val(libname), 
         file(gexR1), 
@@ -513,6 +522,9 @@ process fit_model_gex_atac{
  * For use when there are RNA-seq and custom-type reads to separate.
  */
 process fit_model_gex_custom{
+    memory '10 GB'
+    time '30m'
+    
     input: 
     tuple val(libname), 
         file(gexR1), 
@@ -568,6 +580,9 @@ process fit_model_gex_custom{
  * For use when there are RNA-seq, ATAC-seq, and custom-type reads to separate.
  */
 process fit_model_gex_atac_custom{
+    memory '10 GB'
+    time '30m'
+    
     input: 
     tuple val(libname), 
         file(gexR1), 
