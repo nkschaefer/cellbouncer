@@ -14,3 +14,5 @@ If you would like to build a reference k-mer list for demux_species without usin
     
     This will create a set of "unique k-mers" files beginning with `hcm_kmers`.
     * Note that you can also sample a set number of k-mers instead of choosing all of them. This can save memory and processing time at the cost of potentially identifying fewer cells. In our hands, we recommend sampling at least 10 million (`-N 10000000`) k-mers per species when doing this. With this option set, k-mers will be sorted in decreasing order of their frequency in each transcriptome before sampling. k-mers with equal frequency above the threshold for selection will be randomly chosen.
+   
+[Back to demux_species](#demux_species.md)
