@@ -79,46 +79,49 @@ basename <- gsub("/$", "", args[1])
 basename_split <- strsplit(basename, '/')[[1]]
 basename_title <- basename_split[length(basename_split)]
 
+plotstuff <- function(countsm, meta, name2col2, assn, assnfull){
+    heatm <- pheatmap(countsm, 
+        scale='none', 
+        cluster_cols=FALSE, 
+        show_rownames=FALSE, 
+        annotation_row=meta,
+        annotation_colors=name2col2,
+        annotation_legend=FALSE,
+        breaks=seq(0,1,0.01),
+        angle_col=90,
+        color=mako(100),
+        main='Normalized k-mer counts per cell')
+
+    assn$count <- 1
+    assnfull$count <- 1
+    assnagg <- aggregate(assn$count, by=list(species=assn$species), FUN=sum)
+    assnagg$x <- assnagg$x / sum(assnagg$x)
+    assnfullagg <- aggregate(assnfull$count, by=list(species=assnfull$species), FUN=sum)
+    assnfullagg$x <- assnfullagg$x / sum(assnfullagg$x)
+
+    colnames(assnagg)[2] <- "Frac"
+    colnames(assnfullagg)[2] <- "Frac"
+    assnagg$type <- "Filtered"
+    assnfullagg$type <- "All"
+
+    assnbothagg <- rbind(assnagg, assnfullagg)
+
+    bars <- ggplot(assnbothagg) + geom_bar(aes(x=type, y=Frac, fill=species), stat='identity') + 
+        theme_bw() +
+        scale_y_continuous("Fraction of barcodes") + 
+        scale_x_discrete("Cell group") +
+        scale_fill_manual(values=name2col) +
+        theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank())
+
+    row2 <- plot_grid(heatm$gtable, bars, ncol=2, rel_widths=c(0.6, 0.4))
+    return(row2)
+}
+
 title = ggdraw() + 
     draw_label(basename_title, size=12, fontface='bold', lineheight=0.9, hjust=0.6) +
     theme(plot.margin=margin(0,0,0,0))
 
 name2col2 <- list(species=name2col)
-heatm <- pheatmap(countsm, 
-    scale='none', 
-    cluster_cols=FALSE, 
-    show_rownames=FALSE, 
-    annotation_row=meta,
-    annotation_colors=name2col2,
-    annotation_legend=FALSE,
-    breaks=seq(0,1,0.01),
-    angle_col=90,
-    color=mako(100),
-    main='Normalized k-mer counts per cell')
-
-assn$count <- 1
-assnfull$count <- 1
-assnagg <- aggregate(assn$count, by=list(species=assn$species), FUN=sum)
-assnagg$x <- assnagg$x / sum(assnagg$x)
-assnfullagg <- aggregate(assnfull$count, by=list(species=assnfull$species), FUN=sum)
-assnfullagg$x <- assnfullagg$x / sum(assnfullagg$x)
-
-colnames(assnagg)[2] <- "Frac"
-colnames(assnfullagg)[2] <- "Frac"
-assnagg$type <- "Filtered"
-assnfullagg$type <- "All"
-
-assnbothagg <- rbind(assnagg, assnfullagg)
-
-bars <- ggplot(assnbothagg) + geom_bar(aes(x=type, y=Frac, fill=species), stat='identity') + 
-    theme_bw() +
-    scale_y_continuous("Fraction of barcodes") + 
-    scale_x_discrete("Cell group") +
-    scale_fill_manual(values=name2col) +
-    theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank())
-
-row2 <- plot_grid(heatm$gtable, bars, ncol=2, rel_widths=c(0.6, 0.4))
-
 name_png <- paste(basename, '/species.png', sep='')
 name_pdf <- paste(basename, '/species.pdf', sep='')
 
@@ -127,11 +130,38 @@ if (args[1] == '.'){
     name_pdf <- 'species.pdf'
 }
 
+
 png(name_png, width=8, height=6, bg='white', units='in', res=150)
-plot_grid(title, row2, nrow=2, rel_heights=c(0.1,0.9))
-dev.off()
+tryCatch({
+        row2 <- plotstuff(countsm, meta, name2col2, assn, assnfull)
+        plot_grid(title, row2, nrow=2, rel_heights=c(0.1,0.9))
+    },
+    error = function(cond){
+        message("Error creating species plot; likely not enough memory")
+    },
+    warning = function(cond){
+        # Nothing to do
+        
+    },
+    finally = {
+        message("PNG plot created")
+        dev.off()
+    }
+)
 
 pdf(name_pdf, width=8, height=6, bg='white')
-plot_grid(title, row2, nrow=2, rel_heights=c(0.1,0.9))
-dev.off()
-
+tryCatch({
+        row2 <- plotstuff(countsm, meta, name2col2, assn, assnfull)
+        plot_grid(title, row2, nrow=2, rel_heights=c(0.1,0.9))
+    },
+    error = function(cond){
+        message("Error creating species plot (PDF); likely not enough memory")
+    },
+    warning = function(cond){
+        # Nothing to do
+    },
+    finally = {
+        message("PDF plot created")
+        dev.off()
+    }
+)
