@@ -54,7 +54,7 @@ demux_reads: true
 #    Default = true
 demux_pieces: true
 # How many parallel threads should each job be given? 
-threads: 2
+threads: 1
 # What is the maximum expected memory consumption per job in the 
 #    k-mer counting step, in GB?
 memgb: 80
