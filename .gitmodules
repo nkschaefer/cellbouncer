@@ -1,9 +1,9 @@
 [submodule "mixtureDist"]
 	path = dependencies/mixtureDist
-	url = ../nkschaefer/mixtureDist.git
+	url = ../mixtureDist.git
 [submodule "htswrapper"]
 	path = dependencies/htswrapper
-	url = ../nkschaefer/htswrapper.git
+	url = ../htswrapper.git
 [submodule "dependencies/optimML"]
 	path = dependencies/optimML
-	url = ../nkschaefer/optimML.git
+	url = ../optimML.git
