@@ -81,7 +81,7 @@ def extract_tx(fasta, gtf, out, gffread=None):
     txfiles = []
     for idx in range(0, len(fasta)):
         this_fasta = fasta[idx]
-        this_gtf = gzip[idx]
+        this_gtf = gtf[idx]
         
         # Note: gffread can't handle gzipped FASTA or GTF.
         # Check for this
