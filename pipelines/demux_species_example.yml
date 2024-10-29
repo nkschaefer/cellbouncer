@@ -42,6 +42,12 @@ append_libname: true
 cellranger: true
 # Should lib names be prepended to barcodes in Seurat format?
 seurat: false
+# If supplying ATAC-seq data, would you like CellBouncer to trim 
+#    barcode sequences and insert the corrected versions of them as
+#    sequence comments, so they can be inserted as BAM tags by a 
+#    tool like minimap2 -y, bwa mem -C, or bowtie2 --sam-append-comment? 
+#    If you plan to use CellRanger to align, set this to false
+atac_preproc: true
 # How many pieces should input data be broken up into and processed
 #    in parallel? default = 100
 num_chunks: 100

@@ -714,8 +714,12 @@ process demux_atac_reads{
     tuple file("*/ATAC_${R1}"), file("*/ATAC_${R2}"), file("*/ATAC_${R3}")
 
     script:
+    def apstr = ""
+    if (params.atac_preproc){
+        apstr = " -A"
+    }
     """
-    ${demux_species} -o . -w ${wl} -W "${wl_atac}" -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3}
+    ${demux_species} -o . -w ${wl} -W "${wl_atac}" -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3}${apstr}
     """
 }
 
@@ -746,8 +750,12 @@ process demux_atac_reads_chunk{
         file("*/ATAC_${R3}")
  
     script:
+    def apstr = ""
+    if (params.atac_preproc){
+        apstr = " -A"
+    }
     """
-    ${demux_species} -o . -w ${wl} -W ${wl_atac} -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3}
+    ${demux_species} -o . -w ${wl} -W ${wl_atac} -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3}${apstr}
     """
 }
 
