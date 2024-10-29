@@ -99,10 +99,10 @@ build/demux_species_io.o: src/demux_species_io.cpp src/demux_species_io.h src/co
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g src/demux_species_io.cpp -c -o build/demux_species_io.o
 
 build/libfastk.o: src/FASTK/libfastk.c src/FASTK/libfastk.h
-	$(CCOMP) $(CFLAGS) src/FASTK/libfastk.c -c -o build/libfastk.o
+	$(CCOMP) $(CIFLAGS) $(CFLAGS) src/FASTK/libfastk.c -c -o build/libfastk.o
 
 build/gene_core.o: src/FASTK/gene_core.c src/FASTK/gene_core.h
-	$(CCOMP) $(CFLAGS) src/FASTK/gene_core.c -c -o build/gene_core.o
+	$(CCOMP) $(CIFLAGS) $(CFLAGS) src/FASTK/gene_core.c -c -o build/gene_core.o
 
 lib/libhtswrapper.a:
 	#cd dependencies/htswrapper && $(MAKE) clean
