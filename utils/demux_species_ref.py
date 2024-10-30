@@ -77,12 +77,14 @@ def extract_tx(fasta, gtf, out, gffread=None):
         print("ERROR: gffread is not installed/available in $PATH", file=sys.stderr)
         exit(1)
     
-    to_zip = []
     txfiles = []
+
     for idx in range(0, len(fasta)):
         this_fasta = fasta[idx]
         this_gtf = gtf[idx]
         
+        to_rm = []
+
         # Note: gffread can't handle gzipped FASTA or GTF.
         # Check for this
         if is_gz_file(fasta[idx]):
@@ -91,17 +93,15 @@ def extract_tx(fasta, gtf, out, gffread=None):
                 print("ERROR: gzip not installed/available in $PATH", file=sys.stderr)
                 exit(1)
             else:
-                subprocess.call(['gunzip', this_fasta])
-                fn_new = this_fasta.split('.gz')[0]
-                if os.path.isfile(fn_new):
-                    to_zip.append(fn_new)
-                    this_fasta = fn_new
-                elif os.path.isfile(this_fasta):
-                    to_zip.append(this_fasta)
-                else:
-                    print("ERROR: can't find unzipped version of {}".format(this_fasta), 
-                        file=sys.stderr)
-                    exit(1)
+                fa_base = this_fasta.split('/')[-1]
+                fa_base = fa_base.split('.gz')[0]
+                fa_tmp = '{}.{}'.format(out, fa_base)
+                fa_f = open(fa_tmp, 'w')
+                p = subprocess.Popen(['gunzip', '-c', this_fasta], stdout=fa_f)
+                stdout, err = p.communicate()
+                fa_f.close()
+                to_rm.append(fa_tmp)
+                this_fasta = fa_tmp
 
         if is_gz_file(gtf[idx]):
             print("Annotation is gzipped. Unzipping...", file=sys.stderr)
@@ -109,18 +109,16 @@ def extract_tx(fasta, gtf, out, gffread=None):
                 print("ERROR: gzip is not installed/available in $PATH", file=sys.stderr)
                 exit(1)
             else:
-                subprocess.call(['gunzip', this_gtf])
-                fn_new = this_gtf.split('.gz')[0]
-                if os.path.isfile(fn_new):
-                    to_zip.append(fn_new)
-                    this_gtf = fn_new
-                elif os.path.isfile(this_gtf):
-                    to_zip.append(this_gtf)
-                else:
-                    print("ERROR: can't find unzipped version of {}".format(this_gtf),
-                        file=sys.stderr)
-                    exit(1)
-        
+                gtf_base = this_gtf.split('/')[-1]
+                gtf_base = gtf_base.split('.gz')[0]
+                gtf_tmp = '{}.{}'.format(out, gtf_base)
+                gtf_f = open(gtf_tmp, 'w')
+                p = subprocess.Popen(['gunzip', '-c', this_gtf], stdout=gtf_f)
+                stdout, err = p.communicate()
+                gtf_f.close()
+                to_rm.append(gtf_tmp)
+                this_gtf = gtf_tmp
+
         # Extract transcripts
         print("Extracting transcripts from {} and {}...".format(this_fasta, this_gtf), 
             file=sys.stderr)
@@ -128,8 +126,11 @@ def extract_tx(fasta, gtf, out, gffread=None):
         subprocess.call([gffread_bin, '-F', '-w', '{}.tx.{}.fasta'.format(out, idx), \
             '-g', this_fasta, this_gtf])
         txfiles.append('{}.tx.{}.fasta'.format(out, idx))
+        
+        for fn in to_rm:
+            os.unlink(fn)
 
-    return (to_zip, txfiles)
+    return txfiles
 
 def count_kmers(fasta, out, k, fastk=None):
     fastk_bin = 'FastK'
@@ -142,19 +143,6 @@ def count_kmers(fasta, out, k, fastk=None):
 
     print("Counting k-mers in {}...".format(fasta), file=sys.stderr)
     subprocess.call([fastk_bin, '-N{}'.format(out), '-k{}'.format(k), '-t1', fasta])
-
-def re_gzip(files):
-    if len(files) > 0:
-        print("Re-zipping decompressed files...", file=sys.stderr)
-    for fn in files:
-        if shutil.which('bgzip') is not None:
-            subprocess.call(['bgzip', fn])
-        elif shutil.which('gzip') is not None:
-            subprocess.call(['gzip', fn])
-        else:
-            print("ERROR: gzip/bgzip not installed or unavailable in $PATH", 
-                file=sys.stderr)
-            return
 
 def get_unique_kmers(names, ktabs, out, num):
     
@@ -179,12 +167,11 @@ def main(args):
     options = parse_args()
     
     files_cleanup = []
-    to_zip = []
     tx_fa = []
 
     if options.gtf is not None and len(options.gtf) > 0:
         # Extract transcripts from FASTA
-        to_zip, tx_fa = extract_tx(options.fasta, options.gtf, options.gffread)    
+        tx_fa = extract_tx(options.fasta, options.gtf, options.out, options.gffread)    
         files_cleanup = tx_fa
     else:
         tx_fa = options.fasta
@@ -195,9 +182,6 @@ def main(args):
         count_kmers(tx, '{}.fastk.{}'.format(options.out, idx), options.k, options.FastK)
         ktabs.append('{}.fastk.{}.ktab'.format(options.out, idx))
     
-    # Re-gzip any unzipped files
-    re_gzip(to_zip)
-
     # Create unique k-mer lists
     get_unique_kmers(options.names, ktabs, options.out, options.num)
 
