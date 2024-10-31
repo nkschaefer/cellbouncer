@@ -49,11 +49,13 @@ If you would rather run the steps yourself (instead of using this helper program
 
 ## Running the program (k-mer counting method)
 
-To make things simple, we have provided a [Nextflow pipeline](https://www.nextflow.io/) to run all steps. This is most useful if you have many libraries and/or reads to process. If you have a lot of sequencing data and access to a cluster, for example, you can choose to split up your reads into many pieces and count k-mers in parallel. You will only need to provide the path to a set of unique k-mer lists (see above), a [cell barcode whitelist](https://kb.10xgenomics.com/hc/en-us/articles/115004506263-What-is-a-barcode-whitelist), a list of library names, and a path to your RNA-seq data. You can also provide paths to ATAC and/or custom read types (like feature barcoding and antibody capture), and if library names for your ATAC/custom reads do not match those in the file names of RNA-seq reads, you can also provide a file that maps those library names to RNA-seq library names.
+To make things easier to run on a cluster, we have provided a [Nextflow pipeline](https://www.nextflow.io/) to run all steps. This is most useful if you have many libraries and/or reads to process. If you have a lot of sequencing data and access to a cluster, for example, you can choose to split up your reads into many pieces and count k-mers in parallel. You will only need to provide the path to a set of unique k-mer lists (see above), a [cell barcode whitelist](https://kb.10xgenomics.com/hc/en-us/articles/115004506263-What-is-a-barcode-whitelist), a list of library names, and a path to your RNA-seq data. You can also provide paths to ATAC and/or custom read types (like feature barcoding and antibody capture), and if library names for your ATAC/custom reads do not match those in the file names of RNA-seq reads, you can also provide a file that maps those library names to RNA-seq library names.
 
 The key things you need to run the pipeline are to have [nextflow](https://www.nextflow.io/) installed, to make a parameter file, and, if you want to run on a cluster, to create a `nextflow.config` file in the same directory where you run the pipeline, with cluster-specific configuration options. 
 
-We have provided an example parameter file in `pipelines/demux_species_example.yml`. You can copy this file to wherever you want to run the pipeline and edit to match your needs. Some key parameters are:
+We have provided an example parameter file in `pipelines/demux_species_example.yml`. You can copy this file to wherever you want to run the pipeline and edit to match your needs. You can then run Nextflow from whatever directory you want by giving it the full path to `cellbouncer/pipelines/demux_species.nf` and telling it about the params file with the `-params-file` option. You can also include a `nextflow.config` file in whatever directory you run from, which can provide additional setup options (for example, to tell Nextflow about how to submit jobs on your cluster).
+
+Some key parameters for the params file are:
 #### Required
 * `kmers`: the base name of your unique k-mer lists (see above)
 * `whitelist`: the path to the allowed barcode list for the technology you used
@@ -95,15 +97,18 @@ You should also submit the pipeline command as a cluster job that has plenty of 
 #! /usr/bin/env bash
 #$ -l h_rt=36:00:00
 #$ -cwd
+#$ -V
 conda activate cellbouncer
 nextflow /path/to/cellbouncer/pipelines/demux_species.nf -params-file [params.yml]
 ```
-and then run it with `qsub run_demux_species.sh`.
+and then run it with `qsub run_demux_species.sh`. The `-V` parameter is essential in this case, since it tells the cluster to copy all of your user-specific environment variables, which will include paths to directories that CellBouncer needs to know about to run correctly.
 
 If a job fails, you can try again, but add the `-resume` argument to your `nextflow` command. Nextflow keeps all temporary files in a directory called `work`, where they can be accessed again if a run fails.
 
 Once a run has succeeded and all needed files are in the `out` directory you specified, you can delete the `work` directory:
 `rm -r work`
+
+This directory is created by Nextflow and contains temporary data / intermediate processing results. It will be placed in whatever directory you run Nextflow from - so it's essential to run in a directory where there is plenty of space. It's also essential to remove this directory when you're done to avoid storing duplicated data.
 
 #### Note
 The last step of the pipeline involves creating [plots](#plotting). Sometimes, if there are many cells and/or not enough memory on a cluster node, these plots can fail, because the hierarchical clustering involved is computationally expensive. In these cases, we chose to create empty plot files rather than allow the pipeline to crash. Therefore, if you see empty `species.png` and `species.pdf` files in a directory, you can just try to create those plots again (preferably on a machine with more memory) by running `plot/species.R`.
