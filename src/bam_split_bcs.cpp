@@ -124,7 +124,11 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: output_prefix (-o) required\n");
         exit(1);
     }
-    
+    if (is_dir(output_prefix)){
+        fprintf(stderr, "ERROR: output_prefix %s is a directory, but should be a \
+file name prefix.\n", output_prefix.c_str());
+        exit(1);
+    }    
     map<unsigned long, string> barcode_map;
     set<string> barcode_groups;
     parse_barcode_map(assignment_file, barcode_map, barcode_groups, llr_thresh, keep_doublets);

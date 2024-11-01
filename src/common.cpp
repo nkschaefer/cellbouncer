@@ -455,6 +455,16 @@ bool file_exists(string filename){
     }
 }
 
+bool is_dir(string filename){
+    struct stat buf;
+    if (stat(filename.c_str(), &buf) == 0){
+        if (buf.st_mode & S_IFDIR){
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * Given a histogram, approximates the first derivative of
  * the histogram and puts it in datp. Does not apply

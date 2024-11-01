@@ -123,6 +123,10 @@ file (-a) required\n");
         outf = bgzf_open("-", "w");
     }
     else{
+        if (is_dir(outfile)){
+            fprintf(stderr, "ERROR: output file %s is a directory.\n", outfile.c_str());
+            exit(1);
+        }
         outf = bgzf_open(outfile.c_str(), "w");
         if (!outf){
             fprintf(stderr, "ERROR opening file %s for writing.\n", outfile.c_str());

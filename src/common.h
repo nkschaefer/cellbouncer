@@ -68,6 +68,7 @@ std::string filename_nopath(std::string& filename);
 double logbinom(double n, double k, double p);
 
 bool file_exists(std::string name);
+bool is_dir(std::string name);
 
 // Approximate derivative using slope of neighboring points
 void derivative(std::map<double, double>& hist, std::map<double, double>& result, int smooth);

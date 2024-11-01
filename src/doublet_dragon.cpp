@@ -234,7 +234,11 @@ int main(int argc, char *argv[]) {
     } 
     
     string outbase = argv[1];
-    
+    if (is_dir(outbase)){
+        fprintf(stderr, "ERROR: first argument, %s, is a directory but should be \
+a file name prefix.\n", outbase.c_str());
+        exit(1);
+    } 
     // Make sure the user didn't accidentally pass an output file as first argument
     if (outbase.length() > 12 && outbase.substr(outbase.length()-12,12) == ".assignments"){
         fprintf(stderr, "ERROR: first argument, [output_prefix], is an .assignments file.\n");
