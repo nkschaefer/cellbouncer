@@ -5,7 +5,7 @@ channels:
   - jdblischak
 dependencies:
   - python=3
-  - htslib
+  - htslib>=1.10.2
   - libzlib
   - r-base
   - r-ggplot2
