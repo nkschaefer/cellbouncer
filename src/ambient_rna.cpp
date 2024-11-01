@@ -672,7 +672,7 @@ void contamFinder::get_reads_expectations(int ident,
  *     This gives us many measurements of c, and we return a weighted average.
  */
 double contamFinder::est_min_c(){
-    map<pair<int, int>, map<pair<int, int>, double> > diffs;
+    map<pair<int, int>, map<pair<int, int>, double> > mean_f;
     map<pair<int, int>, map<pair<int, int>, double> > counts;
     
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin(); a != 
@@ -691,21 +691,21 @@ double contamFinder::est_min_c(){
                     }
                     double f = alt/(ref+alt);
                     double p0 = (double)(nalt1 + nalt2)/4.0;
-                    if (diffs.count(key1) == 0){
+                    if (mean_f.count(key1) == 0){
                         map<pair<int, int>, double> m;
-                        diffs.insert(make_pair(key1, m));
+                        mean_f.insert(make_pair(key1, m));
                         counts.insert(make_pair(key1, m));
                     }
-                    if (diffs[key1].count(key2) == 0){
-                        diffs[key1].insert(make_pair(key2, 0));
+                    if (mean_f[key1].count(key2) == 0){
+                        mean_f[key1].insert(make_pair(key2, 0));
                         counts[key1].insert(make_pair(key2, 0));
                     }
                     if (!weighted){
-                        diffs[key1][key2] += f;    
+                        mean_f[key1][key2] += f;    
                         counts[key1][key2]++;
                     }
                     else{
-                        diffs[key1][key2] += f * assn_llr[a->first];
+                        mean_f[key1][key2] += f * assn_llr[a->first];
                         counts[key1][key2] += assn_llr[a->first];
                     }
                 }
@@ -722,21 +722,21 @@ double contamFinder::est_min_c(){
                 }
                 double f = alt/(ref+alt);
                 double p0 = (double)nalt/2.0;
-                if (diffs.count(key) == 0){
+                if (mean_f.count(key) == 0){
                     map<pair<int, int>, double> m;
-                    diffs.insert(make_pair(key, m));
+                    mean_f.insert(make_pair(key, m));
                     counts.insert(make_pair(key, m));
                 }
-                if (diffs[key].count(nullkey) == 0){
-                    diffs[key].insert(make_pair(nullkey, 0));
+                if (mean_f[key].count(nullkey) == 0){
+                    mean_f[key].insert(make_pair(nullkey, 0));
                     counts[key].insert(make_pair(nullkey, 0));
                 }
                 if (!weighted){
-                    diffs[key][nullkey] += f;
+                    mean_f[key][nullkey] += f;
                     counts[key][nullkey]++;
                 }
                 else{
-                    diffs[key][nullkey] += f*assn_llr[a->first];
+                    mean_f[key][nullkey] += f*assn_llr[a->first];
                     counts[key][nullkey] += assn_llr[a->first];
                 }
             }
@@ -749,8 +749,8 @@ double contamFinder::est_min_c(){
     double minc_min = -1;
     double minc_max = -1;
     
-    for (map<pair<int, int>, map<pair<int, int>, double> >::iterator d = diffs.begin();
-        d != diffs.end(); ++d){
+    for (map<pair<int, int>, map<pair<int, int>, double> >::iterator d = mean_f.begin();
+        d != mean_f.end(); ++d){
         for (map<pair<int, int>, double>::iterator d2 = d->second.begin(); d2 != d->second.end();
             ++d2){
             double expec;
@@ -766,14 +766,13 @@ double contamFinder::est_min_c(){
                 double inf = d2->second / counts[d->first][d2->first];
                 double minc;
                 if (inf > expec){
-                    // treat p_c = 0
+                    // treat p_c = 1
                     minc = (inf - expec)/(1.0 - expec);
                 }   
                 else{
-                    // treat p_c = 1
+                    // treat p_c = 0
                     minc = (inf - expec)/(0.0 - expec);
                 }
-                
                 if (minc_min == -1 || minc < minc_min){
                     minc_min = minc;
                 }
