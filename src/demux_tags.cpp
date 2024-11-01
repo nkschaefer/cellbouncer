@@ -79,6 +79,10 @@ void help(int code){
     fprintf(stderr, "       specify multiple times.\n");
     fprintf(stderr, "   --whitelist -w Cell barcode whitelist file (i.e. included with 10X Genomics\n");
     fprintf(stderr, "       Cellranger software in cellranger-x.y.z/lib/python/cellranger/barcodes/\n");
+    fprintf(stderr, "   --exact_only -e Only accept cell barcode matches to allowed barcode list when\n");
+    fprintf(stderr, "       they are exact. This will speed up tag counting in reads and significantly\n");
+    fprintf(stderr, "       decrease memory usage, at the cost of picking up slightly fewer tag counts\n");
+    fprintf(stderr, "       per cell barcode.\n");
     fprintf(stderr, "   --seqs -s File mapping sequences (i.e. MULTI-seq barcodes or sgRNA capture\n");
     fprintf(stderr, "       sequences) to IDs. These can either be final assignments (i.e. sgRNA names)\n");
     fprintf(stderr, "       or intermediate IDs, which can then be mapped to final IDs via the --mapping\n");
@@ -188,7 +192,7 @@ void load_well_mapping(string& filename, map<string, string>& well2id){
  * deduplicate UMIs)
  */
 void dump_counts(string& filename, 
-    robin_hood::unordered_map<unsigned long, vector<umi_set*> >& bc_ms_umis,
+    robin_hood::unordered_map<unsigned long, vector<umi_set_exact*> >& bc_ms_umis,
     vector<string>& seq_names,
     robin_hood::unordered_map<unsigned long, map<int, long int> >& bc_tag_counts,
     string& libname,
@@ -207,7 +211,7 @@ void dump_counts(string& filename,
     }
     fprintf(f, "\n");
 
-    for (robin_hood::unordered_map<unsigned long, vector<umi_set*> >::iterator x =
+    for (robin_hood::unordered_map<unsigned long, vector<umi_set_exact*> >::iterator x =
         bc_ms_umis.begin(); x != bc_ms_umis.end(); ++x){
 
         map<int, long int> m;
@@ -776,7 +780,7 @@ void fit_dists_2way(vector<vector<double> >& obscol,
             dists2.push_back(high2);
             mixtureModel mod2(dists2);
             mod2.fit(obscol[i]);
-            
+            /* 
             fprintf(stderr, "LL %s %f %f\n", labels[i].c_str(), mod.loglik, mod2.loglik);
             double gini1 = 0.0;
             for (int x = 0; x < obscol[i].size(); ++x){
@@ -794,17 +798,19 @@ void fit_dists_2way(vector<vector<double> >& obscol,
             }
             gini2 /= (double)obscol[i].size();
             fprintf(stderr, "  gini %f %f\n", gini1, gini2);
+            *
             fprintf(stderr, "  means %f %f | %f %f\n", mod.dists[0].params[0][0], 1.0/mod.dists[1].params[0][0],
                 mod2.dists[0].params[0][0], 1.0/mod2.dists[1].params[0][0]);
             fprintf(stderr, "  weights %f | %f\n", mod.weights[0], mod2.weights[0]);
+            */
             double lomean = mod.dists[0].params[0][0];
             double lophi = mod.dists[0].params[0][1];
             double himean = 1.0/mod.dists[1].params[0][0];
             double w = mod.weights[0];
-            fprintf(stderr, "  disps %f %f\n", mod.dists[0].params[0][1], mod2.dists[0].params[0][1]);
+           // fprintf(stderr, "  disps %f %f\n", mod.dists[0].params[0][1], mod2.dists[0].params[0][1]);
             if (1.0/mod2.dists[1].params[0][0] > mod2.dists[0].params[0][0] && 
                 mod2.loglik > mod.loglik){
-                fprintf(stderr, "  SWAP\n");
+                //fprintf(stderr, "  SWAP\n");
                 lomean = mod2.dists[0].params[0][0];
                 lophi = mod2.dists[0].params[0][1];
                 himean = 1.0/mod2.dists[1].params[0][0];
@@ -1472,7 +1478,7 @@ void write_bg(string filename,
  * Checks to see whether the user may have specified the incorrect wells - 
  * are any unspecified wells overrepresented in data?
  */
-void check_missing_ms_wells(robin_hood::unordered_map<unsigned long, vector<umi_set*> >& bc_ms_umis,
+void check_missing_ms_wells(robin_hood::unordered_map<unsigned long, vector<umi_set_exact*> >& bc_ms_umis,
     vector<string>& ms_wells,
     map<string, string>& well2name,
     string& outfilename){
@@ -1482,7 +1488,7 @@ void check_missing_ms_wells(robin_hood::unordered_map<unsigned long, vector<umi_
     for (int i = 0; i < ms_wells.size(); ++i){
         counts.push_back(make_pair(0, ms_wells[i]));
     }
-    for (robin_hood::unordered_map<unsigned long, vector<umi_set*> >::iterator x = 
+    for (robin_hood::unordered_map<unsigned long, vector<umi_set_exact*> >::iterator x = 
         bc_ms_umis.begin(); x != bc_ms_umis.end(); ++x){
         for (int i = 0; i < x->second.size(); ++i){
             if (x->second[i] != NULL){
@@ -1528,11 +1534,9 @@ void count_tags_in_reads(vector<string>& read1fn,
     set<unsigned long>& cell_barcodes,
     string& cell_barcodesfn,
     map<string, int>& seq2idx,
-    robin_hood::unordered_map<unsigned long, vector<umi_set*> >& bc_tag_umis){
-    
+    robin_hood::unordered_map<unsigned long, vector<umi_set_exact*> >& bc_tag_umis){
     // Initiate tag barcode whitelist
     seq_fuzzy_match tagmatch(seqlist, mismatches, true, true);
-
     map<int, int> matchpos_found;
     int matchcount = 0;
     int matchpos_global = -1;
@@ -1543,7 +1547,6 @@ void count_tags_in_reads(vector<string>& read1fn,
     if (sgrna){
         tagmatch.set_reverse();
     }
-    
     // Set up object that will scan each pair of read files
     bc_scanner scanner;
 
@@ -1566,25 +1569,19 @@ void count_tags_in_reads(vector<string>& read1fn,
     }
     scanner.init(wl_to_load, "", 0, false, false, false, 0, bclen, umi_len, bclen);  
     //scanner.init_multiseq_v3(wlfn);
-    
     if (exact_cell_barcodes){
         scanner.exact_matches_only();
     }
 
     char seq_buf[seq_len+1];
-
     for (int i = 0; i < read1fn.size(); ++i){
-        
         // Initiate object to read through FASTQs and find cell barcodes.
         scanner.add_reads(read1fn[i], read2fn[i]);
-        
         while (scanner.next()){
-            
             // At this point, there's a valid cell barcode.
             // scanner.barcode_read holds R1
             // scanner.read_f holds R2
             // scanner.umi holds UMI 
-            
             if (scanner.has_umi){
                 int idx = -1;
                 if (sgrna){
@@ -1631,27 +1628,26 @@ void count_tags_in_reads(vector<string>& read1fn,
                     }
                 }
                 else{
-                    // Cell hashing barcodes are assumed to occur at teh beginning of R2, forward orientation
+                    // Cell hashing barcodes are assumed to occur at the beginning of R2, forward orientation
                     strncpy(&seq_buf[0], scanner.read_f, seq_len);
                     seq_buf[seq_len] = '\0';
                     idx = tagmatch.match(&seq_buf[0]);
                 }
                 
                 if (idx != -1){
-                    
                     // A matching sequence was found.
                     string seqmatch = seqlist[idx];
-                    
                     // Store UMI
                     umi this_umi(scanner.umi, scanner.umi_len);    
                     if (bc_tag_umis.count(scanner.barcode) == 0){
-                        vector<umi_set*> v(seqlist.size(), NULL);
+                        vector<umi_set_exact*> v(seqlist.size(), NULL);
                         bc_tag_umis.emplace(scanner.barcode, v);
                     }
-                    umi_set* ptr = bc_tag_umis[scanner.barcode][seq2idx[seqmatch]];
+                    umi_set_exact* ptr = bc_tag_umis[scanner.barcode][seq2idx[seqmatch]];
                     if (ptr == NULL){
                         // Initialize.
-                        bc_tag_umis[scanner.barcode][seq2idx[seqmatch]] = new umi_set(scanner.umi_len);
+                        //bc_tag_umis[scanner.barcode][seq2idx[seqmatch]] = new umi_set_exact(scanner.umi_len);
+                        bc_tag_umis[scanner.barcode][seq2idx[seqmatch]] = new umi_set_exact();
                         ptr = bc_tag_umis[scanner.barcode][seq2idx[seqmatch]];
                     }
                     ptr->add(this_umi); 
@@ -1672,6 +1668,7 @@ int main(int argc, char *argv[]) {
        {"names", required_argument, 0, 'N'},
        {"whitelist", required_argument, 0, 'w'},
        {"cell_barcodes", required_argument, 0, 'B'},
+       {"exact_only", no_argument, 0, 'e'},
        {"mismatches", required_argument, 0, 'm'},
        {"filt", no_argument, 0, 'f'},
        {"comma", no_argument, 0, 'c'},
@@ -1907,7 +1904,6 @@ next time)...\n");
                 has_cell_barcodes = true;
                 parse_barcode_file(cell_barcodesfn, cell_barcodes);
             }    
-
             // Load intermediate ID -> unique identifier mapping, if provided
             map<string, string> well2id;
             if (mapfn == ""){
@@ -1943,7 +1939,6 @@ next time)...\n");
                 // alert the user about this later.
             }
             n_labels = well2id.size();    
-            
             map<string, int> seq2idx;
             vector<string> seq_names;
             vector<string> seq_wells;
@@ -1962,20 +1957,16 @@ next time)...\n");
                     seq_names.push_back("");
                 }
             }
-            
             // Data structure to store tag counts per cell barcode
             // counts come from UMIs
-            robin_hood::unordered_map<unsigned long, vector<umi_set*> > bc_tag_umis;
-            
+            robin_hood::unordered_map<unsigned long, vector<umi_set_exact*> > bc_tag_umis;
             // Process reads and count tags in them
             count_tags_in_reads(read1fn, read2fn, seqlist, mismatches, wlfn,
                 umi_len, sgrna, exact_cell_barcodes, seq_len, has_cell_barcodes,
                 cell_barcodes, cell_barcodesfn, seq2idx, bc_tag_umis);
-
             // Write counts to disk
             string countsfn = output_prefix + ".counts";
             dump_counts(countsfn, bc_tag_umis, seq_names, bc_tag_counts, batch_id, cellranger, seurat, underscore);
-           
             if (has_mapfile){
                 // Check to see that the desired MULTIseq barcodes are the most common ones.
                 // Warn the user if unexpected ones are more common. 
@@ -1984,7 +1975,7 @@ next time)...\n");
             }
             
             // Free stuff
-            for (robin_hood::unordered_map<unsigned long, vector<umi_set*> >::iterator x = 
+            for (robin_hood::unordered_map<unsigned long, vector<umi_set_exact*> >::iterator x = 
                 bc_tag_umis.begin(); x != bc_tag_umis.end(); ){
                 for (int i = 0; i < x->second.size(); ++i){
                     if (x->second[i] != NULL){
