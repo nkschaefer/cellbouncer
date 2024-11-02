@@ -1344,7 +1344,7 @@ workflow{
             models = fit_model_gex_atac_custom(all_together_joined)
         }
         
-        if (params.demux_pieces){
+        if (params.demux_pieces && params.num_chunks > 1){
             // Demux each chunk of RNA files
             rsplit2 = rsplit.map{ idx, lib, r1, r2, wl -> 
                 [lib, lib + "_" + idx, r1, r2, wl]
