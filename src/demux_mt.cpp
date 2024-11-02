@@ -2654,6 +2654,11 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: output_prefix is required\n");
         exit(1);
     }
+    else if (is_dir(output_prefix)){
+        fprintf(stderr, "ERROR: output_prefix %s is a directory, but should be a file \
+name prefix.\n", output_prefix.c_str());
+        exit(1);
+    }
     if (hapsfile_given && !varsfile_given){
         fprintf(stderr, "ERROR: If --haps / -H is given, --vars / -v is also required\n");
         exit(1);

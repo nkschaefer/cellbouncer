@@ -365,7 +365,6 @@ double ll_mix_multi(double param,
             p.push_back(bgfrac * param);
         }
     }
-
     return dmultinom(x, p)/log2(exp(1));
 }
 
@@ -849,10 +848,6 @@ void fit_dists_2way(vector<vector<double> >& obscol,
     // mean, then that label will be removed.
     
     fprintf(stderr, "Checking for label dropout...\n");
-    pair<double, double> hiweightmv = welford(hiweights);
-    pair<double, double> loweightmv = welford(loweights);
-    pair<double, double> hiweightbeta = beta_moments(hiweightmv.first, hiweightmv.second);
-    pair<double, double> loweightbeta = beta_moments(loweightmv.first, loweightmv.second);
     pair<double, double> lomv = welford(lomeans);
     pair<double, double> himv = welford(himeans);
     
@@ -879,21 +874,7 @@ void fit_dists_2way(vector<vector<double> >& obscol,
                 himeans[i] = -1;
             }
             else{
-                /*
-                double dbeta1 = dbeta(hiweights[i], loweightbeta.first, loweightbeta.second);
-                double dbeta2 = dbeta(hiweights[i], hiweightbeta.first, hiweightbeta.second);
-                if (dbeta2 - dbeta1 < 0){
-                    fprintf(stderr, "  Remove label %s, LLR(weight) = %f\n", labels[i].c_str(),
-                        dbeta1-dbeta2);
-                    model_means.push_back(-1);
-                    lomeans[i] = -1;
-                    lophis[i] = -1;
-                    himeans[i] = -1;
-                }
-                else{
-                */
-                    model_means.push_back(himeans[i]);
-                //}
+                model_means.push_back(himeans[i]);
             }
         }
     }
@@ -1103,6 +1084,9 @@ double sep_bg_dists_percent(vector<double>& bgperc_all_flat){
         pair<double, double> ab_bgl = beta_moments(muvar_bgl.first, muvar_bgl.second);
         pair<double, double> ab_bgh = beta_moments(muvar_bgh.first, muvar_bgh.second);
         
+        fprintf(stderr, "Low percent background A %f B %f\n", ab_bgl.first, ab_bgl.second);
+        fprintf(stderr, "High percent background A %f B %f\n", ab_bgh.first, ab_bgh.second);
+
         //mixtureDist lo("exponential", 1.0/muvar_bgl.first);
         mixtureDist lo("beta", ab_bgl.first, ab_bgl.second);
         mixtureDist hi("beta", ab_bgh.first, ab_bgh.second);
@@ -1799,6 +1783,11 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: --output_prefix/-o is required\n");
         exit(1);
     }
+    if (is_dir(output_prefix)){
+        fprintf(stderr, "ERROR: output_prefix %s is a directory, but should be a file \
+name prefix.\n", output_prefix.c_str());
+        exit(1);
+    }
     if (mismatches < -1){
         fprintf(stderr, "ERROR: mismatches must be >= 0, or -1 to allow all matches\n");
         exit(1);
@@ -1871,8 +1860,10 @@ next time)...\n");
         if (input_mtx != ""){
             
             // Load MEX-format data
-            parse_mex(cell_barcodesfn, input_features, input_mtx, 
-                bc_tag_counts, labels, featuretype); 
+            if (!parse_mex(cell_barcodesfn, input_features, input_mtx, 
+                bc_tag_counts, labels, featuretype)){
+                exit(1);
+            } 
             
             // Dump MEX-format data to count table and quit
             string countsfn = output_prefix + ".counts";

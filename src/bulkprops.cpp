@@ -527,6 +527,11 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: output_prefix/-o required\n");
         exit(1);
     }
+    else if (output_prefix.length() > 0 && is_dir(output_prefix)){
+        fprintf(stderr, "ERROR: output_prefix %s is a directory, but should be a file \
+name prefix.\n", output_prefix.c_str());
+        exit(1);
+    }
     if (n_trials < 0){
         fprintf(stderr, "ERROR: --n_trials/-N must be 0 or greater\n");
         exit(1);

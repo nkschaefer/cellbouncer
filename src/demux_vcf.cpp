@@ -714,6 +714,11 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: output_prefix/-o required\n");
         exit(1);
     }
+    else if (is_dir(output_prefix)){
+        fprintf(stderr, "ERROR: output_prefix %s is a directory, but should be a file \
+name prefix.\n", output_prefix.c_str());
+        exit(1);
+    }
     if (doublet_rate < 0 || doublet_rate > 1){
         fprintf(stderr, "ERROR: doublet rate must be between 0 and 1, inclusive.\n");
         exit(1);
