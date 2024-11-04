@@ -474,8 +474,19 @@ a file name prefix.\n", outbase.c_str());
     solver.add_data("p_idx2", p_idx2);
 
     solver.add_weights(weights);
-    solver.solve();
     
+    solver.solve();
+    vector<double> results_max = solver.results;
+    double llmax = solver.log_likelihood;
+    for (double p = 0.05; p < 1; p += 0.05){
+        solver.set_param(0, p);
+        solver.solve();
+        if (solver.log_likelihood > llmax){
+            results_max = solver.results;
+            llmax = solver.log_likelihood;
+        } 
+    }
+
     if (outbase[outbase.length()-1] == '.'){
         outbase = outbase.substr(0, outbase.length()-1);
     }
@@ -484,12 +495,12 @@ a file name prefix.\n", outbase.c_str());
     FILE* out_all = fopen(fn_all.c_str(), "w");
     FILE* out_indv = fopen(fn_indv.c_str(), "w");
 
-    double doublet_rate = solver.results[0];
+    double doublet_rate = results_max[0];
     map<string, double> indv_freq;
     double ifsum = 0.0;
     for (map<string, pair<int, int> >::iterator ni = name2idx.begin(); ni != name2idx.end(); ++ni){
         int solver_idx = grpstart[ni->second.first] + ni->second.second;
-        indv_freq.insert(make_pair(ni->first, solver.results[solver_idx]));
+        indv_freq.insert(make_pair(ni->first, results_max[solver_idx]));
         fprintf(stderr, "%s\t%f\n", ni->first.c_str(), indv_freq[ni->first]);
     }
     for (int gi = 0; gi < grp_names.size(); ++gi){
