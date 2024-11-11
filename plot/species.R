@@ -12,6 +12,12 @@ if (length(args) < 1){
     q()
 }
 
+sampnum <- -1 
+if (length(args) > 1){
+    sampnum <- as.numeric(args[2])
+    write(paste("Sampling ", sampnum, " cells", sep=''), stderr())
+}
+
 outdir <- args[1]
 countsfile <- paste(outdir, 'species_counts.txt', sep='/')
 namesfile <- paste(outdir, 'species_names.txt', sep='/')
@@ -130,6 +136,10 @@ if (args[1] == '.'){
     name_pdf <- 'species.pdf'
 }
 
+
+if (sampnum > 0){
+    countsm <- countsm[sample(seq(1,length(rownames(countsm))), sampnum),]
+}
 
 png(name_png, width=8, height=6, bg='white', units='in', res=150)
 tryCatch({

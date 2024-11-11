@@ -965,7 +965,6 @@ data for %s with more species.\n", kmerbase.c_str());
             bc2species, bc2doublet, bc2llr, idx2species, true, bcs_pass);
         fclose(bc_out);
     }
-    
     // See if we can/should create "library files" for multiome data, to save headaches later
     if (rna_r1files.size() > 0 || atac_r1files.size() > 0 || custom_r1files.size() > 0){
         create_library_file(rna_r1files, atac_r1files, custom_r1files, 
@@ -1000,13 +999,11 @@ data for %s with more species.\n", kmerbase.c_str());
             wl.init(whitelist_rna_filename, whitelist_atac_filename);
             for (robin_hood::unordered_map<unsigned long, map<short, int> >::iterator x = 
                 bc_species_counts.begin();
-                x != bc_species_counts.end(); ++x){
-                
+                x != bc_species_counts.end(); ++x){  
                 unsigned long barcode_atac = wl.wl1towl2(x->first);
                 bc_conversion.emplace(x->first, barcode_atac);
             }
         }
-        
         // Initialize the whitelist
         vector<unsigned long> rnalist;
         vector<unsigned long> ataclist;
