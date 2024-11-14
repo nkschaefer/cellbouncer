@@ -392,7 +392,7 @@ process fit_model_dump{
     """
     ${demux_species} -d -o . ${extra}
     if [ \$( cat species.filt.assignments | wc -l ) -gt 0 ]; then
-        ${plot} . 20000
+        ${plot} .
         if [ ! -e species.pdf ]; then
             echo "" > species.pdf
         fi 
@@ -443,7 +443,7 @@ process fit_model_gex{
     """
     ${demux_species} -d -o . ${r1str} ${r2str}${extra}
     if [ \$( cat species.filt.assignments | wc -l ) -gt 0 ]; then
-        ${plot} . 20000
+        ${plot} .
         if [ ! -e species.pdf ]; then
            echo "" > species.pdf
         fi
@@ -501,7 +501,7 @@ process fit_model_gex_atac{
     """
     ${demux_species} -d -o . ${r1str} ${r2str} ${ar1str} ${ar2str} ${ar3str}${extra}
     if [ \$( cat species.filt.assignments | wc -l ) -gt 0 ]; then
-        ${plot} . 20000 
+        ${plot} . 
         if [ ! -e species.pdf ]; then
             echo "" > species.pdf
         fi
@@ -559,7 +559,7 @@ process fit_model_gex_custom{
     """
     ${demux_species} -d -o . ${r1str} ${r2str} ${c1str} ${c2str} ${nstr}${extra}
     if [ \$( cat species.filt.assignments | wc -l ) -gt 0 ]; then
-        ${plot} . 20000 
+        ${plot} . 
         if [ ! -e species.pdf ]; then
             echo "" > species.pdf
         fi
@@ -624,7 +624,7 @@ process fit_model_gex_atac_custom{
     """
     ${demux_species} -d -o . ${r1str} ${r2str} ${a1str} ${a2str} ${a3str} ${c1str} ${c2str} ${nstr}${extra}
     if [ \$( cat species.filt.assignments | wc -l ) -gt 0 ]; then
-        ${plot} . 20000
+        ${plot} .
         if [ ! -e species.pdf ]; then
            echo "" > species.pdf
         fi
@@ -714,35 +714,15 @@ process demux_atac_reads{
     tuple file("*/ATAC_${R1}"), file("*/ATAC_${R2}"), file("*/ATAC_${R3}")
 
     script:
+    def apstr = ""
+    if (params.atac_preproc){
+        apstr = " -A"
+    }
     """
-    ${demux_species} -o . -w ${wl} -W "${wl_atac}" -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3}
-    """
-}
-
-process demux_atac_reads_preproc{
-    cpus params.threads
-
-    input:
-    tuple val(libname), 
-        file(R1), 
-        file(R2),
-        file(R3),
-        file(assn), 
-        file(counts), 
-        file(names),
-        file(wl),
-        file(wl_atac)
- 
-    publishDir "${params.output_directory}/${libname}", mode: "copy"
-    
-    output:
-    tuple file("*/ATAC_${R1}"), file("*/ATAC_${R2}")
-
-    script:
-    """
-    ${demux_species} -o . -w ${wl} -W "${wl_atac}" -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3} -A
+    ${demux_species} -o . -w ${wl} -W "${wl_atac}" -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3}${apstr}
     """
 }
+
 /*
  * Splits an ATAC_seq read triplet chunk by species
  */
@@ -770,36 +750,12 @@ process demux_atac_reads_chunk{
         file("*/ATAC_${R3}")
  
     script:
+    def apstr = ""
+    if (params.atac_preproc){
+        apstr = " -A"
+    }
     """
-    ${demux_species} -o . -w ${wl} -W ${wl_atac} -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3}
-    """
-}
-
-process demux_atac_reads_chunk_preproc{
-    cpus params.threads
-
-    input:
-    tuple val(uid), 
-        val(libname_atac), 
-        val(libname_gex), 
-        file(R1), 
-        file(R2), 
-        file(R3),
-        file(assn), 
-        file(counts), 
-        file(names),
-        file(wl),
-        file(wl_atac)
- 
-    output:
-    tuple val(uid), 
-        val(libname_gex),
-        file("*/ATAC_${R1}"),
-        file("*/ATAC_${R2}"),
- 
-    script:
-    """
-    ${demux_species} -o . -w ${wl} -W ${wl_atac} -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3} -A
+    ${demux_species} -o . -w ${wl} -W ${wl_atac} -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3}${apstr}
     """
 }
 
@@ -923,31 +879,6 @@ process cat_read_chunks_atac{
     zcat ${r3s_str} | gzip -c - > ${R3out}
     """ 
 }
-
-process cat_read_chunks_atac_nor3{
-    input:
-    tuple val(uid), 
-        val(libname), 
-        val(species), 
-        file(R1s), 
-        file(R2s),
-        val(R1out), 
-        val(R2out),
-    
-    publishDir "${params.output_directory}/${libname}/${species}", mode: "copy"
-    
-    output:
-    tuple val(uid), val(libname), val(species), file(R1out), file(R2out)
-
-    script:
-    def r1s_str = R1s.join(' ')
-    def r2s_str = R2s.join(' ')
-    """
-    zcat ${r1s_str} | gzip -c - > ${R1out}
-    zcat ${r2s_str} | gzip -c - > ${R2out}
-    """ 
-}
-
 /*
  * Combines a set of custom-type read pair chunks, after splitting into chunks
  * and separating chunks by species
@@ -1426,27 +1357,18 @@ workflow{
             cat_job(rna_chunk_demuxed, false) | cat_read_chunks_rna
             
             if (params.atac_dir){
-                
                 // Split, demux, and join ATAC-seq read files
                 readtrios_atac = get_atac_channel(atac_map, true)
                 asplit = split_atac_reads(readtrios_atac).transpose()\
                     .map{ idx, libname_atac, libname_gex, r1, r2, r3 ->
                         [libname_gex, libname_atac + "_" + idx, libname_atac, r1, r2, r3]
                     }
-                atac_reads_chunk_demux_input = models.cross(asplit).map{x, y ->
+                atac_reads_chunk_demuxed = models.cross(asplit).map{x, y ->
                     [y[1], y[2], y[0], y[3], y[4], y[5], x[2], x[6], x[7], \
                     file(params.whitelist), file(params.whitelist_atac)]
-                }
-                def atac_has_r3 = true
-                if (params.atac_preproc){
-                    atac_has_r3 = false
-                    atac_reads_chunk_demuxed = demux_atac_reads_chunk_preproc(atac_reads_chunk_demux_input)
-                    cat_job(atac_reads_chunk_demuxed, false) | cat_read_chunks_atac_nor3
-                } 
-                else{
-                    atac_reads_chunk_demuxed = demux_atac_reads_chunk(atac_reads_chunk_demux_input)
-                    cat_job(atac_reads_chunk_demuxed, true) | cat_read_chunks_atac
-                }
+                } | demux_atac_reads_chunk
+                
+                cat_job(atac_reads_chunk_demuxed, true) | cat_read_chunks_atac 
             }
             if (params.custom_dir){
                 // Split, demux, and join custom read files
@@ -1482,16 +1404,9 @@ workflow{
                 non_indexed_atac_trios = readtrios_atac.map{ x ->
                     [x[2], x[6], x[7], x[8]] 
                 }
-                
-                def demux_atac_reads_dat = models.cross(non_indexed_atac_trios).map{ x, y ->
+                models.cross(non_indexed_atac_trios).map{ x, y ->
                     [x[0], y[1], y[2], y[3], x[2], x[6], x[7], file(params.whitelist), file(params.whitelist_atac)]
-                }
-                if (params.atac_preproc){
-                    demux_atac_reads_preproc(demux_atac_reads_dat)
-                }
-                else{
-                    demux_atac_reads(demux_atac_reads_dat)
-                }
+                } | demux_atac_reads
             }
             if (params.custom_dir){
                 readpairs_custom = get_custom_channel(extensions, suffixes,

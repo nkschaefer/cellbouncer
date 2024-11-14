@@ -137,7 +137,7 @@ if (args[1] == '.'){
 }
 
 
-if (sampnum > 0 & length(rownames(countsm)) > sampnum){
+if (sampnum > 0){
     countsm <- countsm[sample(seq(1,length(rownames(countsm))), sampnum),]
 }
 
