@@ -107,6 +107,9 @@ void help(int code){
     fprintf(stderr, "   --mismatches -m The number of allowable mismatches to a MULTIseq barcode/HTO/sgRNA\n");
     fprintf(stderr, "       capture sequence to accept it. Default = 2; set to -1 to take best match overall,\n");
     fprintf(stderr, "       if there are no ties.\n");
+    fprintf(stderr, "   --filt -f Attempt to find \"negative\" cell barcodes that should not receive an ID.\n");
+    fprintf(stderr, "       Default: attempt to assign an ID to all cell barcodes, unless in --sgRNA mode,\n");
+    fprintf(stderr, "       in which case filtering will happen even without this option set.\n");
     fprintf(stderr, "   --umi_len -u This program assumes that forward reads begin with a cell barcode followed\n");
     fprintf(stderr, "       by a UMI. Cell barcode length is set during compilation with the -D BC_LENX2\n");
     fprintf(stderr, "        argument (default = 32, meaning 16 bp barcodes). This sets the length of the UMI\n");
@@ -180,6 +183,12 @@ void load_well_mapping(string& filename, map<string, string>& well2id){
     string well;
     string id;
     while (inf >> well >> id){
+        if (well2id.count(well) > 0){
+            fprintf(stderr, "ERROR: well %s is assigned to at least 2 identities:\n", well.c_str());
+            fprintf(stderr, "%s\n", well2id[well].c_str());
+            fprintf(stderr, "%s\n", id.c_str());
+            exit(1);
+        }
         well2id.insert(make_pair(well, id));
     }
 }
@@ -297,6 +306,13 @@ int load_counts(string& filename,
         unsigned long cur_bc;
         while(getline(splitter, field, '\t')){
             if (first){
+                // Ensure names are unique
+                for (int x = 0; x < header.size(); ++x){
+                    if (header[x] == field){
+                        fprintf(stderr, "ERROR: label %s appears multiple times in header.\n", field.c_str());
+                        exit(1);
+                    }
+                }
                 header.push_back(field);
             }
             else{
@@ -358,7 +374,7 @@ double ll_mix_multi(double param,
         bufstr = buf;
         double m = data_d.at(bufstr);
 
-        if (m != -1){
+        if (m > 0){
             p.push_back(bgfrac * param + (1.0 - param) * m);
         }
         else{
@@ -396,7 +412,7 @@ double dll_mix_multi(double param,
         sprintf(&buf[0], "m_%d", i);
         bufstr = buf;
         double m = data_d.at(bufstr);
-        if (m != -1){
+        if (m > 0){
             dL_df += (x_i*(bgfrac - m))/((1-param)*m + param*bgfrac);
         }
         else{
@@ -430,10 +446,41 @@ pair<double, double> linreg(const vector<double>& x, const vector<double>& y){
     }
 
     double num = (double)x.size();
-    
+   
     double slope = (num * xysum - xsum*ysum)/(num * xsum_sq - xsum*xsum);
     double intercept = (ysum * xsum_sq - xsum * xysum) / 
         (num * xsum_sq - xsum * xsum);
+    return make_pair(slope, intercept);
+
+}
+
+
+
+pair<double, double> linreg_weights(const vector<double>& x, const vector<double>& y, 
+    vector<double>& weights){
+     
+    double weighted_sum_x = 0.0;
+    double weighted_sum_y = 0.0;
+    double weighted_sum_xy = 0.0;
+    double weighted_sum_x2 = 0.0;
+    double total_weight = 0.0;
+    for (int i = 0; i < x.size(); ++i) {
+        double w = weights[i];
+        weighted_sum_x += w * x[i];
+        weighted_sum_y += w * y[i];
+        weighted_sum_xy += w * x[i] * y[i];
+        weighted_sum_x2 += w * x[i] * x[i];
+        total_weight += w;
+    }
+
+    double mean_x = weighted_sum_x / total_weight;
+    double mean_y = weighted_sum_y / total_weight;
+
+    double numerator = weighted_sum_xy - total_weight * mean_x * mean_y;
+    double denominator = weighted_sum_x2 - total_weight * mean_x * mean_x;
+
+    double slope = numerator / denominator;
+    double intercept = mean_y - slope * mean_x;
     return make_pair(slope, intercept);
 
 }
@@ -458,6 +505,7 @@ double get_cell_bg(vector<double>& obsrow,
     
     // If we can't solve, then fall back on the sum of all off-target counts
     double this_offtarget = 0.0;
+    double this_tot = 0.0;
 
     vector<vector<double> > n;
     vector<vector<double> > bg;
@@ -465,7 +513,7 @@ double get_cell_bg(vector<double>& obsrow,
 
     mix.add_data_fixed("ndim", ndim);
     for (int k = 0; k < ndim; ++k){
-        if (model_means[k] != -1){
+        if (model_means[k] > 0){
             n.push_back(vector<double>{ obsrow[k] });
             bg.push_back(vector<double>{ bgfracs[k] });
             if (assns.find(k) == assns.end()){
@@ -481,11 +529,12 @@ double get_cell_bg(vector<double>& obsrow,
             bg.push_back(vector<double>{ } );
             m.push_back(vector<double>{ } );
         }
+        this_tot += obsrow[k];
     }
 
     char buf[50];
     for (int k = 0; k < ndim; ++k){
-        if (model_means[k] != -1){
+        if (model_means[k] > 0){
             sprintf(&buf[0], "n_%d", k);
             string bufstr = buf;
             mix.add_data(bufstr, n[k]);
@@ -503,11 +552,10 @@ double get_cell_bg(vector<double>& obsrow,
     //mix.print(0,1,0.001);
     //fprintf(stderr, "P = %f\n", p_inferred);
     if (!mix.root_found){
-        return this_offtarget;
+        return this_offtarget/obsrow[obsrow.size()-1];
     } 
     else{
-        double n_bg = p_inferred * obsrow[obsrow.size()-1];
-        return n_bg;
+        return p_inferred;
     }
 }
 
@@ -528,7 +576,10 @@ bool assign_cell(vector<double>& bgprops,
     double bg_var,
     vector<double>& obsrow,
     int ndim,
-    pair<double, double>& a_b,
+    double slope_mu,
+    double intercept_mu,
+    double slope_phi,
+    double intercept_phi,
     bool add_bg,
     set<int>& result,
     double& llr,
@@ -540,14 +591,22 @@ bool assign_cell(vector<double>& bgprops,
     // Get expected percent background counts from overall count
     double tot = obsrow[obsrow.size()-1];
     double pbg;
+    double alpha;
+    double beta;
+    double phi;
 
     if (!use_fixed_bg_count || bg_mean == -1 || tot <= bg_mean){
-        pbg = a_b.first * log(tot) + a_b.second;
-        pbg = exp(pbg)/(exp(pbg) + 1);
+        pbg = expit(slope_mu * log(tot) + intercept_mu);
+        phi = exp(slope_phi * log(tot) + intercept_phi);
+        alpha = phi*pbg;
+        beta = (1-pbg)*phi;
+        //pbg = a_b.first * log(tot) + a_b.second;
+        //pbg = exp(pbg)/(exp(pbg) + 1);
     }
     else{
         pbg = bg_mean / tot;
     }
+    
 
     vector<pair<double, int> > lls;
     vector<string> names;
@@ -579,17 +638,23 @@ bool assign_cell(vector<double>& bgprops,
     double tot_fg = 0.0;
     
     result.clear();
+    
+    bool skip = false;
 
     // Should we check for the case of 100% background? 
     if (add_bg){
         vector<double> params_bg;
         for (int j = 0; j < ndim; ++j){
             if (sizes[j] > 0){
-                params_bg.push_back(pbg * bgprops[j]);
+                //params_bg.push_back(pbg * bgprops[j]);
+                //params_bg.push_back(bgprops[j]);
+                
+                params_bg.push_back(phi*bgprops[j]);
             }
         }
         double ll = dmultinom(obsrowclean, params_bg);
-        
+        //double ll = ddirichletmultinom(obsrowclean, params_bg);
+
         if (bg_mean != -1 && bg_var != -1){
             double cbg = obsrow[obsrow.size()-1];
 
@@ -598,10 +663,11 @@ bool assign_cell(vector<double>& bgprops,
             double sigma = sqrt(log(bg_var/m2 + 1.0));
             double mu = log(bg_mean) - log(bg_var/m2 + 1.0)/2.0;
 
-            ll += dnorm(log(cbg), mu, sigma);
+            //ll += dnorm(log(cbg), mu, sigma);
         }
         //fprintf(stderr, "-1) %f\n", ll);
         llmax = ll;
+        skip = true;
     }
     
     double llprev = llmax;
@@ -628,21 +694,29 @@ bool assign_cell(vector<double>& bgprops,
         
         tot_fg += obsrow[j] * (1-bgprops[j]);
 
-        vector<double> p;
+        //vector<double> p;
+        vector<double> a;
         for (int k = 0; k < ndim; ++k){
             if (sizes[k] > 0){
-                double p_this;
+                double a_this;
+                //double p_this;
                 if (included.find(k) != included.end()){
-                    p_this = bgprops[k] * pbg + (1.0 - pbg) * (sizes[k]/tot_counts);
+                    //p_this = bgprops[k] * pbg + (1.0 - pbg) * (sizes[k]/tot_counts);
+                    //a_this = alpha*bgprops[k]*pbg + beta*(1.0-pbg) * (sizes[k]/tot_counts);
+                    a_this = (bgprops[k] * pbg + (1.0-pbg)*(sizes[k]/tot_counts))*phi;
                 }
                 else{
-                    p_this = bgprops[k] * pbg;
+                    //p_this = bgprops[k] * pbg;
+                    //a_this = alpha*bgprops[k] * pbg;
+                    a_this = bgprops[k] * pbg * phi;
                 }
-                p.push_back(p_this);
+                //p.push_back(p_this);
+                a.push_back(a_this);
             }
         }
-        double ll = dmultinom(obsrowclean, p);
-         
+        //double ll = dmultinom(obsrowclean, p);
+        double ll = ddirichletmultinom(obsrowclean, a);
+
         if (bg_mean != -1 && bg_var != -1){
             double tot_exp = tot_counts + bg_mean;
             var += bg_var/1e6;
@@ -651,7 +725,7 @@ bool assign_cell(vector<double>& bgprops,
             double m2 = pow(tot_exp, 2)/1e6;
             double sigma = sqrt(log(var/m2 + 1.0));
             double mu = log(tot_exp) - log(var/m2 + 1.0)/2.0;
-            ll += dnorm(log(obsrow[obsrow.size()-1]), mu, sigma);
+            //ll += dnorm(log(obsrow[obsrow.size()-1]), mu, sigma);
         }
         
         //fprintf(stderr, "%d) %f\n", j, ll); 
@@ -670,6 +744,7 @@ bool assign_cell(vector<double>& bgprops,
         }
         else{
             bool keep = true;
+            skip = false;
             if (prob > 0 && prob > 0.5 && llprev != 0.0){
                 // Check probability to see if we should bail.
                 double denom = pow(2, llprev - llprev) + pow(2, ll-llprev);
@@ -680,7 +755,7 @@ bool assign_cell(vector<double>& bgprops,
                     break;
                 }
             }
-            if (keep){
+            if (keep && !skip){
                 llsecond = llmax;
                 llmax = ll;
                 llprev = ll;
@@ -762,7 +837,6 @@ void fit_dists_2way(vector<vector<double> >& obscol,
             }
             double highval = obscol[i][obscol[i].size()-1];
             vector<mixtureDist> dists;
-            
             pair<int, double> lomm = nbinom_moments(lowval, pow((lowval2-lowval)/2.0, 2));
 
             mixtureDist low("negative_binomial", vector<double>{ lowval, 1.0 });
@@ -821,7 +895,7 @@ void fit_dists_2way(vector<vector<double> >& obscol,
             fprintf(outf, "%s\t%f\t%f\t%f\t%f\n", labels[i].c_str(),
                 w, lomean, lophi, 1.0/himean);
 
-            if (dist_sep < 0.99){
+            if (dist_sep < 0.95){
             //if (mod.weights[1] >= mod.weights[0] || dist_sep < 0.99){
                 lomeans.push_back(0);
                 lophis.push_back(0);
@@ -862,7 +936,7 @@ void fit_dists_2way(vector<vector<double> >& obscol,
             lophis[i] = -1;
             himeans[i] = -1;    
         }
-        else{
+        else if (false){
             double d1 = dnorm(himeans[i], lomv.first, sqrt(lomv.second));
             double d2 = dnorm(himeans[i], himv.first, sqrt(himv.second));
             if (d2 - d1 < 0){
@@ -880,21 +954,230 @@ void fit_dists_2way(vector<vector<double> >& obscol,
     }
 }
 
+double ll_beta_test2(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i){
+   
+    double tot = data_d.at("tot");
+    double pbg = data_d.at("pbg");
+    
+    double mu = expit(params[0] * log(tot) + params[1]);
+    double phi = exp(params[2] * log(tot) + params[3]);
+    //fprintf(stderr, "mu %f phi %f\n", mu, phi);
 
+    double alpha = mu*phi;
+    double beta = (1.0-mu)*phi;
+    return dbeta(pbg, alpha, beta)/log2(exp(1));
+    //return phi*(mu*log(pbg) + log(1-pbg) - mu*log(1-pbg)) - log(pbg) - log(1-pbg) - lgamma(mu*phi) - lgamma(phi-mu*phi) + lgamma(phi);
+    //return (alpha-1)*log(pbg) + (beta-1)*log(1-pbg) - lgamma(alpha) - lgamma(beta) + lgamma(alpha+beta);
+}
+
+void dll_beta_test2(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i,
+    vector<double>& results){
+    
+    double tot = data_d.at("tot");
+    double pbg = data_d.at("pbg");
+    
+    double mu_x = params[0] * log(tot) + params[1];
+    double phi_x = params[2] * log(tot) + params[3];
+
+    double mu = expit(mu_x);
+    double phi = exp(phi_x);
+
+    double dmu_dx = exp(mu_x)/((exp(mu_x) + 1)*(exp(mu_x) + 1));
+    double dphi_dx = exp(phi_x);
+
+    double dx_dp0 = log(tot);
+    double dx_dp1 = 1;
+    double dx_dp2 = log(tot);
+    double dx_dp3 = 1;
+    
+    double dll_dmu = phi*log(pbg) - phi*log(1-pbg) - phi*digamma(mu*phi) + phi*digamma(phi - mu*phi);
+    double dll_dphi = mu*log(pbg) + log(1-pbg) - mu*log(1-pbg) - mu*digamma(mu*phi) - 
+        (1-mu)*digamma(phi-mu*phi) + digamma(phi);
+    
+    //fprintf(stderr, "dll_dmu %f dmu_dx %f dx_dp0 %f | dll_dphi %f dphi_dx %f dx_dp2 %f\n",
+    //    dll_dmu, dmu_dx, dx_dp0, dll_dphi, dphi_dx, dx_dp2);
+
+    results[0] += dll_dmu * dmu_dx * dx_dp0;
+    results[1] += dll_dmu * dmu_dx * dx_dp1;
+    results[2] += dll_dphi * dphi_dx * dx_dp2;
+    results[3] += dll_dphi * dphi_dx * dx_dp3;
+    
+    /*
+    double mu = expit(params[0] * log(tot) + params[1]);
+    double phi = exp(params[2] * tot + params[3]);
+    
+    double dmu_dx = exp(
+    //double dmu_dt = exp(mu)/((exp(mu) + 1)*(exp(mu) + 1));
+    //double dt_dm = log(tot);
+    //mu = expit(mu);
+    //results[0] += (phi*log(pbg) - phi*log(1-pbg) - phi*digamma(mu*phi) + phi*digamma(phi-phi*mu))*dmu_dt*dt_dm;
+    results[1] += (mu*log(pbg) + log(1-pbg) - mu*log(1-pbg) - mu*digamma(mu*phi) - (1-mu)*digamma(phi - mu*phi) + 
+           digamma(phi))*tot; 
+    results[0] += (log(pbg) - digamma(alpha) + digamma(alpha+beta))*tot;
+    //results[1] += (log(1-pbg) - digamma(beta) + digamma(alpha+beta))*tot;
+    */
+}
+double ll_beta_test(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i){
+    
+    
+    double tot = data_d.at("tot");
+    double pbg = data_d.at("pbg");
+    double a = params[0];
+    double b = params[1];
+    double alpha = a*tot;
+    double beta = b*tot;
+    return (alpha-1)*log(pbg) + (beta-1)*log(1-pbg) - lgamma(alpha) - lgamma(beta) + lgamma(alpha+beta);
+}
+
+void dll_beta_test(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i,
+    vector<double>& results){
+    
+    double tot = data_d.at("tot");
+    double pbg = data_d.at("pbg");
+    double a = params[0];
+    double b = params[1];
+    double alpha = a*tot;
+    double beta = b*tot;
+    results[0] += (log(pbg) - digamma(alpha) + digamma(alpha+beta))*tot;
+    results[1] += (log(1-pbg) - digamma(beta) + digamma(alpha+beta))*tot;
+}
+
+double ll_binom_test(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i){
+    
+    double tot = data_d.at("tot");
+    double bg = data_d.at("bg");
+    double p = expit(params[0] * log(tot) + params[1]);
+    return dbinom(tot, bg, p)/log2(exp(1));
+}
+
+void dll_binom_test(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i,
+    vector<double>& results){
+    
+    double tot = data_d.at("tot");
+    double bg = data_d.at("bg");
+    double p = expit(params[0] * log(tot) + params[1]);
+    double dll_dp = (bg - tot*p)/(p - p*p);
+    double x = params[0] * log(tot) + params[1];
+    double dp_dx = exp(x)/((exp(x) + 1)*(exp(x) + 1));
+    double dx_dp0 = log(tot);
+    double dx_dp1 = 1.0;
+    results[0] += dll_dp * dp_dx * dx_dp0;
+    results[1] += dll_dp * dp_dx * dx_dp1;
+}
+
+void fit_bg_predictors(vector<double>& logtots,
+    vector<double>& logitpercs,
+    vector<double>& tots,
+    vector<double>& percs,
+    double& slope_mu,
+    double& intercept_mu,
+    double& slope_phi,
+    double& intercept_phi){
+    
+    // Goal: learn how to predict % ambient tags (background) in a cell given its
+    // total tag counts.
+
+    // We are going to do a GLM fitting-like procedure to estimate parameters.
+    
+    // Model: Beta distribution, parameterized as mu = a/(a+b) and phi = a+b.
+    // mu is predicted by expit(b_0*x + b_1), where x is the log total tag count.
+    // phi is predicted by exp(b_2*x + b_2), where x is the log total tag count.
+    
+    // To fit the model, we need initial guesses for b_0, b_1, b_2, and b_3.
+    // We will estimate these via linear regression.
+   
+    // First, get b_0 & b_1. These are parameters for estimating logit(mu) from log(total counts)
+    pair<double, double> slope_int = linreg(logtots, logitpercs);
+
+    // Next, get b_2 and b_3. These are parameters for estimating log(phi) from log(total counts).
+    vector<double> phipred_x;
+    vector<double> phipred;
+    vector<double> phipred_w;
+    
+    for (int i = 0; i < logtots.size(); ++i){
+        double pred = expit(slope_int.first * logtots[i] + slope_int.second);
+        double obs = expit(logitpercs[i]);
+        
+        // Method of Moments estimator for phi is (mu*(1-mu))/var - 1
+        // We already have mu estimate from previous linear regression.
+        // Estimate var here as (observation - mu)^2
+        double p = (pred*(1.0-pred))/pow(pred-obs, 2) - 1.0;
+        // Only use values we can log-transform without issue.
+        if (!isnan(log(p))){
+            phipred.push_back(log(p));
+            phipred_x.push_back(logtots[i]);
+            phipred_w.push_back(pow(exp(logtots[i]), 2));
+        }
+    }
+    
+    pair<double, double> slope_int_phi = linreg(phipred_x, phipred);
+     
+    if (isnan(slope_int.first) || isnan(slope_int.second) || isnan(slope_int_phi.first) || isnan(slope_int_phi.second)){
+        fprintf(stderr, "HERE\n");
+        fprintf(stderr, "%f %f | %f %f\n", slope_int.first, slope_int.second, slope_int_phi.first, slope_int_phi.second);
+        exit(1);
+    } 
+    
+    /*
+    vector<double> bgs;
+    for (int i = 0; i < tots.size(); ++i){
+        bgs.push_back(percs[i] * tots[i]);
+    } 
+    vector<double> params0{ slope_int.first, slope_int.second };
+    optimML::multivar_ml_solver solver0(params0, ll_binom_test, dll_binom_test);
+    solver0.add_data("tot", tots);
+    solver0.add_data("bg", bgs);
+    solver0.solve();
+    fprintf(stderr, "LL0 %f\n", solver0.log_likelihood);
+    fprintf(stderr, "PARAMS %f %f\n", solver0.results[0], solver0.results[1]);
+    */
+
+    // We now have estimates of b_0, b_1, b_2, and b_3. Now fit a GLM.
+    vector<double> params{ slope_int.first, slope_int.second, slope_int_phi.first, slope_int_phi.second };
+    //vector<double> params{ 0.0, 10, 0,0};
+    optimML::multivar_ml_solver solver(params, ll_beta_test2, dll_beta_test2);
+    solver.add_data("tot", tots);
+    solver.add_data("pbg", percs);
+   // solver.add_weights(tots);
+    solver.solve();
+    fprintf(stderr, "LL %f\n", solver.log_likelihood); 
+    fprintf(stderr, "PARAMS %f %f %f %f\n", solver.results[0], solver.results[1], solver.results[2], solver.results[3]); 
+    // Extract parameters of interest
+    slope_mu = solver.results[0];
+    intercept_mu = solver.results[1];
+    slope_phi = solver.results[2];
+    intercept_phi = solver.results[3];
+}
 /**
  * Do initial assignments to learn the % of background/ambient tags
  * composed of each label, and to find the relationship between
  * log total tag count and logit percent background (returned as
  * linear regression parameters)
  */
-pair<double, double> assign_init(vector<vector<double> >& obs,
+void assign_init(vector<vector<double> >& obs,
     vector<string>& labels,
     vector<double>& bgmeans,
     vector<double>& lomeans,
     vector<double>& lophis,
     vector<double>& himeans,
     vector<double>& model_means,
-    bool sgrna){
+    bool sgrna,
+    double& slope_mu,
+    double& intercept_mu,
+    double& slope_phi,
+    double& intercept_phi){
 
     // What does the probability of high-count need to be 
     // for a cell to be assigned that label in the first round?
@@ -910,8 +1193,14 @@ pair<double, double> assign_init(vector<vector<double> >& obs,
     // counts and percent background in a cell
     vector<double> logtots;
     vector<double> logitpercs;
+    vector<double> lrweights;
     vector<unsigned long> logtots_bc;
-    
+    double weightfrac = 1.0/(double)obs.size();
+
+    vector<double> tots;
+    vector<double> percs;
+    vector<double> bgcounts;
+
     double bgcount = 0.0;
 
     vector<vector<double> > counts_all;
@@ -924,6 +1213,7 @@ pair<double, double> assign_init(vector<vector<double> >& obs,
     
     // Get initial assignments and use these to learn about background
     // distribution of counts
+    double maxtot = 0;
 
     for (int i = 0; i < obs.size(); ++i){
         set<int> chosen;
@@ -970,8 +1260,23 @@ pair<double, double> assign_init(vector<vector<double> >& obs,
         if (count_tot > 0 && countbg > 0 && countbg < count_tot){
             logtots.push_back(log(count_tot));
             logitpercs.push_back(log(countbg/count_tot) - log(1-countbg/count_tot));
+            lrweights.push_back(weightfrac * (count_tot*count_tot));
+        
+            if (countbg > 0 && countbg < count_tot){
+                percs.push_back(countbg/count_tot);     
+                tots.push_back((double)count_tot);
+                bgcounts.push_back((double) countbg);
+                if (count_tot > maxtot){
+                    maxtot = count_tot;
+                }
+                //fprintf(stdout, "%f\t%f\n", countbg, count_tot);
+            }   
         }
     }
+    
+    // Get params
+    fit_bg_predictors(logtots, logitpercs, tots, percs, slope_mu,
+        intercept_mu, slope_phi, intercept_phi);
 
     fprintf(stderr, "===== Ambient tag profile: =====\n");
     // Learn the proportions of each label in ambient/background counts
@@ -980,15 +1285,1063 @@ pair<double, double> assign_init(vector<vector<double> >& obs,
         fprintf(stderr, "%s:\t%f\n", labels[i].c_str(), bgmeans[i]);
     }
     
-    // Determine the relationship between total counts and percent background.
-    // Model this as a linear fit between log transformed count and logit-transformed
-    // percent background.
-    pair<double, double> slope_int = linreg(logtots, logitpercs);
-   
-    return slope_int;
 }
 
+struct modelkey{
+    set<int> members;
+};
 
+bool operator<(const modelkey& k1, const modelkey& k2){
+    if (k1.members.size() < k2.members.size()){
+        return true;
+    }
+    else if (k2.members.size() < k1.members.size()){
+        return false;
+    }
+    else{
+        // Same length
+        set<int>::iterator x1 = k1.members.begin();
+        set<int>::iterator x2 = k2.members.begin();
+        while (x1 != k1.members.end() && x2 != k2.members.end()){
+            if (*x1 < *x2){
+                return true;
+            }
+            else if (*x2 < *x1){
+                return false;
+            }
+            ++x1;
+            ++x2;
+        }
+        // Equal
+        return false;
+    }
+}
+
+double ll_dir(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i){
+    
+    int nmod = data_i.at("nmod");
+    double tot = data_d.at("tot");
+    double ltot = log(tot);
+
+    double term1 = 0.0;
+    double term2 = 0.0;
+    double term3 = 0.0;
+    
+    int signp;
+    
+    char buf[30];
+    string bufstr;
+    for (int i = 0; i < nmod; ++i){
+        double a = exp(params[i*2]*ltot + params[i*2 + 1]);
+        
+        sprintf(&buf[0], "p_%d", i);
+        bufstr = buf;
+        double p = data_d.at(bufstr);
+        
+        term1 += a;
+        term2 += lgammaf_r(a, &signp);
+        term3 += (a - 1.0)*log(p);
+        
+    }
+    double part1 = lgammaf_r(term1, &signp);
+    if (isnan(part1) || isinf(part1) || isnan(term2) || isinf(term2) || isnan(term3) || isinf(term3)){
+        fprintf(stderr, "ERR %f %f %f\n", part1, term2, term3);
+        return 0.0;
+    }
+    return lgammaf_r(term1, &signp) - term2 + term3;
+}
+
+double ll_dir2(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i){
+    
+    int nmod = data_i.at("nmod");
+    double tot = data_d.at("tot");
+    double ltot = log(tot);
+
+    double term1 = 0.0;
+    double term2 = 0.0;
+    double term3 = 0.0;
+    
+    int signp;
+    
+    char buf[30];
+    string bufstr;
+    for (int i = 0; i < nmod; ++i){
+        double a = exp(params[i*3]*ltot*ltot + params[i*3+1]*ltot + params[i*3 + 2]);
+        
+        sprintf(&buf[0], "p_%d", i);
+        bufstr = buf;
+        double p = data_d.at(bufstr);
+        
+        term1 += a;
+        term2 += lgammaf_r(a, &signp);
+        term3 += (a - 1.0)*log(p);
+        
+    }
+    if (isnan(lgammaf_r(term1, &signp) || isnan(term2) || isnan(term3))){
+        fprintf(stderr, "ERR %f %f %f\n", lgammaf_r(term1, &signp), term2, term3);
+        exit(1);
+    }
+    else if (isinf(lgammaf_r(term1, &signp)) || isinf(term2) || isinf(term3)){
+        fprintf(stderr, "ERR2 %f %f %f\n", lgammaf_r(term1, &signp), term2, term3);
+        for (int i = 0; i < nmod; ++i){
+            double a = exp(params[i*3]*ltot*ltot + params[i*3+1]*ltot + params[i*3 + 2]);
+            sprintf(&buf[0], "p_%d", i);
+            bufstr = buf;
+            double p = data_d.at(bufstr);
+            fprintf(stderr, "%d) %f %f\n", i, a, p);
+        }
+        exit(1);
+    }
+    return lgammaf_r(term1, &signp) - term2 + term3;
+}
+
+void dll_dir(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i,
+    vector<double>& results){
+     
+    int nmod = data_i.at("nmod");
+    double tot = data_d.at("tot");
+    double ltot = log(tot);
+
+    vector<double> dll_da;
+    vector<double> a_all;
+
+    char buf[30];
+    string bufstr;
+    double term1 = 0.0;
+    for (int i = 0; i < nmod; ++i){
+        double a = exp(params[i*2]*ltot + params[i*2 + 1]);
+        a_all.push_back(a);
+
+        sprintf(&buf[0], "p_%d", i);
+        bufstr = buf;
+        double p = data_d.at(bufstr);
+        term1 += a;
+        
+        dll_da.push_back(-digamma(a) + log(p));
+        
+        if (isnan(dll_da[dll_da.size()-1]) || isinf(dll_da[dll_da.size()-1]) ||
+                isnan(a) || isinf(a) || isnan(term1) || isinf(term1)){
+            return;
+        }
+    }
+    for (int i = 0; i < nmod; ++i){
+        dll_da[i] += digamma(term1);
+        results[i*2] += dll_da[i] * ltot * a_all[i];
+        results[i*2 + 1] += dll_da[i] * a_all[i];
+    }
+}
+
+void dll_dir2(const vector<double>& params,
+    const map<string, double>& data_d,
+    const map<string, int>& data_i,
+    vector<double>& results){
+     
+    int nmod = data_i.at("nmod");
+    double tot = data_d.at("tot");
+    double ltot = log(tot);
+
+    vector<double> dll_da;
+    vector<double> a_all;
+
+    char buf[30];
+    string bufstr;
+    double term1 = 0.0;
+    for (int i = 0; i < nmod; ++i){
+        double a = exp(params[i*3]*ltot*ltot + params[i*3+1]*ltot + params[i*3 + 2]);
+        a_all.push_back(a);
+
+        sprintf(&buf[0], "p_%d", i);
+        bufstr = buf;
+        double p = data_d.at(bufstr);
+        term1 += a;
+        
+        dll_da.push_back(-digamma(a) + log(p));
+    }
+    for (int i = 0; i < nmod; ++i){
+        dll_da[i] += digamma(term1);
+        results[i*3] += dll_da[i] * ltot*ltot * a_all[i];
+        results[i*3 + 1] += dll_da[i] * ltot * a_all[i];
+        results[i*3 + 2] += dll_da[i] * a_all[i];
+    }
+}
+
+void get_dirichlet(map<int, int>& idx2idx,
+    set<int>& tags,
+    vector<vector<double> >& bg_samps, 
+    vector<double>& bg_tots,
+    map<int, vector<double> >& model_samps,
+    vector<double>& result,
+    double& mu,
+    double& phi,
+    double& slope,
+    double& intercept,
+    double& var_slope,
+    double& var_intercept,
+    double& mean_pbg,
+    double& var_pbg,
+    vector<double>& dircoeffs,
+    vector<double>& betacoeffs){
+
+    int nsamp = bg_samps.size();
+    int nmod = idx2idx.size();
+    vector<double> means(nmod);
+    for (int j = 0; j < nmod; ++j){
+        means[j] = 0.0;
+    }
+    
+    vector<double> logtots;
+    vector<double> logpercs;
+    vector<double> logitpercs;
+
+    vector<double> tots;
+    vector<double> bgs;
+    vector<double> pbgs;
+
+    vector<vector<double> > samps_frac;
+    vector<vector<double> > samps_frac_column;
+    vector<vector<double> > samps_frac_column_log;
+    vector<double> inset_log;
+    vector<double> inset;
+
+    for (int i = 0; i < nmod; ++i){
+        vector<double> v;
+        samps_frac_column.push_back(v);
+        samps_frac_column_log.push_back(v);
+    }
+
+    for (int i = 0; i < nsamp; ++i){
+        vector<double> row = bg_samps[i];
+        double tot = bg_tots[i];
+        double totsamp = 0.0;
+         
+        map<int, double> percmember;
+        
+        double il = 0.0;
+        for (set<int>::iterator member = tags.begin(); member != tags.end(); ++member){
+            double this_samp = model_samps[*member][i];
+            totsamp += this_samp;
+            int ri = idx2idx[*member];
+            tot -= row[ri];
+            row[ri] = this_samp;
+            //row[ri] += this_samp;
+            tot += this_samp;
+            il += this_samp;
+        }
+        inset_log.push_back(log(il));
+        inset.push_back(il);
+
+        logtots.push_back(log(tot));
+        logpercs.push_back(log(1.0-totsamp/tot));
+        logitpercs.push_back(log(1.0-totsamp/tot)-log(totsamp/tot));
+        bgs.push_back(tot-totsamp);
+        pbgs.push_back(1.0-totsamp/tot);
+        tots.push_back(tot);
+        for (int j = 0; j < nmod; ++j){
+            if (row[j] == tot){
+                samps_frac_column_log[j].push_back(log((row[j]-1)/tot));
+            }
+            else{
+                samps_frac_column_log[j].push_back(log((row[j] + 1)/(tot+1)));
+            }
+            row[j] /= tot;
+            samps_frac_column[j].push_back(row[j]);
+            means[j] += (1.0/(double)nsamp)*row[j];
+        }
+        
+        samps_frac.push_back(row);
+    } 
+    /*    
+    pair<double, double> sitest = linreg(logtots, logitpercs);
+    vector<double> params_beta{ sitest.first, sitest.second, 0.0, 0.0 };
+    optimML::multivar_ml_solver solv2(params_beta, ll_beta_test2, dll_beta_test2);
+    solv2.add_data("tot", tots);
+    solv2.add_data("pbg", pbgs);
+    solv2.solve();
+    betacoeffs = solv2.results;
+    */
+
+    vector<double> params_d;
+    for (int j = 0; j < nmod; ++j){
+        pair<double, double> si = linreg(inset_log, samps_frac_column_log[j]);
+        //params_d.push_back(0.0);
+        params_d.push_back(si.first);
+        params_d.push_back(si.second);
+    }
+    optimML::multivar_ml_solver solv(params_d, ll_dir, dll_dir);
+    solv.add_data_fixed("nmod", nmod);
+    char buf1[100];
+    string buf1str;
+    for (int j = 0; j < nmod; ++j){
+        sprintf(&buf1[0], "p_%d", j);
+        buf1str = buf1;
+        solv.add_data(buf1str, samps_frac_column[j]);
+    }
+    solv.add_data("tot", inset);
+    solv.solve();
+    
+   /* 
+    for (int i = 0; i < tots.size(); ++i){
+        vector<double> preds;
+        double predtot = 0.0;
+        for (int j = 0; j < samps_frac_column.size(); ++j){
+            //double pred = exp(logtots[i] * solv.results[j*2] + solv.results[j*2 + 1]);
+            //double pred = exp(inset_log[i] * inset_log[i] * solv.results[j*3] + inset_log[i] * solv.results[j*3 + 1] + solv.results[j*3 + 2]);
+            double pred = exp(inset_log[i] * solv.results[j*2] + solv.results[j*2+1]);
+            predtot += pred;
+            preds.push_back(pred);
+        }
+        for (int j = 0; j < samps_frac_column.size(); ++j){
+            fprintf(stdout, "%f\t%d\t%f\t%f\t%f\n", logtots[i], j, samps_frac_column[j][i], preds[j]/predtot, predtot);
+            //pair<double, double> mv = linreg(logtots, samps_frac_column_log[j]);
+            //fprintf(stderr, "%d) %f %f\n", j, mv.first, mv.second);
+            //fprintf(stdout, "%f\t%d\t%f\t%f\n", logtots[i], j, samps_frac_column[j][i], exp(mv.first*logtots[i] + mv.second));
+        }
+    }
+    exit(0);
+    */
+
+    dircoeffs = solv.results;
+
+    pair<double, double> muvar_pbg = welford(pbgs);
+    mean_pbg = muvar_pbg.first;
+    var_pbg = muvar_pbg.second;
+
+    pair<double, double> slope_int = linreg(logtots, logpercs);
+
+    slope = slope_int.first;
+    intercept = slope_int.second;
+    
+    double min = -slope_int.second/slope_int.first;
+    vector<double> lt;
+    vector<double> var;
+    for (int x = 0; x < logtots.size(); ++x){
+        if (logtots[x] > min){
+            double pred = exp(slope_int.first*logtots[x] + slope_int.second);
+            double v = pow(pred - exp(logpercs[x]),2);
+            if (!isnan(log(v))){
+                lt.push_back(logtots[x]);
+                var.push_back(log(v));
+            }
+        }
+    }
+
+    pair<double, double> slope_int_var = linreg(lt, var);
+    var_slope = slope_int_var.first;
+    var_intercept = slope_int_var.second;
+
+    /* 
+    pair<double, double> slint2 = linreg(logtots, logitpercs);
+    optimML::multivar_ml_solver solver(vector<double>{ slint2.first, slint2.second, 0.0, 1.0 }, ll_beta_test2, dll_beta_test2);
+    solver.add_data("tot", tots);
+    solver.add_data("pbg", pbgs);
+    solver.solve();
+    fprintf(stderr, "BETA %f %f %f %f\n", solver.results[0], solver.results[1], solver.results[2], solver.results[3]);
+    */
+
+    fit_dirichlet(means, samps_frac, result, 1);
+    pair<double, double> muvar = welford(tots);
+    pair<double, double> muphi = nbinom_moments(muvar.first, muvar.second);
+    mu = muphi.first;
+    phi = muphi.second;
+    /* 
+    if (tags.size() == 1){
+        fprintf(stderr, "[%d]\n", *tags.begin());
+        double a0 = 0.0;
+        for (int i = 0; i < result.size(); ++i){
+            a0 += result[i];
+        }
+        for (int i = 0; i < result.size(); ++i){
+            fprintf(stderr, "%d) %f\n", i, result[i]/a0);
+        }
+    }
+    */
+}
+
+void assign_fallback(vector<double>& obsrow,
+    vector<double>& lomeans,
+    vector<double>& lophis,
+    vector<double>& himeans,
+    int max_assn,
+    set<int>& result,
+    double& assn_llr){
+    
+    vector<double> llrs;
+    for (int i = 0; i < lomeans.size(); ++i){
+        if (lomeans[i] > 0 && himeans[i] > 0){
+            double ll1 = dnbinom(obsrow[i], lomeans[i], lophis[i]);
+            double ll2 = dexp(obsrow[i], 1.0/himeans[i]);
+            if (ll2 > ll1){
+                result.insert(i);
+                llrs.push_back(ll2-ll1);
+            }
+            else{
+                llrs.push_back(ll1-ll2);
+            }
+            
+        }
+        else{
+            llrs.push_back(0.0);
+        }
+    }
+    if (max_assn > 0){
+        if (result.size() > max_assn){
+            vector<pair<double, int> > llrsort;
+            for (int i = 0; i < llrs.size(); ++i){
+                llrsort.push_back(make_pair(llrs[i], i));
+            }
+            sort(llrsort.begin(), llrsort.end());
+            for (int i = 0; i < llrsort.size(); ++i){
+                if (result.find(llrsort[i].second) != result.end()){
+                    llrs[llrsort[i].second] = -llrs[llrsort[i].second];
+                    result.erase(result.find(llrsort[i].second));
+                }
+                if (result.size() <= max_assn){
+                    break;
+                }
+            }
+        }
+    }
+    assn_llr = 0;
+    for (int i = 0; i < llrs.size(); ++i){
+        assn_llr += llrs[i];
+    }
+}
+
+double assign_testnew(vector<vector<double> >& obs,
+    vector<unsigned long>& bcs,
+    int nsamp,
+    vector<string>& labels,
+    vector<double>& lomeans,
+    vector<double>& lophis,
+    vector<double>& himeans,
+    bool sgrna,
+    vector<set<int> >& results,
+    vector<double>& llrs,
+    vector<double>& bgs,
+    bool filt){
+    
+    bool add_bg = false;
+
+    map<modelkey, vector<double> > model_params;
+    map<modelkey, pair<double, double> > model_muphi;
+    map<modelkey, pair<double, double> > model_slopeint;
+    map<modelkey, pair<double, double> > model_varslopeint;
+    map<modelkey, pair<double, double> > model_pbgmuvar;
+    map<modelkey, vector<double> > model_dircoeffs;
+    map<modelkey, vector<double> > model_betacoeffs;
+
+    // Get model for all background
+    modelkey key_bg;
+    vector<int> models_kept;
+    map<int, int> idx2idx;
+    for (int j = 0; j < lomeans.size(); ++j){
+        fprintf(stderr, "lab %s) %f %f\n", labels[j].c_str(), lomeans[j], himeans[j]);
+        if (lomeans[j] > 0){
+            idx2idx.insert(make_pair(j, models_kept.size()));
+            models_kept.push_back(j);
+        }
+    }
+    vector<double> meanconc(models_kept.size());
+    for (int j = 0; j < models_kept.size(); ++j){
+        meanconc[j] = 0.0;
+    }
+    vector<vector<double> > samps;
+    vector<vector<double> > samps_frac;
+    vector<double> rowtots;
+    
+    for (int i = 0; i < nsamp; ++i){
+        vector<double> samp;
+        double tot = 0.0;
+        for (int j = 0; j < models_kept.size(); ++j){
+            int model = models_kept[j];
+            samp.push_back(rnbinom(lomeans[model], lophis[model]));
+            if (samp[j] < 0){
+                fprintf(stderr, "??? %f\n", samp[j]);
+                fprintf(stderr, "%d, %d\n", j, model);
+                fprintf(stderr, "%f %f\n", lomeans[model], lophis[model]);
+                fprintf(stderr, "%s\n", labels[model].c_str());
+                exit(1);
+            }
+            meanconc[j] += (1/(double)nsamp)*samp[j];
+            tot += samp[j];
+        }
+        vector<double> sampfrac = samp;
+        for (int j = 0; j < models_kept.size(); ++j){
+            sampfrac[j] /= tot;
+        }
+        samps.push_back(samp);
+        samps_frac.push_back(sampfrac);
+        rowtots.push_back(tot);
+    }
+    double meanconctot = 0.0;
+    for (int i = 0; i < meanconc.size(); ++i){
+        meanconctot += meanconc[i];
+    } 
+    for (int i = 0; i < meanconc.size(); ++i){
+        meanconc[i] /= meanconctot;
+    }
+
+    pair<double, double> rowtotmuvar = welford(rowtots);
+    pair<double, double> bgmuphi = nbinom_moments(rowtotmuvar.first, rowtotmuvar.second);
+    model_muphi.insert(make_pair(key_bg, bgmuphi));
+    
+    fprintf(stderr, "background count mean %f\n", bgmuphi.first);
+
+    vector<double> dirprops_bg;
+    fit_dirichlet(meanconc, samps_frac, dirprops_bg, 1);
+
+    vector<double> bgprops;
+    vector<double> bgprops2;
+
+    double bgtot = 0.0;
+    for (int j = 0; j < dirprops_bg.size(); ++j){
+        bgtot += dirprops_bg[j];
+    }
+    
+    fprintf(stderr, "===== Ambient tag profile: =====\n");
+    //for (int j = 0; j < dirprops_bg.size(); ++j){
+    for (map<int, int>::iterator ix = idx2idx.begin(); ix != idx2idx.end(); ++ix){
+        bgprops.push_back(dirprops_bg[ix->second] / bgtot);
+        fprintf(stderr, "%s:\t%f\n", labels[ix->first].c_str(), meanconc[ix->second]); 
+        //fprintf(stderr, "%s:\t%f\n", labels[ix->first].c_str(), bgprops[ix->second]);
+    }
+    for (int j = 0; j < lomeans.size(); ++j){
+        if (lomeans[j] <= 0){
+            bgprops2.push_back(0.0);
+        }
+        else{
+            bgprops2.push_back(dirprops_bg[idx2idx[j]]/bgtot);
+        }
+    }
+
+    double prob = 0.5;
+
+    model_params.insert(make_pair(key_bg, dirprops_bg));
+    
+    vector<double> hi_nbinom_mu;
+    vector<double> hi_nbinom_phi;
+    for (int j = 0; j < lomeans.size(); ++j){
+        double mu = -1;
+        double phi = -1;
+        if (idx2idx.count(j) > 0){
+            mu = himeans[j] - lomeans[j];
+            double var = mu*mu - (lomeans[j]*lomeans[j])/lophis[j];
+            pair<double, double> mm = nbinom_moments(mu, var);
+            mu = mm.first;
+            phi = mm.second;
+        }
+        hi_nbinom_mu.push_back(mu);
+        hi_nbinom_phi.push_back(phi);
+        fprintf(stderr, "HI MU %s %f %f\n", labels[j].c_str(), mu, phi);
+    }
+    
+    // Pre-sample counts for each allowed model.
+    map<int, vector<double> > model_samps;
+    for (int i = 0; i < models_kept.size(); ++i){
+        int model_idx = models_kept[i];
+        vector<double> s(nsamp);
+        for (int j = 0; j < nsamp; ++j){
+            //s[j] = rnbinom(hi_nbinom_mu[model_idx], hi_nbinom_phi[model_idx]); 
+            s[j] = rexp(1.0/himeans[model_idx]);
+            //double mu = himeans[model_idx];
+            //s[j] = rnbinom(mu, (mu*mu)/(mu*mu - mu)); 
+        }
+        model_samps.insert(make_pair(model_idx, s));
+    }
+
+    int ndim = idx2idx.size();
+    
+    vector<double> obstots;
+    for (int i = 0; i < obs.size(); ++i){
+        double tot = 0.0;
+        for (map<int, int>::iterator ix = idx2idx.begin(); ix != idx2idx.end(); ++ix){
+            tot += obs[i][ix->first];
+        }
+        obstots.push_back(tot);
+    }
+    
+    double llsum = 0.0;
+
+    vector<vector<double> > new_low;
+    vector<vector<double> > new_high;
+    for (int j = 0; j < lomeans.size(); ++j){
+        vector<double> v;
+        new_low.push_back(v);
+        new_high.push_back(v);
+    }
+
+    for (int i = 0; i < obs.size(); ++i){
+        vector<pair<double, int> > lls;
+        vector<string> names;
+        vector<int> nums;
+
+        vector<double> obsrowclean;
+
+        // Sort in decreasing order of enrichment of p over expectation in background
+        vector<pair<double, int> > dim_enrich_sort;
+        
+        double tot = obstots[i];
+        
+        bool all_bg = false;
+        double bg_llr = 0.0;
+        if (filt){
+            all_bg = true;
+        }
+        for (map<int, int>::iterator ix = idx2idx.begin(); ix != idx2idx.end(); ++ix){
+            double p = obs[i][ix->first]/tot - bgprops[ix->second];
+            dim_enrich_sort.push_back(make_pair(-p, ix->first));
+            obsrowclean.push_back(obs[i][ix->first]);
+            if (filt){
+                double ll1 = dnbinom(obs[i][ix->first], lomeans[ix->first], lophis[ix->first]);
+                double ll2 = dexp(obs[i][ix->first], 1.0/himeans[ix->first]);
+                if (ll2 > ll1 & obs[i][ix->first] > lomeans[ix->first]){
+                    all_bg = false;
+                }
+                else{
+                    bg_llr += (ll1-ll2);
+                }
+            }    
+        }
+        if (filt && all_bg){
+            set<int> s;
+            results.push_back(s);
+            bgs.push_back(1.0);
+            llrs.push_back(bg_llr);
+            llsum += dmultinom(obsrowclean, bgprops);
+            continue;
+        }
+
+        sort(dim_enrich_sort.begin(), dim_enrich_sort.end());
+        double tot_counts = 0;
+        modelkey included;
+        double mean = 0.0;
+        double var = 0.0;
+        vector<double> llsize;
+        
+        double llsecond = 0.0;
+        double llmax = 0.0;
+        double llprev = 0.0;
+        
+        double bgmu_max = 0.0;
+        double bgphi_max = 0.0;
+
+        double pbg_max = 0.0;
+        double pbg_mean = 0.0;
+        double pbg_var = 0.0;
+
+        set<int> result;
+        double nonbg = 0.0;
+        
+        bool print = false;
+        if (bc2str(bcs[i]) == "ACCTGAAGTGCCTATA"){
+        //if (bc2str(bcs[i]) == "AAACCCAAGAAATTCG"){
+            print = true;
+        }
+
+        long int maxn = dim_enrich_sort.size();
+        if (!sgrna){
+            maxn = 2;
+        }
+        for (int k = 0; k < maxn; ++k){
+            int j = dim_enrich_sort[k].second;
+            nonbg += obs[i][j];
+
+            included.members.insert(j);
+            vector<double> params_model;
+            pair<double, double> muphi_model;
+            pair<double, double> slopeint_model;
+            pair<double, double> varslopeint_model;
+            vector<double> dircoeffs_model;
+            vector<double> betacoeffs_model;
+
+            if (model_params.count(included) == 0){
+                // Generate parameters
+                double totmu;
+                double totphi;
+                double slope;
+                double intercept;
+                double varslope;
+                double varintercept;
+                get_dirichlet(idx2idx,
+                    included.members,
+                    samps,
+                    rowtots,
+                    model_samps,
+                    params_model,
+                    totmu,
+                    totphi,
+                    slope,
+                    intercept,
+                    varslope,
+                    varintercept,
+                    pbg_mean,
+                    pbg_var,
+                    dircoeffs_model,
+                    betacoeffs_model);
+
+                // Store so we don't need to re-generate next time
+                model_params.insert(make_pair(included, params_model));
+                muphi_model = make_pair(totmu, totphi);
+                model_muphi.insert(make_pair(included, muphi_model));
+                slopeint_model = make_pair(slope, intercept);
+                model_slopeint.insert(make_pair(included, slopeint_model));
+                varslopeint_model = make_pair(varslope, varintercept);
+                model_varslopeint.insert(make_pair(included, varslopeint_model));
+                model_pbgmuvar.insert(make_pair(included, make_pair(pbg_mean, pbg_var)));
+                model_dircoeffs.insert(make_pair(included, dircoeffs_model));
+                model_betacoeffs.insert(make_pair(included, betacoeffs_model));
+            }   
+            else{
+                params_model = model_params[included];
+                muphi_model = model_muphi[included];
+                slopeint_model = model_slopeint[included];
+                varslopeint_model = model_varslopeint[included];
+                pbg_mean = model_pbgmuvar[included].first;
+                pbg_var = model_pbgmuvar[included].second;
+                dircoeffs_model = model_dircoeffs[included];
+                betacoeffs_model = model_betacoeffs[included];
+            }
+            
+            vector<double> p;
+            double totmin = exp(-slopeint_model.second/slopeint_model.first);
+            double pbg = exp(slopeint_model.first*log(tot) + slopeint_model.second);
+            double var = exp(varslopeint_model.first*log(tot) + varslopeint_model.second);
+            double alpha_0 = (pbg*(1.0-pbg))/var - 1.0;
+            double alpha_0_fallback = (pbg_mean*(1.0-pbg_mean))/pbg_var - 1.0;
+            
+            // TEST
+            /*
+            totmin = 0;
+            pbg = expit(betacoeffs_model[0] * log(tot) + betacoeffs_model[1]);
+            alpha_0 = exp(betacoeffs_model[2] * log(tot) + betacoeffs_model[3]);
+            totmin = 0;
+            */
+
+            //set<int> test = result;
+            //test.insert(j);
+            //double pbg_inferred = get_cell_bg(obs[i], test, himeans, bgprops, himeans.size());
+            //pbg_inferred /= tot;
+            double alpha = pbg*alpha_0;
+            double beta = (1.0-pbg)*alpha_0;
+            double pbg_inferred = tot-nonbg;
+            /*
+            for (map<int, int>::iterator ix = idx2idx.begin(); ix != idx2idx.end(); ++ix){
+                if (ix->first != j && result.find(ix->first) == result.end()){
+                    pbg_inferred += obsrowclean[ix->second];
+                } 
+            }
+            */
+            if (pbg_inferred == 0){
+                pbg_inferred = 1;
+            }
+            else if (pbg_inferred == tot){
+                pbg_inferred = tot-1.0;
+            }
+            pbg_inferred /= tot;
+
+            //pbg = pbg_inferred;
+            if (false){
+            //if (tot > totmin && alpha_0 > 0){
+                //fprintf(stderr, "%s\t%f\t%f\t%f", bc2str(bcs[i]).c_str(), tot, pbg, alpha_0);
+                
+                /* 
+                for (int i = 0; i < bgprops.size(); ++i){
+                    p.push_back(pbg * bgprops[i]);
+                }
+                double sizetot = 0.0;
+                for (set<int>::iterator m = included.members.begin(); m != included.members.end(); ++m){
+                    sizetot += hi_nbinom_mu[*m];
+                }
+                for (set<int>::iterator m = included.members.begin(); m != included.members.end(); ++m){
+                    double frac = hi_nbinom_mu[*m]/sizetot;
+                    p[idx2idx[*m]] += (1.0-pbg)*frac;
+                }
+                for (int i = 0; i < p.size(); ++i){
+                    params_model[i] = p[i] * alpha_0;
+                } 
+                */
+                pbg = pbg_inferred;
+
+                double t = 0.0;
+                double pbgrm = 0.0;
+                for (set<int>::iterator m = included.members.begin(); m != included.members.end(); ++m){
+                    //fprintf(stderr, " %s", labels[*m].c_str());
+                    pbgrm += bgprops[idx2idx[*m]];
+                }
+                //fprintf(stderr, "\n");
+                double psum = 0.0;
+                for (int x = 0; x < params_model.size(); ++x){
+                    p.push_back(pbg*(bgprops[x]/(1.0-pbgrm)));
+                    t += params_model[x];
+                }
+                double sizetot = 0.0;
+                for (set<int>::iterator m = included.members.begin(); m != included.members.end(); ++m){
+                    sizetot += himeans[*m];
+                }
+                for (set<int>::iterator m = included.members.begin(); m != included.members.end(); ++m){
+                    double frac = himeans[*m]/sizetot;
+                    p[idx2idx[*m]] = (1.0-pbg)*frac;
+                }
+                for (int x = 0; x < params_model.size(); ++x){
+                    psum += p[x];
+                    params_model[x] = p[x]*alpha_0;
+                    //fprintf(stderr, "%s) %f | %f %f | %f\n", labels[models_kept[x]].c_str(), 
+                    //    obsrowclean[x]/tot, p[x], params_model[x]/t, bgprops[x]);
+                }
+                //fprintf(stderr, "psum %f\n", psum);
+                //fprintf(stderr, "\n");
+                
+                
+
+            }
+            else if (false){
+                alpha = pbg_mean*alpha_0_fallback;
+                beta = (1.0-pbg_mean)*alpha_0_fallback;
+                alpha_0 = alpha_0_fallback;
+                //fprintf(stderr, "B %f %f\n", tot, totmin);
+                double t = 0;
+                for (int x = 0; x < params_model.size(); ++x){
+                    t += params_model[x];
+                }
+                
+                for (int x = 0; x < params_model.size(); ++x){
+                    p.push_back(params_model[x]/t);
+                }
+            }
+            
+            
+            if (print){
+                fprintf(stderr, "model");
+                for (set<int>::iterator member = included.members.begin(); member != included.members.end(); ++member){
+                    fprintf(stderr, " %s", labels[*member].c_str());
+                }
+                fprintf(stderr, "\n");
+            }
+           
+            double partot = 0.0;   
+            for (int x = 0; x < obsrowclean.size(); ++x){
+                params_model[x] = exp(dircoeffs_model[x*2]*log(nonbg) + dircoeffs_model[x*2+1]);
+                //params_model[x] = exp(dircoeffs_model[x*3]*log(nonbg)*log(nonbg) + dircoeffs_model[x*3+1]*log(nonbg) + dircoeffs_model[x*3+2]);
+                partot += params_model[x];
+            }
+            for (int x = 0; x < params_model.size(); ++x){
+                p.push_back(params_model[x]/partot);
+                //p[x] = params_model[x] / partot;
+                if (print){
+                    fprintf(stderr, "%d %s)\t%f\n", models_kept[x], labels[models_kept[x]].c_str(), p[x]);
+                }
+            }
+
+            
+            
+            /*
+            if (bc2str(bcs[i]) == "GCCAGTGAGGTGATCG"){
+                fprintf(stderr, "here\n");
+                exit(0);
+            }
+            */
+
+            //double ll = dmultinom(obsrowclean, p);
+            //ll += ddirichlet(p, params_model);
+            double ll = ddirichletmultinom(obsrowclean, params_model);
+            if (print){
+                fprintf(stderr, "partot %f\n", partot);
+                fprintf(stderr, "LL %f\n", ll);
+                fprintf(stderr, "LL alt %f\n", ddirichletmultinom(obsrowclean, params_model));
+                fprintf(stderr, "\n");
+            }
+            //double ll = ddirichletmultinom(obsrowclean, params_model);
+            //ll += dnbinom(tot, muphi_model.first, muphi_model.second);
+            
+            //ll += dbeta(pbg_inferred, alpha, beta);        
+            
+            if (isnan(ll)){
+                fprintf(stderr, "???\n");
+                for (int x = 0; x < obsrowclean.size(); ++x){
+                    fprintf(stderr, "%d) %f %f\n", obsrowclean[x], p[x]);
+                }
+                fprintf(stderr, "%f\n", dmultinom(obsrowclean, p));
+                fprintf(stderr, "%f %f %f\n", pbg_inferred, alpha, beta);
+                fprintf(stderr, "%f\n", dbeta(pbg_inferred, alpha, beta));
+                fprintf(stderr, "tot %f totmin %f\n", tot, totmin);
+                fprintf(stderr, "fallback %f %f\n", alpha_0_fallback, pbg_mean);
+                fprintf(stderr, "pbg %f\n", pbg);
+            }
+
+            // Things are sorted so that once log likelihood starts to dip, we can stop looking
+            // (it will only continue to decrease).
+            if (llmax != 0.0 && ll < llmax){
+                if (llsecond == 0.0 || llsecond < ll){
+                    llsecond = ll;
+                }
+                if (result.size() == 0){
+                    fprintf(stderr, "%s\t%f\t%f\t%ld\n", bc2str(bcs[i]).c_str(), ll, llmax, result.size());
+                    fprintf(stderr, "%s %f\n", labels[j].c_str(), -dim_enrich_sort[k].first);
+                    for (int x = 0; x < obsrowclean.size(); ++x){
+                        fprintf(stderr, "%s) %f\t%f\n", labels[models_kept[x]].c_str(), obsrowclean[x]/tot, bgprops[x]);  
+                    }
+                    fprintf(stderr, "\n");
+                }
+                break;
+            }
+            else if (ll == llmax){
+                // This should not happen often.
+                llsecond = llmax;
+                // Don't add in result - keep more parsimonious result (fewer assignments/guides)
+            }
+            else{
+                bool keep = true;
+                // Check if we're requiring a minimum probability to keep.
+                if (prob > 0 && prob > 0.5 && llprev != 0.0){
+                    // Check probability to see if we should bail.
+                    double denom = pow(2, llprev - llprev) + pow(2, ll-llprev);
+                    double thisprob = pow(2, ll-llprev) / denom;
+                    if (thisprob < prob){
+                        // Don't accept.
+                        keep = false;
+                        break;
+                    }
+                }
+                if (keep){
+                    llsecond = llmax;
+                    llmax = ll;
+                    llprev = ll;
+                    result.insert(j);
+                    
+                    bgmu_max = pbg;
+                    bgphi_max = alpha_0;
+                    
+                    pbg_max = pbg_inferred;
+                }
+            }
+        }
+        
+        // Should we check for the case of 100% background? 
+        if (add_bg){
+            //double ll = ddirichletmultinom(obsrowclean, dirprops_bg);
+            double ll = dmultinom(obsrowclean, bgprops);
+            ll += dnbinom(tot, bgmuphi.first, bgmuphi.second);
+            if (ll > llmax){
+                if (result.size() == 1){
+                    fprintf(stderr, "%s %f | %f\n", bc2str(bcs[i]).c_str(), ll, llmax);
+                    fprintf(stderr, "%s\n", labels[*result.begin()].c_str());
+                    for (int z = 0; z < obsrowclean.size(); ++z){
+                        fprintf(stderr, "%s)\t%f\t%f\n", labels[models_kept[z]].c_str(), obsrowclean[z]/tot,
+                            bgprops[z]);
+                    }
+                    fprintf(stderr, "\n");
+                }
+                llsecond = llmax;
+                llmax = ll;
+                result.clear();
+            }
+        }
+        llsum += llmax;
+
+        results.push_back(result);
+        llrs.push_back(llmax-llsecond);
+        
+        double pbg = get_cell_bg(obs[i], result, himeans, bgprops2, himeans.size());
+        if (pbg > 1){
+            fprintf(stderr, "???\n");
+            exit(1);
+        }
+        bgs.push_back(pbg);
+
+        /* 
+        if (false){
+        //if (bgmu_max > 0 && bgphi_max > 0){
+            double alpha = bgmu_max*bgphi_max;
+            double beta = (1.0-bgmu_max)*bgphi_max;
+            double beta_p = pbeta(pbg, alpha, beta);
+            if (pbg > 0.5){
+            //    beta_p = 1.0-beta_p;
+            }
+            if (false){
+             //if (true){
+            //if (beta_p > 0.9999){
+                set<int> result_fallback;
+                double llr_fallback;
+                int n_assn = -1;
+                if (!sgrna){
+                    n_assn = 2;
+                }
+                assign_fallback(obs[i], lomeans, lophis, himeans, n_assn, result_fallback, llr_fallback);
+                double pbg_fallback = get_cell_bg(obs[i], result_fallback, himeans, bgprops, himeans.size());
+                pbg_fallback /= tot;
+                fprintf(stdout, "%s", bc2str(bcs[i]).c_str());
+                set<string> nsort1;
+                set<string> nsort2;
+                for (set<int>::iterator r = result.begin(); r != result.end(); ++r){
+                    nsort1.insert(labels[*r]);
+                }
+                for (set<int>::iterator r = result_fallback.begin(); r != result_fallback.end(); ++r){
+                    nsort2.insert(labels[*r]);
+                }
+                if (nsort1.size() == 2){
+                    fprintf(stdout, "\t%s+%s", nsort1.begin()->c_str(), nsort1.rbegin()->c_str());
+                }
+                else{
+                    fprintf(stdout, "\t%s", nsort1.begin()->c_str());
+                }
+                fprintf(stdout, "\t%f\t%f", pbg*tot, beta_p);
+                if (nsort2.size() == 2){
+                    fprintf(stdout, "\t%s+%s", nsort2.begin()->c_str(), nsort2.rbegin()->c_str());
+                }
+                else{
+                    fprintf(stdout, "\t%s", nsort2.begin()->c_str());
+                }
+                fprintf(stdout, "\t%f\t%f\n", pbg_fallback*tot, pbeta(pbg_fallback, alpha, beta));
+
+                //fprintf(stderr, "FALLBACK %f vs %f | %f vs %f\n", pbg_fallback, pbg, llr_fallback, llmax-llsecond);
+                if (pbg_fallback < pbg){
+                //if (pbg_fallback < pbg && llr_fallback > llmax-llsecond){
+                    llrs[llrs.size()-1] = llr_fallback;
+                    results[results.size()-1] = result_fallback;
+                }  
+            }
+            //beta_p *= 2;
+            //fprintf(stderr, "%f %f %f %f %f) %f\n", pbg, bgmu_max, bgphi_max, alpha, beta, beta_p);
+            //fprintf(stdout, "%s\t%f\n", bc2str(bcs[i]).c_str(), beta_p); 
+            //if (pbg > bgmu_max && beta_p < 0.001){
+            //    fprintf(stdout, "%s\n", bc2str(bcs[i]).c_str());
+            //}
+        }
+        */
+        
+        //bgs.push_back(pbg_max);
+        //double totbg = 0.0;
+        for (map<int, int>::iterator ix = idx2idx.begin(); ix != idx2idx.end(); ++ix){
+            if (result.find(ix->first) == result.end()){
+                new_low[ix->first].push_back(obsrowclean[ix->second]);
+                //totbg += obsrowclean[ix->second];
+            }
+            else{
+                new_high[ix->first].push_back(obsrowclean[ix->second]);
+            }
+        }
+        //bgs.push_back(totbg/tot);
+        //fprintf(stdout, "%s\t%f\t%f\n", bc2str(bcs[i]).c_str(), tot, totbg);
+    }
+
+    for (map<int, int>::iterator ix = idx2idx.begin(); ix != idx2idx.end(); ++ix){
+        pair<double, double> muvar = welford(new_low[ix->first]);
+        pair<double, double> muphi = nbinom_moments(muvar.first, muvar.second);
+        pair<double, double> muvar_hi = welford(new_high[ix->first]);
+        fprintf(stderr, "New Means %s: %f %f | %f %f\n", labels[ix->first].c_str(),
+            muphi.first, muphi.second, muvar_hi.first, sqrt(muvar_hi.second));
+        lomeans[muphi.first];
+        lophis[muphi.second];
+        himeans[muvar_hi.first];
+    }
+    return llsum;
+}
 
 double ll_beta_diff(double x, const map<string, double>& data_d, const map<string, int>& data_i){
     
@@ -1210,7 +2563,9 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     vector<string>& labels,
     string& output_prefix, 
     bool sgrna,
+    bool filt,
     double prob){
+
     
     // For initial fitting: let counts for each label be a vector 
     vector<vector<double> > obscol;
@@ -1232,6 +2587,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
         vector<double> row;
         for (int i = 0; i < labels.size(); ++i){
             row.push_back(0.0);
+            obscol[i].push_back(1.0);
         }
         double tot = 0.0;
         for (map<int, long int>::iterator y = x->second.begin(); y != x->second.end(); 
@@ -1239,7 +2595,8 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
             row[y->first] += (double)y->second;
             tot += (double)y->second;
             double val = (double)y->second;
-            obscol[y->first].push_back(val);
+            //obscol[y->first].push_back(val);
+            obscol[y->first][obscol[y->first].size()-1] += val;
             meanscol[y->first] += val;
         }
         // Skip rows with 0 counts
@@ -1259,17 +2616,87 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
     vector<double> lophis;
     vector<double> himeans;
     fit_dists_2way(obscol, labels, lomeans, lophis, himeans, model_means, output_prefix);
+    for (int i = 0; i < lomeans.size(); ++i){
+        if (lomeans[i] > 1.0){
+            lomeans[i] -= 1.0;
+        }
+    }
     fprintf(stderr, "Making preliminary assignments...\n");
+    
+    int nsamp = 1000;
+    vector<set<int> > results_all;
+    vector<double> llrs_all;
+    vector<double> bg_all;
+
+    vector<set<int> > results_prev;
+    vector<double> llrs_prev;
+    vector<double> bg_prev;
+
+    double delta_thresh = 0.01;
+    double llprev = 0.0;
+    double delta = 999;
+    while (delta > delta_thresh){
+
+        results_prev = results_all;
+        llrs_prev = llrs_all;
+        bg_prev = bg_all;
+
+        results_all.clear();
+        llrs_all.clear();
+        bg_all.clear();
+
+        double loglik = assign_testnew(obs,
+            bcs,
+            nsamp,
+            labels,
+            lomeans,
+            lophis,
+            himeans,
+            sgrna,
+            results_all,
+            llrs_all,
+            bg_all,
+            filt || sgrna);
+        break;
+        if (llprev != 0){
+           delta = loglik-llprev;
+            if (delta < 0){
+                results_all = results_prev;
+                llrs_all = llrs_prev;
+            }
+        }
+        fprintf(stderr, "%f -> %f delta %f\n", llprev, loglik, delta);
+        llprev = loglik;
+    }
+    
+    for (int i = 0; i < obs.size(); ++i){
+        assn.emplace(bcs[i], results_all[i]);
+        assn_llr.emplace(bcs[i], llrs_all[i]);
+        cell_bg.emplace(bcs[i], bg_all[i]);
+    }
+
+    return;
+
+    exit(1);
+
+
 
     // Now make preliminary assignments and learn background dists
     vector<double> bgmeans;
-    pair<double, double> slope_int = assign_init(obs, labels, bgmeans,   
-        lomeans, lophis, himeans, model_means, sgrna);
+    double slope_mu;
+    double intercept_mu;
+    double slope_phi;
+    double intercept_phi;
+    assign_init(obs, labels, bgmeans,   
+        lomeans, lophis, himeans, model_means, sgrna, slope_mu, intercept_mu,
+        slope_phi, intercept_phi);
     
     // Refine total count -> perc bg relationship 
     vector<double> logtots;
     vector<double> logitpercs;
-    
+    vector<double> regtots;
+    vector<double> regpercs;
+
     fprintf(stderr, "Making second round of assignments...\n");
     vector<double> bgcount_all;
 
@@ -1278,21 +2705,33 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
         double llr;
         double bgcount;
         assign_cell(bgmeans, model_means, -1, -1, obs[i],   
-            labels.size(), slope_int, true, assns, llr, bgcount, false, sgrna, -1);
+            labels.size(), slope_mu, intercept_mu, slope_phi, intercept_phi, 
+            filt, assns, llr, bgcount, false, sgrna, -1);
         
         if (bgcount != -1){
             bgcount_all.push_back(bgcount);    
-            if (bgcount > 0 && bgcount < tots[i]){
+            if (bgcount > 0 && bgcount < tots[i] && tots[i] > 0){
                 double perc = bgcount/tots[i];
                 logtots.push_back(log(tots[i]));
                 logitpercs.push_back(logit(perc));
                 //bgperc_all_flat.push_back(perc);
+                regtots.push_back(tots[i]);
+                regpercs.push_back(perc);
             }
         }
     }
-    
     // Update % bg from tot prediction
-    slope_int = linreg(logtots, logitpercs);
+    //slope_int = linreg(logtots, logitpercs);
+    fit_bg_predictors(logtots, logitpercs, regtots, regpercs, slope_mu,
+        intercept_mu, slope_phi, intercept_phi);
+    
+    for (int i = 0; i < logtots.size(); ++i){
+        double mu = slope_mu*logtots[i] + intercept_mu;
+        double phi = slope_phi*logtots[i] + intercept_phi;
+
+        fprintf(stdout, "%f\t%f\t%f\t%f\n", logtots[i], logitpercs[i], mu, exp(phi));
+    }
+    exit(0);
     
     pair<double, double> muvarbg = welford(bgcount_all);
 
@@ -1306,7 +2745,8 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<int, long int> >& b
         double llr; 
         double bgcount;
         bool assigned = assign_cell(bgmeans, model_means, muvarbg.first, 
-            muvarbg.second, obs[i], labels.size(), slope_int, true, assns, llr, bgcount, 
+            muvarbg.second, obs[i], labels.size(), slope_mu, intercept_mu,
+            slope_phi, intercept_phi, filt, assns, llr, bgcount, 
             false, sgrna, prob);
         
         bgcount_all.push_back(bgcount);
@@ -1642,6 +3082,8 @@ void count_tags_in_reads(vector<string>& read1fn,
 }
 
 int main(int argc, char *argv[]) {    
+    
+    srand(time(NULL));
 
     // Define long-form program options 
     static struct option long_options[] = {
@@ -1690,6 +3132,7 @@ int main(int argc, char *argv[]) {
     bool seurat = false;
     bool underscore = false;
     double prob = 0.5;
+    bool filt = false;
 
     string pr = STRINGIZE(PROJ_ROOT);
     if (pr[pr.length()-1] != '/'){
@@ -1703,7 +3146,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:n:i:M:F:t:1:2:m:N:w:u:B:s:p:CSUegch", 
+    while((ch = getopt_long(argc, argv, "o:n:i:M:F:t:1:2:m:N:w:u:B:s:p:fCSUegch", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -1717,6 +3160,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'M':
                 input_mtx = optarg;
+                break;
+            case 'f':
+                filt = true;
                 break;
             case 'F':
                 input_features = optarg;
@@ -1981,8 +3427,7 @@ next time)...\n");
     robin_hood::unordered_map<unsigned long, set<int> > assn;
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     robin_hood::unordered_map<unsigned long, double> cell_bg; 
-    fprintf(stderr, "prob cutoff %f\n", prob);
-    assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, output_prefix, sgrna, prob);
+    assign_ids(bc_tag_counts, assn, assn_llr, cell_bg, labels, output_prefix, sgrna, filt, prob);
     
     string assnfilename = output_prefix + ".assignments";
     write_assignments(bc_tag_counts, assnfilename, assn, labels, assn_llr, sep, batch_id, 
