@@ -715,7 +715,7 @@ process demux_atac_reads{
 
     script:
     """
-    ${demux_species} -o . -w ${wl} -W "${wl_atac}" -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3}
+    ${demux_species} -o . -w ${wl} -W ${wl_atac} -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3}
     """
 }
 
@@ -740,9 +740,10 @@ process demux_atac_reads_preproc{
 
     script:
     """
-    ${demux_species} -o . -w ${wl} -W "${wl_atac}" -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3} -A
+    ${demux_species} -o . -w ${wl} -W ${wl_atac} -T ${params.threads} -1 ${R1} -2 ${R2} -3 ${R3} -A
     """
 }
+
 /*
  * Splits an ATAC_seq read triplet chunk by species
  */
@@ -795,7 +796,7 @@ process demux_atac_reads_chunk_preproc{
     tuple val(uid), 
         val(libname_gex),
         file("*/ATAC_${R1}"),
-        file("*/ATAC_${R2}"),
+        file("*/ATAC_${R2}")
  
     script:
     """
@@ -932,7 +933,7 @@ process cat_read_chunks_atac_nor3{
         file(R1s), 
         file(R2s),
         val(R1out), 
-        val(R2out),
+        val(R2out)
     
     publishDir "${params.output_directory}/${libname}/${species}", mode: "copy"
     
@@ -1369,7 +1370,6 @@ workflow{
         }
          
         // Fit model, assign species, and create library files
-        
         if (!params.atac_dir && !params.custom_dir){
             // Just RNA.
             rna_joined = reads_rna.cross(joined).map{ x -> 
@@ -1412,7 +1412,6 @@ workflow{
 
             models = fit_model_gex_atac_custom(all_together_joined)
         }
-        
         if (params.demux_pieces && params.num_chunks > 1){
             // Demux each chunk of RNA files
             rsplit2 = rsplit.map{ idx, lib, r1, r2, wl -> 
@@ -1478,12 +1477,11 @@ workflow{
             } | demux_rna_reads
             
             if (params.atac_dir){
-                readtrios_atac = get_atac_channel(atac_map, true)
-                non_indexed_atac_trios = readtrios_atac.map{ x ->
-                    [x[2], x[6], x[7], x[8]] 
+                readtrios_atac2 = get_atac_channel(atac_map, true)
+                non_indexed_atac_trios = readtrios_atac2.map{ x -> 
+                    [x[2], x[6], x[7], x[8]]
                 }
-                
-                def demux_atac_reads_dat = models.cross(non_indexed_atac_trios).map{ x, y ->
+                demux_atac_reads_dat = models.cross(non_indexed_atac_trios).map{ x, y ->
                     [x[0], y[1], y[2], y[3], x[2], x[6], x[7], file(params.whitelist), file(params.whitelist_atac)]
                 }
                 if (params.atac_preproc){
