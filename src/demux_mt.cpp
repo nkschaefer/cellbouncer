@@ -754,7 +754,6 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
         if (use_filter && cell_filter.find(hc->first) == cell_filter.end()){
             continue;
         }
-        
         /*
         llr_table lltab(haps_final.size());
         map<pair<int, int>, double> llrs;
@@ -965,6 +964,9 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
             if (doublet_rate > 0.0){
                 for (int j = i + 1; j < haps_final.size(); ++j){
                     int k = hap_comb_to_idx(i, j, haps_final.size());
+                    if (k < 0){
+                        exit(1);
+                    }
                     all_model_idx.push_back(k);
                 }
             }
@@ -984,14 +986,11 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
         int tot_reads = 0;
         int missing_sites = 0;
         bool skip_bc = false;
-        
         for (int site = 0; site < nvars; ++site){
             if (mask_global[site]){
-                
                 // Retrieve major/minor allele counts
                 int count1 = hc->second.counts1[site];
                 int count2 = hc->second.counts2[site];
-                
                 if (count1+count2 > 0){                
                     // var set in hapstr == count2 is expected
                     for (int i = 0; i < all_model_idx.size()-1; ++i){
@@ -1001,6 +1000,7 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                         double exp_frac1;
                         if (idx1 >= haps_final.size()){
                             pair<int, int> comb = idx_to_hap_comb(idx1, haps_final.size());
+                            
                             if (!haps_final[comb.first].mask[site] || 
                                 !haps_final[comb.second].mask[site]){
                                 covered_idx1 = false;
@@ -1032,7 +1032,6 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                         if (!covered_idx1){
                             continue;
                         }
-
                         for (int j = i + 1; j < all_model_idx.size(); ++j){
                             int idx2 = all_model_idx[j];
                             bool covered_idx2 = true;
@@ -1067,13 +1066,11 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                                 }
                                 exp_frac2 = (double)nmin2;
                             }
-                            
                             if (!covered_idx2){
                                 continue;
                             }
 
                             if (exp_frac1 != exp_frac2){
-                                
                                 if (exp_frac1 == 0){
                                     exp_frac1 = zero;
                                 }
@@ -1086,7 +1083,6 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                                 else if (exp_frac2 == 1){
                                     exp_frac2 = one;
                                 }
-                                
                                 if (llrs.count(idx1) == 0){
                                     map<int, double> m;
                                     llrs.insert(make_pair(idx1, m));
@@ -1094,7 +1090,6 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
                                 if (llrs[idx1].count(idx2) == 0){
                                     llrs[idx1].insert(make_pair(idx2, 0.0));
                                 }
-
                                 double ll1 = dbinom(count1+count2, count2, exp_frac1);
                                 double ll2 = dbinom(count1+count2, count2, exp_frac2);
                                 
@@ -1123,7 +1118,6 @@ void assign_bcs(robin_hood::unordered_map<unsigned long, var_counts>& hap_counte
             assignments.emplace(hc->first, best_assignment);
             assignments_llr.emplace(hc->first, llr);
         } 
-              
         ++n_assigned;
         if (!use_filter && n_assigned % progress == 0){
             fprintf(stderr, "%d cells assigned\r", n_assigned);
@@ -2072,7 +2066,6 @@ void write_clusthaps(string& clusthapsfile,
 void load_clusthaps(string& hapsfilename,
     hapstr& mask_global,
     vector<hap>& clusthaps){
-
     ifstream infile(hapsfilename.c_str());
     if (!infile.good()){
         fprintf(stderr, "ERROR opening file %s\n", hapsfilename.c_str());
@@ -2096,6 +2089,11 @@ void load_clusthaps(string& hapsfilename,
             else if (hapstring[i] == '1'){
                 h.mask.set(i);
                 h.vars.set(i);
+            }
+            else if (hapstring[i] != '-'){
+                fprintf(stderr, "ERROR: unrecognized character in hap string.\n");
+                fprintf(stderr, "Did you specify the wrong file as -H?\n");
+                exit(1);
             }
         }
         clusthaps.push_back(h);
@@ -2379,7 +2377,9 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
     robin_hood::unordered_map<unsigned long, double>& mixprops_sd,
     map<int, double>& id_mixprop_mean,
     map<int, double>& id_mixprop_sd,
-    vector<string>& clust_ids){
+    vector<string>& clust_ids,
+    string& mito_chrom,
+    deque<varsite>& vars){
 
     int n_samples = (int)clusthaps.size();
     
@@ -2406,25 +2406,40 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
                     // We can use this site.
                     int nmaj = hap_counter[a->first].counts1[x];
                     int nmin = hap_counter[a->first].counts2[x];
+                    bool min_indv1 = false;
                     if (nmaj + nmin > 0){
                         if (clusthaps[combo.first].vars[x] && !clusthaps[combo.second].vars[x]){
                             // minor allele is indv 1
                             match1 += nmin;
                             match2 += nmaj;
+                            min_indv1 = true;
                         }
                         else if (clusthaps[combo.second].vars[x] && !clusthaps[combo.first].vars[x]){
                             // minor allele is indv 2
                             match1 += nmaj;
                             match2 += nmin;
                         }
+                       
+                        int pr1 = nmaj;
+                        int pr2 = nmin;
+                        if (min_indv1){
+                            pr1 = nmin;
+                            pr2 = nmaj;
+                        } 
+                        string bcstr = bc2str(a->first);
+                        fprintf(stdout, "%s\t%d\t%d\t%s\t%s\t%s\t%d\t%d\n", mito_chrom.c_str(),
+                            vars[x].pos, vars[x].pos + 1, bcstr.c_str(), clust_ids[combo.first].c_str(),
+                            clust_ids[combo.second].c_str(), pr1, pr2);
+                    
                     }
                 }
             }
             
             if (match1 + match2 > 0){
                 string bcstr = bc2str(a->first);
-                fprintf(stdout, "%s\t%s\t%s\t%d\t%d\n", bcstr.c_str(), clust_ids[combo.first].c_str(),
-                    clust_ids[combo.second].c_str(), match1, match2);
+                //fprintf(stdout, "%s\t%d\t%d\t%s\t%s\t%s\t%d\t%d\n", bcstr.c_str(), 
+                //    clust_ids[combo.first].c_str(), clust_ids[combo.second].c_str(), 
+                //    match1, match2);
 
                 /*        
                 double mean = (double)match1/(double)(match1+match2);
@@ -2817,7 +2832,7 @@ name prefix.\n", output_prefix.c_str());
             mask_global.set(x);
         }
     }
-
+    
     // Store haplotypes of clusters (whether inferred or loaded)
     vector<hap> clusthaps;
     
@@ -2883,7 +2898,7 @@ were found in input file %s\n", assnfile.c_str());
         map<int, double> id_mixprop_mean;
         map<int, double> id_mixprop_sd;
         infer_mixprops(hap_counter, assignments, clusthaps, mask_global, nvars, mixprops_mean,
-            mixprops_sd, id_mixprop_mean, id_mixprop_sd, clust_ids);
+            mixprops_sd, id_mixprop_mean, id_mixprop_sd, clust_ids, mito_chrom, vars2);
         /*
         // Spill to disk.
         string mixprops_out_name = output_prefix + ".props";
@@ -2894,7 +2909,6 @@ were found in input file %s\n", assnfile.c_str());
         */
         return 0;
     }
-
     // Write barcode haps file
     write_bchaps(haps_out, nvars, mask_global, haplotypes, barcode_group, cellranger, seurat, underscore);
     
@@ -2905,7 +2919,7 @@ were found in input file %s\n", assnfile.c_str());
     
     robin_hood::unordered_map<unsigned long, int> assignments;
     robin_hood::unordered_map<unsigned long, double> assignments_llr;
-
+    
     // oversight -- need to convert type of set here
     robin_hood::unordered_set<unsigned long> cell_filter;
     if (has_bc_filter_assn){

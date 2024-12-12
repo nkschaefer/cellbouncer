@@ -41,12 +41,21 @@ assn1 <- read.table(args[1])
 assn2 <- read.table(args[2])
 outname <- args[3]
 
+if (length(rownames(assn1)) == 0 | length(rownames(assn2)) == 0){
+    write("ERROR: no assignments in one or both files", stderr())
+    q()
+}
+
+s1 <- FALSE
+s2 <- FALSE
 if (length(args) > 3){
-    if (args[4] == "S" | args[4] == "S1" | args[4] == "S1D2"){
+    if (args[4] == "S" | args[4] == "S1" | args[4] == "S1D2" | args[4] == "D2S1"){
         assn1 <- assn1[which(assn1$V3=="S"),]
+        s1 <- TRUE
     }
-    if (args[4] == "S" | args[4] == "S2" | args[4] == "S2D1"){
+    if (args[4] == "S" | args[4] == "S2" | args[4] == "S2D1" | args[4] == "D1S2"){
         assn2 <- assn2[which(assn2$V3=="S"),]
+        s2 <- TRUE
     }
 }
 
@@ -95,11 +104,11 @@ colnames(tot2)[2] <- "tot2"
 if (length(args) > 3){
     if (args[4] == "S"){
         print(table(merged[which(merged$type1=="S" & merged$type2=="S"),c(2,4)]))
-    } else if (args[4] == "S1" | args[4] == "S1D2" | args[4] == "D2"){
+    } else if (args[4] == "S1" | args[4] == "S1D2" | args[4] == "D2S1" | args[4] == "D2"){
         # File 2 has doublets, so will take up more screen space.
         # Switch rows/cols so file 2 prints vertically
         print(t(table(merged[which(merged$type1=="S"),c(2,4)])))
-    } else if (args[4] == "S2" | args[4] == "S2D1" | args[4] == "D1"){
+    } else if (args[4] == "S2" | args[4] == "S2D1" | args[4] == "D1S2" | args[4] == "D1"){
         print(table(merged[which(merged$type2=="S"),c(2,4)]))
     } else if (args[4] == "D"){
         print(table(merged[,c(2,4)]))  
@@ -208,6 +217,21 @@ t2Dtot <- length(rownames(merged[which(merged$type2=="D"),]))
 
 # If some labels agree, assume that we are comparing the same sets of labels.
 if (tot_match == 0){
+    if (d1 & length(rownames(merged[which(merged$type1=="D"),])) > 0){
+        merged[which(merged$type1=="D"),]$type1 <- "S"
+    }
+    if (d2 & length(rownames(merged[which(merged$type2=="D"),])) > 0){
+        merged[which(merged$type2=="D"),]$type2 <- "S"
+    }
+    if (s1 & length(rownames(merged[which(merged$type1=="D"),])) > 0){
+        merged <- merged[which(merged$type1 != "D"),]
+        #tab <- tab[grep("+", tab$assn1, fixed=T, invert=T),]
+    }
+    if (s2 & length(rownames(merged[which(merged$type2=="D"),])) > 0){
+        merged <- merged[which(merged$type2 != "D"),]
+        #tab <- tab[grep("+", tab$assn2, fixed=T, invert=T),]
+    }
+
     # Otherwise, try to decide on matching labels using Jaccard index
     jmax_dat1 <- tab[grep("+", tab$assn1, fixed=T, invert=T),]
     jmax_dat2 <- tab[grep("+", tab$assn2, fixed=T, invert=T),]
@@ -221,12 +245,13 @@ if (tot_match == 0){
     jmax2 <- aggregate(jmax_dat2$jaccard, by=list(assn2=jmax_dat2$assn2), FUN=max)
     colnames(jmax)[2] <- "jaccard.max"
     colnames(jmax2)[2] <- "jaccard.max2"
+    
     tab2 <- merge(tab, jmax)
     tab2 <- merge(tab2, jmax2)
     tab2 <- tab2[which(tab2$jaccard == tab2$jaccard.max & tab2$jaccard == tab2$jaccard.max2),]
     tab2 <- tab2[,c(2,1)]
     colnames(tab2)[2] <- "assn2.corr"
-    
+
     missing_1 <- unique(tab[grep("+", tab$assn1, fixed=T, invert=T),]$assn1)
     missing_1 <- missing_1[which(! missing_1 %in% tab2$assn1)]
     
@@ -254,11 +279,13 @@ if (tot_match == 0){
     missing_1_df <- data.frame(id=missing_1)
     
     missing_2_df <- data.frame(id=missing_2)
-
+    
+     
     idmap_S <- data.frame(assn1=unique(merged[which(merged$type1=="S"),]$assn1))
     idmap_S <- merge(idmap_S, tab2, by=c("assn1"))
-    
+
     idmap <- idmap_S
+
     if (length(rownames(merged[which(merged$type1=="D"),])) > 0){
         idmap_D <- data.frame(assn=unique(merged[which(merged$type1=="D"),]$assn1))
         idmap_D$id1 <- apply(idmap_D, 1, function(x){ strsplit(x[1], '+', fixed=T)[[1]][1] })
@@ -298,24 +325,24 @@ if (tot_match == 0){
 
 }
 
-write("", stderr())
-write("===== Agreement: =====", stderr())
-write(paste("Overall = ", tot_match/tot_all, sep=""), stderr())
-write("----- If File 1 = truth -----", stderr())
+write("", stdout())
+write("===== Agreement: =====", stdout())
+write(paste("Overall = ", tot_match/tot_all, sep=""), stdout())
+write("----- If File 1 = truth -----", stdout())
 prec <- tot_match/tot_all
 recall <- tot_match/tot_all1
 f1 <- 2*(prec*recall)/(prec+recall)
-write(paste("Precision: ", prec, " Recall: ", recall, " F1: ", f1, sep=""), stderr())
-write("----- If File 2 = truth -----", stderr())
+write(paste("Precision: ", prec, " Recall: ", recall, " F1: ", f1, sep=""), stdout())
+write("----- If File 2 = truth -----", stdout())
 prec <- tot_match/tot_all
 recall <- tot_match/tot_all2
 f1 <- 2*(prec*recall)/(prec+recall)
-write(paste("Precision: ", prec, " Recall: ", recall, " F1: ", f1, sep=""), stderr())
-write("----- File 1 -----", stderr())
-write(paste("Missing (present in 2) = ", nmiss2/length(rownames(assn2))), stderr())
-write(paste("File 1 singlet = ", t1Smatch/t1Stot, sep=""), stderr())
-write(paste("File 1 doublet = ", t1Dmatch/t1Dtot, sep=""), stderr())
-write("----- File 2 -----", stderr())
-write(paste("Missing (present in 1) = ", nmiss1/length(rownames(assn1))), stderr())
-write(paste("File 2 singlet = ", t2Smatch / t2Stot, sep=""), stderr())
-write(paste("File 2 doublet = ", t2Dmatch / t2Dtot, sep=""), stderr())
+write(paste("Precision: ", prec, " Recall: ", recall, " F1: ", f1, sep=""), stdout())
+write("----- File 1 -----", stdout())
+write(paste("Missing (present in 2) = ", nmiss2/length(rownames(assn2))), stdout())
+write(paste("File 1 singlet = ", t1Smatch/t1Stot, sep=""), stdout())
+write(paste("File 1 doublet = ", t1Dmatch/t1Dtot, sep=""), stdout())
+write("----- File 2 -----", stdout())
+write(paste("Missing (present in 1) = ", nmiss1/length(rownames(assn1))), stdout())
+write(paste("File 2 singlet = ", t2Smatch / t2Stot, sep=""), stdout())
+write(paste("File 2 doublet = ", t2Dmatch / t2Dtot, sep=""), stdout())

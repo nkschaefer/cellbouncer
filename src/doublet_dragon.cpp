@@ -76,8 +76,32 @@ int parse_assignments(string filename,
     map<string, int> id_count;
     
     int ntot = 0;
+    
+    string line;
+    while(getline(inf, line)){
+        istringstream splitter(line);
+        string field;
+        int idx = 0;
+        while(getline(splitter, field, '\t')){
+            if (idx == 0){
+                bc_str = field;
+            }
+            else if (idx == 1){
+                id = field;
+            }
+            else if (idx == 2){
+                type = field;
+            }
+            else if (idx == 3){
+                llr = atof(field.c_str());
+            }
+            else{
+                fprintf(stderr, "ERROR: unexpected number of fields in %s.\n", filename.c_str());
+                exit(1);
+            }
+            ++idx;
+        }
 
-    while (inf >> bc_str >> id >> type >> llr){
         ntot++;
         if (id_count.count(id) == 0){
             id_count.insert(make_pair(id, 0));
@@ -86,7 +110,7 @@ int parse_assignments(string filename,
         
         id_count[id]++;
         weights[id] += llr;
-
+        
         if (type == "S"){
             if (counts_singlet.count(id) == 0){
                 counts_singlet.insert(make_pair(id, 0));
@@ -307,11 +331,11 @@ a file name prefix.\n", outbase.c_str());
             fprintf(stderr, "ERROR: no doublet identifications in %s\n", argv[i]);
             exit(1);
         }
-        
+
         file2singlets.insert(make_pair(fn, counts_singlet));
         file2doublets.insert(make_pair(fn, counts_doublet));
         file_tot.insert(make_pair(fn, totcells));
-            
+         
         int tot_singlet = 0;
         for (map<string, int>::iterator cs = counts_singlet.begin();
             cs != counts_singlet.end(); ++cs){
@@ -322,7 +346,6 @@ a file name prefix.\n", outbase.c_str());
 
         for (map<string, int>::iterator cs = counts_singlet.begin(); 
             cs != counts_singlet.end(); ++cs){
-            
             int p_idx_this;
             if (name2idx.count(cs->first) > 0){
                 
@@ -402,10 +425,16 @@ a file name prefix.\n", outbase.c_str());
             string id2 = cd->first.substr(pos+1, cd->first.length()-pos-1);
             if (name2idx.count(id1) == 0){
                 fprintf(stderr, "ERROR: no singlets for ID %s (%s)\n", id1.c_str(), argv[i]);
+                for (map<string, pair<int, int> >::iterator ni = name2idx.begin(); ni != name2idx.end(); ++ni){
+                    fprintf(stderr, "%s\t%d %d\n", ni->first.c_str(), ni->second, ni->second.second);
+                }
                 exit(1);
             }
             if (name2idx.count(id2) == 0){
                 fprintf(stderr, "ERROR: no singlets for ID %s (%s)\n", id2.c_str(), argv[i]);
+                for (map<string, pair<int, int> >::iterator ni = name2idx.begin(); ni != name2idx.end(); ++ni){
+                    fprintf(stderr, "%s\t%d %d\n", ni->first.c_str(), ni->second.first, ni->second.second);
+                }
                 exit(1);
             }
             

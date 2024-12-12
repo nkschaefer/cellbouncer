@@ -22,6 +22,9 @@ if (length(args) < 1){
     write("    the cluster assignments look reasonable.", stderr())
     write("Creates PDF and PNG plots named <output_prefix>.clust.pdf and", stderr())
     write("    <output_prefix>.clust.png.", stderr())
+    write("If you provide D as an additional, final argument, it will keep", stderr())
+    write("    from using a single \"Doublet\" label to show all doublet IDs", stderr())
+    write("    and will instead show specific doublet types on the plot.", stderr())
     q()
 }
 
@@ -41,16 +44,16 @@ if ("bc" %in% colnames(tab)){
     tab <- tab[,-c(1)]
 }
 
-if (length(args) > 2){
-    nsites <- as.numeric(args[3])
-    if (nsites > 0 && nsites < length(colnames(tab))){
-        csdf <- data.frame(cs=colSums(tab, na.rm=TRUE))
-        csdf$idx <- seq(1, length(rownames(csdf)))
-        csdf <- csdf[order(csdf$cs, decreasing=T),]
-        idx_keep <- csdf[seq(1,nsites),]$idx
-        tab <- tab[,idx_keep]    
-    }
-}
+#if (length(args) > 2){
+#    nsites <- as.numeric(args[3])
+#    if (nsites > 0 && nsites < length(colnames(tab))){
+#        csdf <- data.frame(cs=colSums(tab, na.rm=TRUE))
+#        csdf$idx <- seq(1, length(rownames(csdf)))
+#        csdf <- csdf[order(csdf$cs, decreasing=T),]
+#        idx_keep <- csdf[seq(1,nsites),]$idx
+#        tab <- tab[,idx_keep]    
+#    }
+#}
 
 
 tab$fracna <- apply(tab, 1, function(x){ sum(is.na(x)) })
@@ -71,8 +74,10 @@ if (file.exists(assnfile)){
     # Replace all unique doublet combinations with 
     # a single annotation to avoid creating too many
     # colors
-    if (length(rownames(assn[which(assn$V3=="D"),])) > 0){
-        assn[which(assn$V3=="D"),]$V2 <- "Doublet"
+    if (length(args) < 3 | args[3] != "D"){
+        if (length(rownames(assn[which(assn$V3=="D"),])) > 0){
+            assn[which(assn$V3=="D"),]$V2 <- "Doublet"
+        }
     }
     assn$V2 <- factor(assn$V2)
     assn <- assn[,c(1,2)]
