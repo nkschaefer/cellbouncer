@@ -55,6 +55,10 @@ bool load_species(string& filename, map<short, string>& species_prev){
     else{
         species_prev = species_this;
     }
+    if (species_this.size() < 2){
+        // Can't have properly loaded.
+        return false;
+    }
     return true;
 }
 
@@ -195,40 +199,41 @@ int main(int argc, char *argv[]) {
         string speciesfilename = outdir + "species_names." + bufstr + ".txt";
         string convfilename = outdir + "bcmap." + bufstr + ".txt";
         if (file_exists(countsfilename)){
-            bool ok1 = load_counts(countsfilename, bc_species_counts);
-            if (ok1){
-                rm.push_back(countsfilename);
-                if (file_exists(speciesfilename)){
-                    bool ok = load_species(speciesfilename, species_names);
-                    if (!ok){
-                        fprintf(stderr, "ERROR: species names from batch %d do not match previous \
-    species names.\n", idx);
+            if (file_exists(speciesfilename)){
+                // demux_species is designed to dump species names only after species counts.
+                // If names exist, then trust that counts exist too, and that an empty file
+                // implies a small chunk with no counts found.
+                bool ok1 = load_species(speciesfilename, species_names);
+                if (ok1){
+                    bool ok2 = load_counts(countsfilename, bc_species_counts);
+                    rm.push_back(countsfilename);
+                    rm.push_back(speciesfilename);
+                    if (file_exists(convfilename)){
+                        bool ok = load_conversion(convfilename, bc_conversion);                
+                        if (!ok){
+                            fprintf(stderr, "ERROR: barcode conversion file for batch %d does not match \
+        conversions from previous batches.\n", idx);
+                            exit(1);
+                        }
+                        has_conversion = true;
+                        rm.push_back(convfilename);
+                    }
+                    else if (has_conversion){
+                        fprintf(stderr, "ERROR: barcode conversion file not found for batch %d\n", idx);
                         exit(1);
                     }
-                    rm.push_back(speciesfilename);
                 }
                 else{
-                    fprintf(stderr, "ERROR: missing expected file %s\n", speciesfilename.c_str());
-                    exit(1);
-                }
-                if (file_exists(convfilename)){
-                    bool ok = load_conversion(convfilename, bc_conversion);                
-                    if (!ok){
-                        fprintf(stderr, "ERROR: barcode conversion file for batch %d does not match \
-    conversions from previous batches.\n", idx);
-                        exit(1);
-                    }
-                    has_conversion = true;
-                    rm.push_back(convfilename);
-                }
-                else if (has_conversion){
-                    fprintf(stderr, "ERROR: barcode conversion file not found for batch %d\n", idx);
+                    fprintf(stderr, "ERROR: species names from batch %d are missing or do not match previous \
+species names.\n", idx);
+                    fprintf(stderr, "A job may have failed to complete. Please re-run demux_species \
+on this batch.\n");
                     exit(1);
                 }
             }
             else{
-                fprintf(stderr, "ERROR: empty file: %s\n", countsfilename.c_str());
-                fprintf(stderr, "This job likely failed to complete. Please re-run demux_species\n");
+                fprintf(stderr, "ERROR: missing expected file %s\n", speciesfilename.c_str());
+                fprintf(stderr, "One or more jobs likely failed to complete. Please re-run demux_species\n");
                 fprintf(stderr, "on all missing batches.\n");
                 exit(1);
             }

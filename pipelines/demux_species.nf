@@ -272,7 +272,7 @@ process count_kmers{
 process count_kmers_chunk{
     cpus params.threads
     memory params.memgb + ' GB'
-    time '4h'
+    time '6h'
 
     input:
     tuple val(file_idx), 
@@ -1345,6 +1345,7 @@ workflow{
 
         // Combine counts
         joined = join_counts(filestojoin)
+        
     }
 
     reads_rna = null
@@ -1382,7 +1383,7 @@ workflow{
         }
         else if (params.custom_dir && !params.atac_dir){
             
-            custom_plus_rna_joined = custom_plus_rna.cross(joined.collect()).collect().map{ x ->
+            custom_plus_rna_joined = custom_plus_rna.cross(joined).map{ x ->
                 def ret = x[0]
                 ret.add(x[1][1])
                 ret.add(x[1][2])
@@ -1391,7 +1392,7 @@ workflow{
             models = fit_model_gex_custom(custom_plus_rna_joined)
         }
         else if (params.atac_dir && !params.custom_dir){
-            atac_plus_rna_joined = atac_plus_rna.cross(joined.collect()).collect().map{ x ->
+            atac_plus_rna_joined = atac_plus_rna.cross(joined).map{ x ->
                 def ret = x[0]
                 ret.add(x[1][1])
                 ret.add(x[1][2])
@@ -1403,7 +1404,7 @@ workflow{
             all_together = atac_plus_rna.cross(custom_plus_rna).map{ x, y ->
                 return [x[0], x[1], x[2], x[3], x[4], x[5], x[6], y[3], y[4], y[5], y[6]]
             }
-            all_together_joined = all_together.cross(joined.collect()).collect().map{ x-> 
+            all_together_joined = all_together.cross(joined).map{ x-> 
                 def ret = x[0]
                 ret.add(x[1][1])
                 ret.add(x[1][2])
