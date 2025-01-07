@@ -192,7 +192,7 @@ make_plot <- function(){
         H_max <- log2(length(rownames(cp[which(cp$var != "other_species"),])))
         # This will drop "other_species" automatically
         bothdf <- merge(cp, assn_agg, by="var")
-        KL_div <- -sum(bothdf$val.x*log(bothdf$val.x/bothdf$val.y))
+        KL_div <- sum(bothdf$val.y*log(bothdf$val.y/bothdf$val.x))
 
         # Create text for plot 
         entropy_plt <- ggdraw() + 
