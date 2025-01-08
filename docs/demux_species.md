@@ -33,6 +33,7 @@ utils/demux_species_ref.py -k [length] -o [output_prefix] \
     -n [species1_name] [species2_name] ... \
     -f [species1_fasta] [species2_fasta] ... \
     (-g [species1_gtf] [species2_gtf] ... ) \
+    (-N [num_to_sample]) \
     (--FastK /path/to/FastK) \
     (--gffread /path/to/gffread)
 ```
@@ -43,6 +44,7 @@ utils/demux_species_ref.py -k [length] -o [output_prefix] \
   * If providing FASTA files for transcript sequences, these are the only files to provide.
   * If providing genomic FASTAs and annotation GTFs, then this argument should be the genomic FASTAs.
 * `-g` is an optional list of GTF files. If you used `-f` to provide reference genomes instead of transcripts, then the GTF files provided here will be used to extract transcripts from the reference genomes using `gffread.` For this, `gffread` must also either be available in your `$PATH` or you can provide the path to the program using `--gffread`.
+* `-N` is the number of k-mers to sample per species. If you set to -1, then all k-mers will be used. Setting to a smaller number (i.e. 20 million) will speed things up and save memory at the risk of losing data and potentially failing to identify some cells.
 
 If you would rather run the steps yourself (instead of using this helper program), or better understand what it's doing, see [here](get_unique_kmers.md).
 
