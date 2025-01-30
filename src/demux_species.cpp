@@ -879,15 +879,6 @@ data for %s with more species.\n", kmerbase.c_str());
             }
         }
 
-        // Create file listing species names (in case we need to re-run without
-        // loading the BAMs)
-        FILE* sn_out = fopen(speciesfilename.c_str(), "w");
-        for (map<short, string>::iterator i2s = idx2species.begin(); i2s != idx2species.end();
-            ++i2s){
-            fprintf(sn_out, "%d\t%s\n", i2s->first, i2s->second.c_str());
-        }
-        fclose(sn_out);
-    
         // Create a counts file so we don't have to do the expensive process of counting 
         // k-mers next time, if we need to do something over.
 
@@ -909,7 +900,16 @@ data for %s with more species.\n", kmerbase.c_str());
             }            
             fclose(mapfile);
         }
-
+        
+        // Create file listing species names (in case we need to re-run without
+        // loading the BAMs)
+        FILE* sn_out = fopen(speciesfilename.c_str(), "w");
+        for (map<short, string>::iterator i2s = idx2species.begin(); i2s != idx2species.end();
+            ++i2s){
+            fprintf(sn_out, "%d\t%s\n", i2s->first, i2s->second.c_str());
+        }
+        fclose(sn_out);
+        
         if (batch_given){
             // Just needed to count species k-mers in reads for this batch. Stop here.
             return 0;
