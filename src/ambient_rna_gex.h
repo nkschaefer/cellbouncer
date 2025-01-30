@@ -55,6 +55,9 @@ class contam_profiler_gex{
         std::uniform_real_distribution<> rand_dist;
 
         bool infer_ase();
+        
+        bool skip_genes_given;
+        std::set<int> skip_genelist;
 
     public:
         
@@ -72,6 +75,8 @@ class contam_profiler_gex{
 
         void set_threads(int n_threads);
         
+        void skip_genes(std::set<int>& genelist);
+
         void set_ase(robin_hood::unordered_map<unsigned long, map<int, long int> >& ase1,
             robin_hood::unordered_map<unsigned long, map<int, long int> >& ase2);
         
