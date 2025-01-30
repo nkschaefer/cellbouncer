@@ -123,6 +123,8 @@ void help(int code){
     fprintf(stderr, "    --round -R By default, decontaminated counts can be fractions, which might throw\n");
     fprintf(stderr, "        off downstream analysis software that expects integer counts. This option ensures\n");
     fprintf(stderr, "        output adjusted gene expression values are integers.\n");
+    fprintf(stderr, "    --skip_genes -g Provide a list of gene names, one per line, to exclude from considering\n");
+    fprintf(stderr, "        as part of the contamination profile. Default = keep all genes.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
@@ -243,6 +245,10 @@ all possible individuals\n", idfile_doublet.c_str());
             allowed_ids, allowed_ids2);
         cf.set_doublet_rate(doublet_rate);
         cf.set_num_threads(num_threads);
+        if (run_once){
+            //cf.no_reassign();
+        }
+
         // Initialize to whatever was the final estimate last time 
         if (nits > 0){
             cf.set_init_contam_prof(contam_prof);
@@ -266,6 +272,11 @@ all possible individuals\n", idfile_doublet.c_str());
             cf.use_weights();
         }
         cf.fit(); 
+        
+        for (int i = 0; i < samples.size(); ++i){
+            fprintf(stderr, "%s) %f\n", samples[i].c_str(), cf.contam_prof[i]);
+        }   
+
         double ll = cf.compute_ll();
         
         if (run_once){
@@ -338,7 +349,8 @@ on mixture proportions...\n");
     // Write refined assignments to disk
     // If run_once is set, assume the user is happy with the preliminary, un-refined
     // assignments.
-    if (!run_once){
+    if (true){
+    //if (!run_once){
         string fname = output_prefix + ".decontam.assignments";
         FILE* outf = fopen(fname.c_str(), "w");
         dump_assignments(outf, assn, assn_llr, samples, libname, 
@@ -408,6 +420,14 @@ void parse_prof(string& filename, map<int, double>& contam_prof, vector<string>&
     }
 }
 
+void parse_skip_genes(string& skipgenesfile, vector<string>& skipgenes){
+    ifstream inf(skipgenesfile);
+    string line;
+    while (inf >> line){
+        skipgenes.push_back(line);
+    }
+}
+
 void process_gex_data(string& output_prefix,
     string& barcodesfile,
     string& featuresfile,
@@ -424,7 +444,10 @@ void process_gex_data(string& output_prefix,
     string& libname,
     bool seurat,
     bool cellranger,
-    bool underscore){
+    bool underscore,
+    string& skipgenesfile){
+    
+    
 
     robin_hood::unordered_map<unsigned long, map<int, long int> > mtx;
     vector<string> features;
@@ -485,7 +508,21 @@ void process_gex_data(string& output_prefix,
     if (round){
         contam_profiler.round_counts();
     }
-
+    if (skipgenesfile != ""){
+        vector<string> skip_genes_txt;
+        parse_skip_genes(skipgenesfile, skip_genes_txt);
+        // Map to int
+        map<string, int> gene2idx;
+        for (int i = 0; i < features.size(); ++i){
+            gene2idx.insert(make_pair(features[i], i));
+        }
+        set<int> skipgenes;
+        for (int i = 0; i < skip_genes_txt.size(); ++i){
+            skipgenes.insert(gene2idx[skip_genes_txt[i]]);
+        }
+        contam_profiler.skip_genes(skipgenes);
+    }
+    
     // Infer ambient RNA profile
     contam_profiler.get_profile();
     
@@ -542,6 +579,7 @@ int main(int argc, char *argv[]) {
        {"matrix", required_argument, 0, 'M'},
        {"feature_type", required_argument, 0, 't'},
        {"clusts", required_argument, 0, 'c'},
+       {"skip_genes", required_argument, 0, 'g'},
        {"num_threads", required_argument, 0, 'T'},
        {0, 0, 0, 0} 
        
@@ -568,6 +606,7 @@ int main(int argc, char *argv[]) {
     int bootstrap = 100;
     double doublet_rate = -1.0;
     int num_threads = 0;
+    string skipgenesfile = "";
 
     string barcodesfile = "";
     string featuresfile = "";
@@ -582,7 +621,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:e:E:l:N:i:I:n:b:D:B:F:M:t:c:T:RrsCSUdwh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "o:e:g:E:l:N:i:I:n:b:D:B:F:M:t:c:T:RrsCSUdwh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -592,6 +631,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'o':
                 output_prefix = optarg;
+                break;
+            case 'g':
+                skipgenesfile = optarg;
                 break;
             case 'i':
                 idfile = optarg;
@@ -832,7 +874,8 @@ provided. Nothing to do.\n");
             libname,
             seurat,
             cellranger,
-            underscore);
+            underscore,
+            skipgenesfile);
     }
     return 0;
 }
