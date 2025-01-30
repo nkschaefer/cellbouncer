@@ -99,6 +99,9 @@ class contamFinder{
         
         // Number of parallel processing threads to use
         int num_threads;
+        
+        // Don't bother reassigning cell identities
+        bool skip_reassign;
 
         // Wrangle data
         void compile_data(robin_hood::unordered_map<unsigned long, int>& assn,
@@ -145,6 +148,8 @@ class contamFinder{
         bool contam_prof_initialized;
         bool c_initialized;
         double c_init;
+        
+        bool ef_all_avg;
 
     public:
         
@@ -195,6 +200,7 @@ class contamFinder{
         void use_weights();
         void no_weights();
         void set_num_threads(int nt);
+        void no_reassign();
 
         // Get variance on contamination profile by bootstrapping it and fitting
         // a Dirichlet distribution
