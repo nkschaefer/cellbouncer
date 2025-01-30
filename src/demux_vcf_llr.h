@@ -63,10 +63,11 @@ bool populate_llr_table(std::map<std::pair<int, int>,
     double doublet_rate,
     double error_rate_ref,
     double error_rate_alt,
+    std::map<int, double>* prior_weights=NULL,
     bool incl_contam=false,
     double contam_rate=0.0,
-    std::map<std::pair<int, int>, std::map<std::pair<int, int>, double> >* amb_fracs=NULL,
-    std::map<int, double>* prior_weights=NULL);
+    double contam_rate_var=0.0,
+    std::map<std::pair<int, int>, std::map<std::pair<int, int>, double> >* amb_fracs=NULL);
 
 // Incorporate ref & alt mismatch rates into a probability
 double adjust_p_err(double p, double e_r, double e_a);
