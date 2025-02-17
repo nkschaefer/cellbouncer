@@ -37,7 +37,7 @@ adata = sc.read_h5ad('[scanpy_saved].h5ad')
 
 # Load CellBouncer assignments file
 assn = pd.read_csv('[output_prefix].assignments', \
-    sep='\t', index_col=0, header=['individual', 'droplet_type', 'individual_llr'])
+    sep='\t', index_col=0, names=['individual', 'droplet_type', 'individual_llr'])
 
 # Merge CellBouncer data into cell metadata, without dropping any cells
 adata.obs = adata.obs.merge(assn, how='left', left_index=True, right_index=True)
