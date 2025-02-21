@@ -349,7 +349,7 @@ def get_fit_model_script_extra(libname){
 
 def get_fn_arg_str(fns, arg){
     str = ""
-    first = true
+    def first = true
     for (fn in fns){
         if (!first){
             str += " "
@@ -1005,17 +1005,21 @@ def suffixes_triple = [
  *   [file_index, lib, [r1, r2]]
  */
 def get_rna_channel(extensions, suffixes, include_index){
+    
     // Read library IDs from params.libs
-    def library_ids = Channel.fromPath(params.libs).splitText().map { id ->
-        id = id.trim()
-        return id
-    }
+    def library_ids = Channel.fromList(file(params.libs).readLines().each{ it.trim() })
+    //def library_ids = Channel.fromPath(params.libs).splitText().map { id ->
+    //    id = id.trim()
+    //    return id
+    //}
+
     // Get all RNA-seq read pairs 
     def patterns = cartesian_product(suffixes, extensions).collect { 
         "${params.rna_dir}/${it.join()}"
     }     
+
     def rna_pairs = Channel.fromFilePairs(patterns).map{ id, reads -> 
-        [ id.replaceFirst(/_S(\d+)_L(\d+)/, ''), reads ]
+        [ id.replaceFirst(/_L(\d+)$/, '').replaceFirst(/_S(\d+)$/, ''), reads ] 
     }
     
     if (include_index){
@@ -1072,6 +1076,7 @@ def get_rna_channel(extensions, suffixes, include_index){
  *   [file_index, libname, name, [r1, r2, r3]]
  */
 def get_atac_channel(atac_map, include_index){
+    
     def atac_library_ids = Channel.fromPath(params.libs).splitText().map { id ->
         def idtrim = id.trim()
         if (idtrim in atac_map){
@@ -1082,7 +1087,8 @@ def get_atac_channel(atac_map, include_index){
     def atac_triples = Channel.fromPath("${params.atac_dir}/*_R1*.fastq.gz").map{ fn ->
         def r1 = fn.toString().trim()
         def match = (r1 =~ /(.*)\/(.*)\_R1(_\d+)?\.(fastq|fq)(\.gz)?/)[0]
-        def libname_atac = match[2].replaceFirst(/_S(\d+)_L(\d+)/, '')
+        def libname_atac = match[2].replaceFirst(/_L(\d+)$/, '').replaceFirst(/_S(\d+)$/, '') 
+        //def libname_atac = match[2].replaceFirst(/_S(\d+)_L(\d+)/, '')
         def dirn = ""
         if (match[1] != null && match[1] != ""){
             dirn += match[1] + '/'
@@ -1164,7 +1170,7 @@ def get_custom_channel(extensions, suffixes, custom_map, custom_names, include_i
         "${params.custom_dir}/${it.join()}"
     }     
     def custom_pairs = Channel.fromFilePairs(custom_patterns).map{ id, reads -> 
-        [ id.replaceFirst(/_S(\d+)_L(\d+)/, ''), reads ]
+        [ id.replaceFirst(/_L(\d+)$/, '').replaceFirst(/_S(\d+)$/, ''), reads ] 
     }
     
     if (include_index){
@@ -1307,7 +1313,6 @@ workflow{
     }
      
     indexed_rna_pairs = get_rna_channel(extensions, suffixes, true) 
-    
     joined = null
     
     def kmerSplit = params.kmers.toString().split("/")
@@ -1317,7 +1322,7 @@ workflow{
         to_count = indexed_rna_pairs.map{ x -> 
             return [x[0], x[1], x[4], x[5], file(params.whitelist), kmerBase]
         }.combine(kmerfiles)
-
+        
         filestojoin = count_kmers(to_count).groupTuple()
         
         // Combine counts
