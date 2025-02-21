@@ -41,6 +41,76 @@ struct job_status{
     bool changed;
 };
 
+struct vcf_line{
+    int tid;
+    int pos;
+    char ref;
+    char alt;
+    double qual;
+    std::vector<int> gts;
+   
+    vcf_line(){
+        this->tid = -1;
+        this->pos = -1;
+        this->qual = 0;
+        this->ref = 'N';
+        this->alt = 'N';
+    } 
+    vcf_line(int t, int p, int q, char r, char a){
+        this->tid = t;
+        this->pos = p;
+        this->qual = q;
+        this->ref = r;
+        this->alt = a;
+    }
+    void add_gt(int g){
+        this->gts.push_back(g);
+    }
+    void write_record(htsFile* outf, bcf_hdr_t* header, bcf1_t* record){
+        if (tid < 0 || pos < 0){
+            return;
+        }
+        // Update chrom/pos
+        record->rid = this->tid;
+        record->pos = this->pos;
+        record->qual = this->qual;
+
+        char alleles[4];
+        alleles[0] = this->ref;
+        alleles[1] = ',';
+        alleles[2] = this->alt;
+        alleles[3] = '\0';
+        
+        // set alleles
+        bcf_update_alleles_str(header, record, &alleles[0]);
+
+        // update GTs
+        int32_t* gts2 = (int*)malloc(this->gts.size()*2*sizeof(int));
+        for (int i = 0; i < this->gts.size(); ++i){
+            if (gts[i] == 0){
+                gts2[i*2] = bcf_gt_unphased(0);
+                gts2[i*2+1] = bcf_gt_unphased(0);
+            }
+            else if (gts[i] == 1){
+                gts2[i*2] = bcf_gt_unphased(0);
+                gts2[i*2+1] = bcf_gt_unphased(1);
+            }
+            else if (gts[i] == 2){
+                gts2[i*2] = bcf_gt_unphased(1);
+                gts2[i*2+1] = bcf_gt_unphased(1);
+            }
+            else{
+                gts2[i*2] = bcf_gt_missing;
+                gts2[i*2+1] = bcf_gt_missing;
+            }
+        }
+        bcf_update_genotypes(header, record, gts2, gts.size()*2);
+        free(gts2);
+        bcf_write1(outf, header, record);
+    }
+};
+
+
 // This class exists solely to make re-genotyping possible in
 // multiple threads (it handles thread management).
 
@@ -71,7 +141,7 @@ class regenotyper{
         
         void add_job(int tid, int pos, var* v, map<int, pair<float, float> >* m);
         std::mutex output_mutex;
-        std::map<std::pair<int, int>, std::string> output_lines;
+        std::map<std::pair<int, int>, vcf_line> output_lines;
         std::map<std::pair<int, int>, job_status> output_success;
         
         void launch_threads();
