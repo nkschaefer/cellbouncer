@@ -719,7 +719,7 @@ bool populate_llr_table(map<pair<int, int>,
             // If same site type, we can't distinguish between the
             // two individuals from this piece of information
             if (z->first.first != -1 && y->first.second != z->first.second){
-                
+
                 if (incl_contam){
                     exp1 = (1.0-contam_rate)*((double)y->first.second/2.0) + 
                         contam_rate*((*amb_fracs)[y->first][z->first]);

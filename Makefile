@@ -27,7 +27,7 @@ all: dependencies demux_vcf demux_mt demux_tags demux_species quant_contam doubl
 dependencies: lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
 
 demux_vcf: src/demux_vcf.cpp build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o build/demux_vcf_llr.o $(DEPS)
-	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o build/demux_vcf_llr.o src/demux_vcf.cpp -o demux_vcf $(LFLAGS) $(DEPS) $(DEPS2)
+	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o build/demux_vcf_llr.o src/demux_vcf.cpp -o demux_vcf $(LFLAGS) $(DEPS) $(DEPS2)
 
 demux_mt: src/demux_mt.cpp src/common.h build/common.o build/demux_vcf_llr.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -D MAX_SITES=$(MAX_SITES) build/common.o build/demux_vcf_llr.o src/demux_mt.cpp -o demux_mt $(LFLAGS) $(DEPS) $(DEPS2)

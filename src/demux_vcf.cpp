@@ -53,8 +53,10 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
     set<int>& allowed_assignments2,
     double doublet_rate,
     double error_rate_ref,
-    double error_rate_alt){
-    
+    double error_rate_alt,
+    bool use_prior_weights,
+    map<int, double>& prior_weights){
+
     assignments.clear();
     assignments_llr.clear();
 
@@ -92,9 +94,17 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
         // pair of identities
         map<int, map<int, double> > llrs;
         llr_table tab(samples.size());
-        bool success = populate_llr_table(x->second, llrs, tab, samples.size(), allowed_assignments, 
-            allowed_assignments2,doublet_rate, error_rate_ref, error_rate_alt);
         
+        bool success;
+        if (use_prior_weights){
+            success = populate_llr_table(x->second, llrs, tab, samples.size(), allowed_assignments,
+                allowed_assignments2, doublet_rate, error_rate_ref, error_rate_alt, &prior_weights);
+        }
+        else{
+            success = populate_llr_table(x->second, llrs, tab, samples.size(), allowed_assignments, 
+                allowed_assignments2,doublet_rate, error_rate_ref, error_rate_alt);
+        }
+
         // Debugging only: print this table and quit
         if (print_llrs){
             string bc_str = bc2str(x->first);
@@ -119,7 +129,7 @@ void assign_ids(robin_hood::unordered_map<unsigned long, map<pair<int, int>,
         if (success){
             tab.get_max(assn, llr_final);
         }
-        
+
         // Only store information if an assignment has been made (don't accept equal
         // likelihood of two choices)
         if (llr_final > 0.0){
@@ -152,6 +162,43 @@ double ll_err(const vector<double>& params, const map<string, double>& data_d,
     return ll;
 }
 
+double ll_err_persample(const vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i){
+    
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    int ac1 = data_i.at("ac1");
+    int ac2 = data_i.at("ac2");
+    int idx1 = data_i.at("idx1");
+    int idx2 = data_i.at("idx2");
+    
+    double p;
+    if (idx2 == -1){
+        double p0 = (double)ac1/2.0;
+        double e_r = params[idx1*2];
+        double e_a = params[idx1*2 + 1];
+        p = p0 - p0*e_a + (1.0 - p0)*e_r;
+    }
+    else{
+        double p0a = (double)ac1/2.0;
+        double p0b = (double)ac2/2.0;
+        double e_ra = params[idx1*2];
+        double e_aa = params[idx1*2+1];
+        double e_rb = params[idx2*2];
+        double e_ab = params[idx2*2+1];
+        p = 0.5*(p0a - p0a*e_aa + (1.0-p0a)*e_ra) + 
+            0.5*(p0b - p0b*e_ab + (1.0-p0b)*e_rb);
+    }
+    if (p <= 0){
+        p = DBL_MIN*1e6;
+    }
+    else if (p >= 1){
+        p = 1.0-DBL_MIN*1e6;
+    }
+    double ll = dbinom(n, k, p)/log2(exp(1));
+    return ll;
+}
+
 /**
  * Derivative of log likelihood function (wrt error rates), for use by
  * multivar_ml_solver, for re-estimating reference and alt allele
@@ -162,9 +209,9 @@ void dll_err(const vector<double>& params, const map<string, double>& data_d,
     
     double n = data_d.at("n");
     double k = data_d.at("k");
-    double p0 = data_d.at("exp");
     double e_r = params[0];
     double e_a = params[1];
+    double p0 = data_d.at("exp");
     double p = p0 - p0*e_a + (1.0 - p0)*e_r;
     if (p <= 0){
         p = DBL_MIN*1e6;
@@ -179,6 +226,60 @@ void dll_err(const vector<double>& params, const map<string, double>& data_d,
     double dp_de_r = 1.0 - p0;
     results[0] = dy_dp * dp_de_r;
     results[1] = dy_dp * dp_de_a;
+}
+
+void dll_err_persample(const vector<double>& params, const map<string, double>& data_d, 
+    const map<string, int>& data_i, vector<double>& results){
+    
+    double n = data_d.at("n");
+    double k = data_d.at("k");
+    int idx1 = data_i.at("idx1");
+    int idx2 = data_i.at("idx2");
+    int ac1 = data_i.at("ac1");
+    int ac2 = data_i.at("ac2");
+    
+    double p;
+    if (idx2 == -1){
+        double p0 = (double)ac1/2.0;
+        double e_r = params[idx1*2];
+        double e_a = params[idx1*2+1];
+        p = p0 - p0*e_a + (1.0-p0)*e_r;
+        
+        if (p <= 0){
+            p = DBL_MIN*1e6;
+        }
+        else if (p >= 1.0){
+            p = 1.0-DBL_MIN*1e6;
+        }
+        
+        double dy_dp = (k-n*p)/(p-p*p);
+        double dp_de_a = -p0;
+        double dp_de_r = 1.0 - p0;
+        results[idx1*2] += dy_dp * dp_de_r;
+        results[idx1*2+1] += dy_dp * dp_de_a;
+    }
+    else{
+        double p0a = (double)ac1/2.0;
+        double p0b = (double)ac2/2.0;
+        double e_ra = params[idx1*2];
+        double e_aa = params[idx2*2+1];
+        double e_rb = params[idx2*2];
+        double e_ab = params[idx2*2+1];
+        p = 0.5*(p0a - p0a*e_aa + (1.0-p0a)*e_ra) + 
+            0.5*(p0b - p0b*e_ab + (1.0-p0b)*e_rb);
+        if (p <= 0){
+            p = DBL_MIN*1e6;
+        }
+        else if (p >= 1.0){
+            p = 1.0-DBL_MIN*1e6;
+        }
+        
+        double dy_dp = (k-n*p)/(p-p*p);
+        results[idx1*2] += dy_dp * 0.5*(1.0 - p0a);
+        results[idx2*2] += dy_dp * 0.5*(1.0 - p0b);
+        results[idx1*2+1] += dy_dp * -0.5*p0a;
+        results[idx2*2+1] += dy_dp * -0.5*p0b;
+    }
 }
 
 /**
@@ -254,6 +355,92 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
 
     solver.solve();
     
+    return make_pair(solver.results[0], solver.results[1]);
+}
+
+pair<double, double> infer_error_rates_persample(robin_hood::unordered_map<unsigned long, map<pair<int, int>, 
+    map<pair<int, int>, pair<float, float> > > >& indv_allelecounts,
+    int n_samples,
+    robin_hood::unordered_map<unsigned long, int>& assn,
+    robin_hood::unordered_map<unsigned long, double>& assn_llr,
+    double error_ref,
+    double error_alt,
+    double error_sigma,
+    vector<string>& samples){
+   
+    vector<double> n;
+    vector<double> k;
+    vector<int> ac1;
+    vector<int> ac2;
+    vector<double> expected;
+    vector<double> weights_llr;
+    vector<int> idx1;
+    vector<int> idx2;
+
+    vector<double> params;
+    for (int i = 0; i < n_samples; ++i){
+        params.push_back(error_ref);
+        params.push_back(error_alt);
+    }
+
+    pair<int, int> nullkey = make_pair(-1, -1);
+    for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin(); a != assn.end();
+        ++a){
+        
+        double weight = assn_llr[a->first];
+        bool is_combo = false;
+        pair<int, int> combo;
+        if (a->second >= n_samples){
+            is_combo = true;
+            combo = idx_to_hap_comb(a->second, n_samples);
+        }
+        for (map<pair<int, int>, map<pair<int, int>, pair<float, float> > >::iterator x = 
+            indv_allelecounts[a->first].begin(); x != indv_allelecounts[a->first].end(); ++x){
+            if ((!is_combo && x->first.first == a->second) || (is_combo && x->first.first == combo.first)){
+                if (is_combo){
+                    for (map<pair<int, int>, pair<float, float> >::iterator y = x->second.begin(); y !=
+                        x->second.end(); ++y){
+                        if (y->first.first == combo.second){
+                            ac1.push_back(x->first.second);
+                            ac2.push_back(y->first.second);
+                            n.push_back(y->second.first + y->second.second);
+                            k.push_back(y->second.second);
+                            weights_llr.push_back(weight);
+                            idx1.push_back(combo.first);
+                            idx2.push_back(combo.second);
+                        }
+                    }
+                }
+                else{
+                    ac1.push_back(x->first.second);
+                    ac2.push_back(-1);
+                    n.push_back(x->second[nullkey].first + x->second[nullkey].second);
+                    k.push_back(x->second[nullkey].second);
+                    weights_llr.push_back(weight);
+                    idx1.push_back(a->second);
+                    idx2.push_back(-1);
+                }
+            }
+        }
+    }
+
+    optimML::multivar_ml_solver solver(params, ll_err_persample, dll_err_persample);
+    solver.add_data("n", n);
+    solver.add_data("k", k);
+    solver.add_data("ac1", ac1);
+    solver.add_data("ac2", ac2);
+    solver.add_data("idx1", idx1);
+    solver.add_data("idx2", idx2);
+    solver.add_weights(weights_llr);
+    for (int x = 0; x < params.size(); ++x){
+        solver.constrain_01(x);
+        solver.add_normal_prior(x, params[x], error_sigma, 0.0, 1.0);
+    }
+    solver.solve();
+    for (int i = 0; i < n_samples; ++i){
+        fprintf(stderr, "%s) %f %f\n", samples[i].c_str(), solver.results[i*2], solver.results[i*2+1]);
+    }
+    exit(0);
     return make_pair(solver.results[0], solver.results[1]);
 }
 
@@ -773,7 +960,7 @@ name prefix.\n", output_prefix.c_str());
                 exit(1);
             }
             fprintf(stderr, "Reading VCF/BCF header...\n");
-            nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, false, true);
+            nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, true, true);
             samples_from_vcf = true;
         }
     }
@@ -783,7 +970,9 @@ name prefix.\n", output_prefix.c_str());
             exit(1);
         }
         fprintf(stderr, "Loading variants from VCF/BCF...\n");
-        nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, dump_conditional, load_counts);
+        bool hdr_only = false;
+        bool skip_seq2tid = dump_conditional;
+        nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, hdr_only, skip_seq2tid);
         // Compute conditional matching fractions for quant_contam (can disable)
         if (!disable_conditional){
             map<pair<int, int>, map<int, float> > conditional_match_fracs;
@@ -1018,19 +1207,34 @@ all possible individuals\n", idfile_doublet.c_str());
     robin_hood::unordered_map<unsigned long, double> assn_llr;
     
     fprintf(stderr, "Finding likeliest identities of cells...\n");
+    map<int, double> prior_weights;
     
-    // Get assignments of cell barcodes
-    
-    assign_ids(indv_allelecounts, samples, assn, assn_llr, 
-        allowed_ids, allowed_ids, doublet_rate, error_ref, error_alt);
+    // Note: prior weights are a thing built in here in case we want to influence
+    // proportions of different types of IDs based on expectation. 
+    // 
+    // The thought was that if proportions of certain IDs change drastically before
+    // and after inferring error rates, then those might be more present in ambient
+    // RNA and we could downweight their expected proportions in the pool.
+    //
+    // This doesn't work well as of now and isn't being used, but I'm keeping the
+    // code around in case we want to use it in the future.
 
+    // Get assignments of cell barcodes
+    map<pair<int, int>, double> er_map;
+    map<pair<int, int>, double> ea_map; 
+    assign_ids(indv_allelecounts, samples, assn, assn_llr, 
+        allowed_ids, allowed_ids, doublet_rate, error_ref, error_alt,
+        false, prior_weights);
+
+    robin_hood::unordered_map<unsigned long, int> assncpy = assn;
+    
     // Now, from these assignments, compute the likeliest error rate, weighting by
     //  log likelihood ratio of assignment.
     
-    fprintf(stderr, "Finding likeliest alt/ref switch error rates...\n"); 
+    fprintf(stderr, "Finding likeliest alt/ref switch error rates...\n");
     pair<double, double> err_new = infer_error_rates(indv_allelecounts, samples.size(),
         assn, assn_llr, error_ref, error_alt, error_sigma, samples);
-   
+    
     double error_ref_posterior = err_new.first;
     double error_alt_posterior = err_new.second; 
     
@@ -1041,8 +1245,68 @@ all possible individuals\n", idfile_doublet.c_str());
     // Re-assign individuals using posterior error rates
     fprintf(stderr, "Re-inferring identities of cells...\n");
     assign_ids(indv_allelecounts, samples, assn, assn_llr,
-        allowed_ids, allowed_ids, doublet_rate, error_ref_posterior, error_alt_posterior);
+        allowed_ids, allowed_ids, doublet_rate, error_ref_posterior, error_alt_posterior,
+        false, prior_weights);
     
+    // This function can infer sample-specific error rates, which might be better able to 
+    // deal with ambient RNA. One drawback is that we can't infer rates for individuals
+    // not yet assigned any cells. Another is that this is a double-edged sword:
+    // Good: if there's a ton of ambient RNA from one ID that makes another ID look less
+    //   likely, then we account for that and maybe get the correct ID more often.
+    // Bad: if we mistakenly ID a bunch of cells to the wrong ID in the first round (because
+    //   of ambient RNA contamination), then we are assuming those IDs are often correct
+    //   and perhaps making it more likely to choose it on the next round.
+    // For now, stick to the original plan, which treats all individuals the same and relies
+    //   on the genotype data.    
+    //infer_error_rates_persample(indv_allelecounts, samples.size(), assn, assn_llr, error_ref,
+    //    error_alt, error_sigma, samples);
+
+    map<int, int> assncount1;
+    map<int, int> assncount2;
+    int a2tot = 0;
+    int a1tot = 0;
+    for (int i = 0; i < samples.size(); ++i){
+        assncount2.insert(make_pair(i, 1));
+        a2tot++;
+        assncount1.insert(make_pair(i, 1));
+        a1tot++;
+        for (int j = i + 1; j < samples.size(); ++j){
+            int k = hap_comb_to_idx(i, j, samples.size());
+            assncount2.insert(make_pair(k, 1));
+            a2tot++;
+            assncount1.insert(make_pair(k, 1));
+            a1tot++;
+        }
+    }
+    for (robin_hood::unordered_map<unsigned long, int>::iterator a = assncpy.begin(); a != 
+        assncpy.end(); ++a){
+        assncount1[a->second]++;
+        a1tot++;
+    }
+    for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin(); a != 
+        assn.end(); ++a){
+        assncount2[a->second]++;
+        a2tot++;
+    }
+    /*
+    for (map<int, int>::iterator a = assncount2.begin(); a != assncount2.end(); ++a){
+        double p = pbinom(a2tot, assncount2[a->first], (double)assncount1[a->first]/(double)a1tot);
+        if (p == 1.0){
+            p = 1-1e-6;
+        }
+        else if (p == 0){
+            p = 1e-6;
+        }
+        //p = log2(assncount2[a->first]) - log2(assncount1[a->first]);
+        fprintf(stderr, "%s) %d %d | %d %d | %f\n", idx2name(a->first, samples).c_str(),
+            assncount1[a->first], a1tot, assncount2[a->first], a2tot,
+            log2(p));
+            //1-pbinom(a1tot, assncount2[a->first], (double)assncount1[a->first]/(double)a1tot)); 
+        prior_weights.insert(make_pair(a->first, p));
+    }
+    */
+
+    bool do_again = true;
     if (idfile_doublet_given){
         // The user gave an allowed list of specific doublet combinations, and we included
         // all possible singlets from the allowable doublets in the first round. If any of 
@@ -1057,11 +1321,13 @@ all possible individuals\n", idfile_doublet.c_str());
                 fprintf(stderr, "Re-inferring with unlikely singlet identities removed...\n");
                 assign_ids(indv_allelecounts, samples, assn, assn_llr,
                     allowed_ids, allowed_ids2, doublet_rate, error_ref_posterior,
-                    error_alt_posterior); 
+                    error_alt_posterior,
+                    false, prior_weights); 
+                do_again = false;
             }
         }
     }
-    
+
     map<int, double> p_ncell;
     map<int, double> p_llr;
     id_qc(assn, assn_llr, p_ncell, p_llr);

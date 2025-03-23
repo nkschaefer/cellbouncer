@@ -45,13 +45,11 @@ int read_vcf(string& filename,
     bool hdr_only,
     bool skip_seq2tid,
     bool allow_missing){
-    
     // Map sequence names to TIDs for storage
     map<string, int> seq2tid;
     if (!hdr_only && !skip_seq2tid){
         seq2tid = reader.get_seq2tid();
     }
-
     bcf_hdr_t* bcf_header;
     bcf1_t* bcf_record = bcf_init();
     htsFile* bcf_reader = bcf_open(filename.c_str(), "r");
@@ -73,7 +71,6 @@ int read_vcf(string& filename,
     
     // blacklist for duplicate variants
     set<pair<int, int> > bl;
-
     while(bcf_read(bcf_reader, bcf_header, bcf_record) == 0){
         string chrom = bcf_hdr_id2name(bcf_header, bcf_record->rid);
         // Convert to BAM-compatible TID
