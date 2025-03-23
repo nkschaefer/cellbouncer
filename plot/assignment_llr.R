@@ -12,9 +12,16 @@ if (length(args) < 1){
     write("    cutoffs. If the proportions drastically change after a particular", stderr())
     write("    (low) cutoff and stabilize after, then it may be a reasonable cutoff", stderr())
     write("    to use.", stderr())
+    write("Optional second argument D keeps all doublet identities in the plot.", stderr())
+    write("    Default behavior is to label all unique doublet identities \"Multiplet.\"", stderr())
     write("Creates PDF and PNG plots named <output_prefix>.llr.pdf and", stderr())
     write("    <output_prefix>.llr.png.", stderr())
     q()
+}
+
+keep_doub <- 0
+if (length(args) > 1 & args[2] == 'D'){
+    keep_doub <- 1
 }
 
 assn <- read.table(paste(args[1], '.assignments', sep=''))
@@ -40,8 +47,10 @@ if (sapply(assn, class)[3] == "integer"){
         colnames(assncpy) <- c("V1", "V2", "V3", "V4")
     }
 }
-if (length(rownames(assn[which(assn$V3 != "S"),])) > 0){
-    assn[which(assn$V3 != "S"),]$V2 <- "Multiplet"
+if (! keep_doub){
+    if (length(rownames(assn[which(assn$V3 != "S"),])) > 0){
+        assn[which(assn$V3 != "S"),]$V2 <- "Multiplet"
+    }
 }
 
 df <- data.frame(Var1=c(), Freq=c(), type=c(), quant=c())
@@ -80,11 +89,14 @@ if (ncol <= 20){
 }
 name2col <- setNames(pal, names)
 
+if (keep_doub){
+    df <- df[which(df$type=="Individual"),]
+}
+
 plt <- ggplot(df) +
     #geom_point(aes(x=quant, y=Freq, colour=Var1)) +
     #geom_line(aes(x=quant, y=Freq, colour=Var1)) +
     geom_bar(aes(x=quant, y=Freq, fill=Var1), stat='identity') +
-    facet_grid(type~.) +
     theme_bw() +
     scale_x_log10("Log likelihood ratio cutoff") +
     scale_y_continuous("Number of cells") +
@@ -99,6 +111,10 @@ plt <- ggplot(df) +
           strip.text.y=element_text(size=14, face="bold"),
           legend.position="top",
           legend.title=element_blank())
+
+if (!keep_doub){
+    plt <- plt + facet_grid(type~.)
+}
 
 ggsave(plt, file=paste(args[1], '.llr.pdf', sep=''), width=9, height=7, bg='white')
 ggsave(plt, file=paste(args[1], '.llr.png', sep=''), width=9, height=7, units='in', bg='white')
