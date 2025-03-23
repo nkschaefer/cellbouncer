@@ -187,7 +187,8 @@ bool contam_profiler_gex::get_profile(){
         return false;
     }
 
-    vector<double> grp1;
+    vector<double> genevec;
+
     vector<vector<double> > grps2;
     vector<vector<double> > ns;
     vector<vector<int> > ns_idx;
@@ -208,9 +209,10 @@ bool contam_profiler_gex::get_profile(){
         grps2.push_back(v);
         grps2tot.push_back((double)n_features);
     }
-
+    double genevec_tot = 0.0;
     for (int i = 0; i < n_features; ++i){
-        grp1.push_back(1.0);
+        genevec.push_back(1.0);
+        genevec_tot += 1.0;
         for (int j = 0; j < n_grp2; ++j){
             grps2[j].push_back(1.0);
         }
@@ -219,12 +221,13 @@ bool contam_profiler_gex::get_profile(){
         vector<int> v2;
         ns_idx.push_back(v2);
     }
-    double grp1tot = (double)n_features;
     int num_added = 0;
     double grp2tot = (double)n_features;
     
     vector<bool> gene_seen(n_features, false);
-
+    
+    vector<vector<double> > grp1_dirsamps(n_features);
+    
     for (robin_hood::unordered_map<unsigned long, map<int, long int> >::iterator m = mtx->begin();
         m != mtx->end(); ++m){
 
@@ -243,44 +246,33 @@ bool contam_profiler_gex::get_profile(){
         int cprev = -1;
         for (map<int, long int>::iterator c = m->second.begin(); c != m->second.end(); ++c){
             
-            if (skip_genes_given && skip_genelist.find(c->first) != skip_genelist.end()){
-                // Pretend it wasn't in the matrix - this is equivalent to 
-                // setting count to 0 here (it will receive filler data
-                // after this loop)
-                continue;
-            }
+            if (!skip_genes_given || skip_genelist.find(c->first) == skip_genelist.end()){
             
-            gene_seen[c->first] = true;
+                gene_seen[c->first] = true;
 
-            double count = (double)c->second;
-            
-            celltot += count;
-            if (cell_assn >= 0){
-                if (cell_assn >= n_samples){
-                    pair<int, int> comb = idx_to_hap_comb(cell_assn, n_samples);
-                    grp1[comb.first] += 0.5*(*contam_prof)[comb.first]*count;
-                    grp1[comb.second] += 0.5*(*contam_prof)[comb.second]*count;
-                    grp1tot += 0.5*(*contam_prof)[comb.first]*count + 0.5*(*contam_prof)[comb.second]*count;
-                }
-                else{ 
-                    grp1[c->first] += (*contam_prof)[cell_assn] * count;
-                    grp1tot += (*contam_prof)[cell_assn] * count;
+                double count = (double)c->second;
+                
+                double count_contam = (*contam_rate)[m->first] * count;
+                genevec_tot += count_contam;
+
+                celltot += count;
+                
+                genevec[c->first] += count_contam;
+
+                if (clust >= 0){
+                    grps2[clust][c->first] += count;
+                    grps2tot[clust] += count;
+
+                    ns_idx[i].push_back(c->first);
+                    for (int j = cprev+1; j < c->first; ++j){
+                        ns[j].push_back(0);
+                    }
+                    ns[c->first].push_back(count);
+                    i++;
+                    cprev = c->first;
                 }
             }
-            if (clust >= 0){
-                grps2[clust][c->first] += count;
-                grps2tot[clust] += count;
-
-                ns_idx[i].push_back(c->first);
-                for (int j = cprev+1; j < c->first; ++j){
-                    ns[j].push_back(0);
-                }
-                ns[c->first].push_back(count);
-                i++;
-                cprev = c->first;
-            }
-        }
-        
+        } 
         cells_tot.emplace(m->first, celltot);
 
         if (clust >= 0){
@@ -303,12 +295,13 @@ bool contam_profiler_gex::get_profile(){
         }
     }
     
+
     // Get group means to help set initial values
     for (int j = 0; j < grps2.size(); ++j){ 
         for (int i = 0; i < n_features; ++i){
             grps2[j][i] /= grp2tot;
             if (j == 0){
-                grp1[i] /= grp1tot;
+                genevec[i] /= genevec_tot;
             }
         }
     }
@@ -323,13 +316,14 @@ bool contam_profiler_gex::get_profile(){
     double minval = 1e-100;
     for (int i = 0; i < n_features; ++i){
         if (!gene_seen[i]){
-            grp1[i] = minval;
+            genevec[i] = minval;
             for (int j = 0; j < grps2.size(); ++j){
                 grps2[j][i] = minval;
             }
         }
     }
-    mnsolver.add_param_grp(grp1);
+    mnsolver.add_param_grp(genevec);
+    
     for (int i = 0; i < grps2.size(); ++i){
         mnsolver.add_param_grp(grps2[i]);
     }
@@ -339,10 +333,7 @@ bool contam_profiler_gex::get_profile(){
     mnsolver.add_data("grp_idx", grp_idx);
     char buf[30];
     for (int i = 0; i < n_features; ++i){
-        if (skip_genes_given && skip_genelist.find(i) != skip_genelist.end()){
-            continue;
-        }
-        else{
+        if (!skip_genes_given || skip_genelist.find(i) == skip_genelist.end()){
             sprintf(&buf[0], "n_%d", i);
             string bufstr = buf;
             mnsolver.add_data(bufstr, ns[i]);
@@ -351,7 +342,6 @@ bool contam_profiler_gex::get_profile(){
             mnsolver.add_data(bufstr, ns_idx[i]);
         }
     }
-    //mnsolver.set_delta(1);
     fprintf(stderr, "Inferring ambient RNA expression profile...\n");
     
     prof_ambient.clear();
@@ -387,33 +377,6 @@ bool contam_profiler_gex::get_profile(){
         return false;
     }
     
-    if (profile_set){
-        // Now make a second pass and infer per gene, so we can fit a Dirichlet to use as a prior.
-        vector<vector<double> > dirsamps;
-        for (int i = 0; i < tots.size(); ++i){
-            vector<double> tots_this{ tots[i] };
-            vector<double> cs_this{ cs[i] };
-            vector<int> grp_idx_this{ grp_idx[i] };
-            char buf2[30];
-            for (int j = 0; j < n_features; ++j){
-                if (skip_genes_given && skip_genelist.find(j) != skip_genelist.end()){
-                    continue;
-                }
-                else if (ns_idx[i][j] == -1){
-                    break;
-                }
-                else{
-                    // THIS IS NOT DONE YET
-                    sprintf(&buf2[0], "n_%d", j);
-                    string bufstr = buf;
-                    mnsolver.add_data(bufstr, ns[i]);
-                    sprintf(&buf[0], "i_%d", i);
-                    bufstr = buf;
-                    mnsolver.add_data(bufstr, ns_idx[i]);
-                }
-            }               
-        }
-    } 
     if (has_ase){
         // Infer ASE-ness of each gene
         infer_ase();
@@ -472,14 +435,22 @@ bool contam_profiler_gex::decontam(){
         double ambtot = 0.0;
         
         for (map<int, long int>::iterator m2 = m->second.begin(); m2 != m->second.end(); ++m2){
-            ambtot += prof_ambient[m2->first];
+            if (!skip_genes_given || skip_genelist.find(m2->first) == skip_genelist.end()){
+                ambtot += prof_ambient[m2->first];
+            }
+            else{
+                // Include full count in output matrix
+                mtx_decontam[m->first].insert(make_pair(m2->first, (double)m2->second));
+            }
         }
 
         deque<pair<double, int> > rms;
         for (map<int, long int>::iterator m2 = m->second.begin(); m2 != m->second.end(); ++m2){
-            double rm_this = to_rm * (prof_ambient[m2->first] / ambtot);
-            double after_rm = (double)m2->second - rm_this;
-            rms.push_back(make_pair(after_rm, m2->first)); 
+            if (!skip_genes_given || skip_genelist.find(m2->first) == skip_genelist.end()){
+                double rm_this = to_rm * (prof_ambient[m2->first] / ambtot);
+                double after_rm = (double)m2->second - rm_this;
+                rms.push_back(make_pair(after_rm, m2->first)); 
+            }
         }
         sort(rms.begin(), rms.end());
         

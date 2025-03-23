@@ -16,6 +16,7 @@
 #include <set>
 #include <cstdlib>
 #include <utility>
+#include <regex>
 #include <math.h>
 #include <zlib.h>
 #include <htswrapper/robin_hood/robin_hood.h>
@@ -120,11 +121,16 @@ void help(int code){
     fprintf(stderr, "        type is RNA-seq (for 10X Genomics, \"Gene Expression\"). By default, includes all\n");
     fprintf(stderr, "        features and does not check.\n");
     fprintf(stderr, "    --clusts -c (RECOMMENDED) cell-cluster assignments computed by another program.\n");
-    fprintf(stderr, "    --round -R By default, decontaminated counts can be fractions, which might throw\n");
-    fprintf(stderr, "        off downstream analysis software that expects integer counts. This option ensures\n");
-    fprintf(stderr, "        output adjusted gene expression values are integers.\n");
+    fprintf(stderr, "    --noround -R By default, decontaminated counts are rounded to the nearest integer, in\n");
+    fprintf(stderr, "        a random fashion so that the appropriate number of bulk counts are removed. This\n");
+    fprintf(stderr, "        satisfies the requirements of some differential expression tools for integer counts.\n");
+    fprintf(stderr, "        Setting this option will instead allow unrounded decimal counts to be output.\n");
     fprintf(stderr, "    --skip_genes -g Provide a list of gene names, one per line, to exclude from considering\n");
     fprintf(stderr, "        as part of the contamination profile. Default = keep all genes.\n");
+    fprintf(stderr, "    --skip_genes_regex -G A string of pipe-separated regex-style gene name matching strings\n");
+    fprintf(stderr, "        to use to exclude genes from ambient RNA removal. Since ambient RNA is usually detected\n");
+    fprintf(stderr, "        from diploid genomic variants, for example, this can be used to exclude mitochondrial\n");
+    fprintf(stderr, "        genes (which were not included in the inference). Default = \"^MT-\"\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
@@ -420,11 +426,12 @@ void parse_prof(string& filename, map<int, double>& contam_prof, vector<string>&
     }
 }
 
-void parse_skip_genes(string& skipgenesfile, vector<string>& skipgenes){
+void parse_skip_genes(string& skipgenesfile, set<string>& skipgenes){
     ifstream inf(skipgenesfile);
     string line;
     while (inf >> line){
-        skipgenes.push_back(line);
+        fprintf(stderr, "Skipping gene (raw expr output): %s\n", line.c_str());
+        skipgenes.insert(line);
     }
 }
 
@@ -445,10 +452,9 @@ void process_gex_data(string& output_prefix,
     bool seurat,
     bool cellranger,
     bool underscore,
-    string& skipgenesfile){
+    string& skipgenesfile,
+    string& skip_genes_regex){
     
-    
-
     robin_hood::unordered_map<unsigned long, map<int, long int> > mtx;
     vector<string> features;
     fprintf(stderr, "Loading gene expression data...\n");
@@ -508,17 +514,35 @@ void process_gex_data(string& output_prefix,
     if (round){
         contam_profiler.round_counts();
     }
-    if (skipgenesfile != ""){
-        vector<string> skip_genes_txt;
-        parse_skip_genes(skipgenesfile, skip_genes_txt);
+    if (skipgenesfile != "" || skip_genes_regex != ""){
+        set<string> skip_genes_txt;
+        if (skipgenesfile != ""){
+            parse_skip_genes(skipgenesfile, skip_genes_txt);
+        }
+        // Also search for gene names using regex
+        if (skip_genes_regex != ""){
+            const std::regex skip_regex(skip_genes_regex);
+            for (int i = 0; i < features.size(); ++i){
+                smatch matches;
+                if (regex_search(features[i], matches, skip_regex)){
+                    fprintf(stderr, "Skipping gene (raw expr output): %s\n", features[i].c_str());
+                    skip_genes_txt.insert(features[i]);         
+                } 
+            }
+        }
+
+        if (skip_genes_txt.size() > 0){
+            fprintf(stderr, "To avoid skipping genes, omit -g and set option -G \"\"\n");
+        }
         // Map to int
         map<string, int> gene2idx;
         for (int i = 0; i < features.size(); ++i){
             gene2idx.insert(make_pair(features[i], i));
         }
         set<int> skipgenes;
-        for (int i = 0; i < skip_genes_txt.size(); ++i){
-            skipgenes.insert(gene2idx[skip_genes_txt[i]]);
+        for (set<string>::iterator sgt = skip_genes_txt.begin(); sgt != skip_genes_txt.end(); 
+            ++sgt){
+            skipgenes.insert(gene2idx[*sgt]);
         }
         contam_profiler.skip_genes(skipgenes);
     }
@@ -580,7 +604,9 @@ int main(int argc, char *argv[]) {
        {"feature_type", required_argument, 0, 't'},
        {"clusts", required_argument, 0, 'c'},
        {"skip_genes", required_argument, 0, 'g'},
+       {"skip_genex_regex", required_argument, 0, 'G'},
        {"num_threads", required_argument, 0, 'T'},
+       {"noround", no_argument, 0, 'R'},
        {0, 0, 0, 0} 
        
     };
@@ -607,13 +633,15 @@ int main(int argc, char *argv[]) {
     double doublet_rate = -1.0;
     int num_threads = 0;
     string skipgenesfile = "";
+    
+    string skip_genes_regex = R"(^MT-)";
 
     string barcodesfile = "";
     string featuresfile = "";
     string matrixfile = "";
     string feature_type = "";
     string clustfile = "";
-    bool round = false;
+    bool round = true;
 
     int option_index = 0;
     int ch;
@@ -621,7 +649,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "o:e:g:E:l:N:i:I:n:b:D:B:F:M:t:c:T:RrsCSUdwh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "o:e:g:G:E:l:N:i:I:n:b:D:B:F:M:t:c:T:RrsCSUdwh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -634,6 +662,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'g':
                 skipgenesfile = optarg;
+                break;
+            case 'G':
+                skip_genes_regex = optarg;
                 break;
             case 'i':
                 idfile = optarg;
@@ -701,7 +732,7 @@ int main(int argc, char *argv[]) {
                 clustfile = optarg;
                 break;
             case 'R':
-                round = true;
+                round = false;
                 break;
             case 'T':
                 num_threads = atoi(optarg);
@@ -745,8 +776,8 @@ be reported without concentration parameters (variance will be unknown).\n");
     }
     if (barcodesfile != "" && clustfile == ""){
         fprintf(stderr, "WARNING: inferring expression profile of contamination without \
-cluster information. Assuming one default expression profile for each individual (results will \
-be inaccurate if there is much cell type heterogeneity).\n");
+cluster information. Assuming one default expression profile for each individual (results may \
+be less accurate if there is much cell type heterogeneity).\n");
     }
     if (clustfile != "" && barcodesfile == ""){
         fprintf(stderr, "ERROR: --clusters/-c only applicable when loading gene expression data\n");
@@ -875,7 +906,8 @@ provided. Nothing to do.\n");
             seurat,
             cellranger,
             underscore,
-            skipgenesfile);
+            skipgenesfile,
+            skip_genes_regex);
     }
     return 0;
 }

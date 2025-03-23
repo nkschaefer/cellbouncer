@@ -2430,7 +2430,6 @@ void infer_mixprops(robin_hood::unordered_map<unsigned long, var_counts>& hap_co
                         fprintf(stdout, "%s\t%d\t%d\t%s\t%s\t%s\t%d\t%d\n", mito_chrom.c_str(),
                             vars[x].pos, vars[x].pos + 1, bcstr.c_str(), clust_ids[combo.first].c_str(),
                             clust_ids[combo.second].c_str(), pr1, pr2);
-                    
                     }
                 }
             }
