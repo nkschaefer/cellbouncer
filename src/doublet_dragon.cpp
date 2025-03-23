@@ -426,7 +426,7 @@ a file name prefix.\n", outbase.c_str());
             if (name2idx.count(id1) == 0){
                 fprintf(stderr, "ERROR: no singlets for ID %s (%s)\n", id1.c_str(), argv[i]);
                 for (map<string, pair<int, int> >::iterator ni = name2idx.begin(); ni != name2idx.end(); ++ni){
-                    fprintf(stderr, "%s\t%d %d\n", ni->first.c_str(), ni->second, ni->second.second);
+                    fprintf(stderr, "%s\t%d %d\n", ni->first.c_str(), ni->second.first, ni->second.second);
                 }
                 exit(1);
             }
