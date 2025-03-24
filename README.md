@@ -117,3 +117,6 @@ To load data from CellBouncer into a single cell analysis tool like [Seurat](htt
 
 ## Acknowledgments
 We thank [Helena Pinheiro](https://www.hpinheiro.com/) for creating the icons for `demux_species`, `demux_mt`, `demux_vcf`, `demux_tags`, `quant_contam`, and `bulkprops`, and the cell drawing used throughout.
+
+## Citing us
+CellBouncer is now described in a [preprint](https://www.biorxiv.org/content/10.1101/2025.03.23.644821v1) available on biorXiv. If you use CellBouncer in your work, please cite us. Thanks!
