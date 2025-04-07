@@ -127,9 +127,6 @@ void help(int code){
     fprintf(stderr, "       reads, provide both the ATAC-seq barcode whitelist (here) and the\n");
     fprintf(stderr, "       RNA-seq barcode whitelist (-w) (REQUIRED). If not multiome or\n");
     fprintf(stderr, "       RNA-seq only, this whitelist is not required.\n");
-    fprintf(stderr, "   --exact -e By default, up to one mismatch to the cell barcode list is allowed.\n");
-    fprintf(stderr, "       This option requires exact matches instead; this will speed up analysis at\n");
-    fprintf(stderr, "       the cost of identifying fewer reads per cell.\n");
     fprintf(stderr, "\n   ===== OTHER INPUT OPTIONS =====\n");
     fprintf(stderr, "   --k -k Base file name for species-specific k-mers. This should be created\n");
     fprintf(stderr, "       by get_unique_kmers, and there should be files with the ending .names,\n");
@@ -479,7 +476,6 @@ int main(int argc, char *argv[]) {
        {"k", required_argument, 0, 'k'},
        {"num_threads", required_argument, 0, 'T'},
        {"batch_num", required_argument, 0, 'b'},
-       {"exact", no_argument, 0, 'e'},
        {"disable_umis", no_argument, 0, 'u'},
        {"limit_ram", no_argument, 0, 'l'},
        {"libname", required_argument, 0, 'n'},
@@ -508,7 +504,6 @@ int main(int argc, char *argv[]) {
     vector<string> speciesnames;
     bool dump = false;
     int batch_num = -1;
-    bool exact_matches = false;
     string libname = "";
     bool cellranger = false;
     bool seurat = false;
@@ -523,7 +518,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "T:o:n:1:2:3:r:R:x:X:N:k:w:W:D:b:lAueCSUdh", 
+    while((ch = getopt_long(argc, argv, "T:o:n:1:2:3:r:R:x:X:N:k:w:W:D:b:lAuCSUdh", 
         long_options, &option_index )) != -1){
         switch(ch){
             case 0:
@@ -594,9 +589,6 @@ int main(int argc, char *argv[]) {
                 break;
             case 'b':
                 batch_num = atoi(optarg);
-                break;
-            case 'e':
-                exact_matches = true;
                 break;
             case 'u':
                 disable_umis = true;
@@ -740,9 +732,6 @@ file to demultiplex\n");
         exit(1);
     }
 
-    // Override user -- do exact matches only for k-mer counting
-    exact_matches = true;
-
     // Attempt to read unique kmer data
     if (kmerbase != ""){
         string sname = kmerbase + ".names";
@@ -816,9 +805,7 @@ data for %s with more species.\n", kmerbase.c_str());
     robin_hood::unordered_map<unsigned long, unsigned long> bc_conversion;
 
     if (!countsfile_given){
-        if (exact_matches){
-            wl.exact_matches_only();
-        }
+        wl.exact_matches_only();
         
         // Read barcode whitelist(s)
         if (whitelist_rna_filename != "" && whitelist_atac_filename != ""){
