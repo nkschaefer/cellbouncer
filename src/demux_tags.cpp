@@ -23,6 +23,7 @@
 #include <htswrapper/umi.h>
 #include <htswrapper/seq_fuzzy_match.h>
 #include <htswrapper/bc_scanner.h>
+#include <htswrapper/mex.h>
 #include <mixtureDist/functions.h>
 #include <mixtureDist/mixtureDist.h>
 #include <mixtureDist/mixtureModel.h>

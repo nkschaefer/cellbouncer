@@ -106,7 +106,7 @@ struct vcf_line{
         }
         bcf_update_genotypes(header, record, gts2, gts.size()*2);
         free(gts2);
-        bcf_write1(outf, header, record);
+        int ret = bcf_write1(outf, header, record);
     }
 };
 

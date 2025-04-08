@@ -20,6 +20,7 @@
 #include <math.h>
 #include <zlib.h>
 #include <htswrapper/robin_hood/robin_hood.h>
+#include <htswrapper/mex.h>
 #include "common.h"
 #include "ambient_rna.h"
 #include "ambient_rna_gex.h"

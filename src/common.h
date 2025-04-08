@@ -29,11 +29,6 @@ using namespace std;
 // (used by multiple programs)
 void print_libname_help();
 
-// Modifies a string representation of a cell barcode to include unique
-// library information before printing.
-void mod_bc_libname(string& bc, const string& libname, bool cellranger,
-   bool seurat, bool underscore);
-
 // Parse a file mapping cell barcodes to identities
 void parse_barcode_map(std::string& fn, 
     std::map<unsigned long, std::string>& bc2hap,
@@ -75,24 +70,6 @@ void derivative(std::map<double, double>& hist, std::map<double, double>& result
 
 // Find inflection point in a histogram
 double find_knee(std::map<double, double>& hist, double min_frac_to_allow);
-
-// Load a market exchange format (MEX) file
-bool parse_mex(const std::string& barcodesfile,
-    const std::string& featuresfile,
-    const std::string& matrixfile, 
-    robin_hood::unordered_map<unsigned long, map<int, long int> >& counts,
-    std::vector<std::string>& labels,
-    const std::string& featuretype = "");
-
-// Write a sparse matrix to disk in MEX format
-void write_mex(string& out_dir,
-    robin_hood::unordered_map<unsigned long, map<int, double> >& mtx,
-    std::vector<std::string>& features,
-    bool round_counts = false,
-    std::string barcode_group = "",
-    bool cellranger = false,
-    bool seurat = false,
-    bool underscore = false);
 
 void fit_dirichlet(std::vector<double>& mle_fracs,
     std::vector<std::vector<double> >& dirichlet_bootstraps,

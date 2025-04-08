@@ -47,7 +47,7 @@ doublet_dragon: src/doublet_dragon.cpp src/common.h build/common.o $(DEPS)
 bulkprops: src/bulkprops.cpp src/common.h build/common.o src/demux_vcf_hts.h build/demux_vcf_hts.o src/demux_vcf_io.h build/demux_vcf_io.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) build/common.o build/demux_vcf_io.o build/demux_vcf_hts.o src/bulkprops.cpp $(LFLAGS) $(DEPS) -o bulkprops $(DEPS2)
 
-utils/refine_vcf: src/refine_vcf.cpp src/common.h build/common.o src/demux_vcf_hts.h build/demux_vcf_hts.o $(DEPS)
+utils/refine_vcf: src/refine_vcf.cpp src/refine_vcf.h src/common.h build/common.o src/demux_vcf_hts.h build/demux_vcf_hts.o $(DEPS)
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) -g build/common.o build/demux_vcf_hts.o src/refine_vcf.cpp $(LFLAGS) $(DEPS) -o utils/refine_vcf $(DEPS2)
 
 utils/bam_indiv_rg: src/bam_indiv_rg.cpp src/common.h build/common.o $(DEPS)
