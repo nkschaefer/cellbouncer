@@ -15,8 +15,8 @@ def parse_args():
     parser.add_argument("--k", "-k", help="Length of k-mers", type=int,
         default=32)
     parser.add_argument("--num", "-N", help="Number of k-mers to sample. To \
-include all, set to -1 (Default = 20 million). Sampling fewer (i.e. 10 or 20 million) can save \
-memory and time at the cost of missing some cells.", type=int, default=20000000)
+include all, set to -1 (Default = sample all). Sampling fewer (i.e. 10 or 20 million) can save \
+memory and time at the cost of missing some cells.", type=int, default=-1)
     parser.add_argument("--out", "-o", help="Base name for output files. This \
 will be what you provide as the -k argument to demux_species.", required=True)
     parser.add_argument("--names", "-n", help="Names of species, space separated. \
