@@ -352,9 +352,36 @@ pair<double, double> infer_error_rates(robin_hood::unordered_map<unsigned long, 
     solver.constrain_01(1);
     solver.add_normal_prior(0, error_ref, error_sigma, 0.0, 1.0);
     solver.add_normal_prior(1, error_alt, error_sigma, 0.0, 1.0);
-
-    solver.solve();
     
+    solver.set_silent(true);
+
+    double sigma_curr = error_sigma;
+
+    bool success = false;
+    while (!success){
+        success = true;
+        // Sometimes, a math error will be encountered here. If that happens, set the 
+        // standard deviation on the prior lower and lower until we can solve with
+        // no error.
+        try{ 
+            solver.solve();
+        } 
+        catch (const int& err){
+            if (err == optimML::OPTIMML_MATH_ERR){
+                sigma_curr *= 0.5;
+                fprintf(stderr, "Decreasing prior sd to %f...\n", sigma_curr);
+                solver.set_prior_param(0, "sigma", sigma_curr);
+                solver.set_prior_param(1, "sigma", sigma_curr);
+                solver.set_param(0, error_ref);
+                solver.set_param(1, error_alt);        
+                success = false;
+            }
+            else{
+                fprintf(stderr, "Unknown error encountered while inferring error rates\n");
+                exit(1);
+            }
+        }
+    }
     return make_pair(solver.results[0], solver.results[1]);
 }
 
