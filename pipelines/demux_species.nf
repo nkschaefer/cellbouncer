@@ -1012,7 +1012,7 @@ def get_rna_channel(extensions, suffixes, include_index){
     //    id = id.trim()
     //    return id
     //}
-
+    
     // Get all RNA-seq read pairs 
     def patterns = cartesian_product(suffixes, extensions).collect { 
         "${params.rna_dir}/${it.join()}"

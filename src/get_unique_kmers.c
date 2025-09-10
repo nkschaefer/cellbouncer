@@ -186,15 +186,7 @@ double dust(char* kmer, int k, struct suffixnode* tree){
     return S;
 }
 
-/**
- * Given a k-mer that is unique to one set, checks to see whether it
- * is sufficiently complex, and if it is, writes it to the appropriate
- * output file.
- *
- * Returns 1 if it passes the DUST filter, 0 otherwise
- */
-int print_dat(FILE* outf, int k, char* kmer, int count, struct suffixnode* tree, double maxdust){
-    
+int print_dat_aux(char* kmer, int k, struct suffixnode* tree, double maxdust){
     double d = dust(kmer, k, tree);
 
     if (d > maxdust){
@@ -219,12 +211,34 @@ int print_dat(FILE* outf, int k, char* kmer, int count, struct suffixnode* tree,
             kmer[i] = 'N';
         }
     }
-    
-    fprintf(outf, "%d\t%s\n", count, &kmer[0]);
-    
     return 1;
-    //gzwrite(*outf, &kmer[0], k);
-    //gzwrite(*outf, "\n", 1);
+}
+
+/**
+ * Given a k-mer that is unique to one set, checks to see whether it
+ * is sufficiently complex, and if it is, writes it to the appropriate
+ * output file.
+ *
+ * Returns 1 if it passes the DUST filter, 0 otherwise
+ */
+int print_dat(FILE* outf, int k, char* kmer, int count, struct suffixnode* tree, double maxdust){
+    if (print_dat_aux(kmer, k, tree, maxdust) == 0){
+        return 0;
+    }    
+    fprintf(outf, "%d\t%s\n", count, &kmer[0]);
+    return 1;
+}
+
+/**
+ * Same as above, but writes to gzFile instead of FILE* 
+ */
+int print_dat_gz(gzFile* outf, int k, char* kmer, int count, struct suffixnode* tree, double maxdust){
+    if (print_dat_aux(kmer, k, tree, maxdust) == 0){
+        return 0;
+    }
+    gzwrite(*outf, &kmer[0], k);
+    gzwrite(*outf, "\n", 1);
+    return 1;
 }
 
 int intcomp(const void* elem1, const void* elem2){
@@ -460,11 +474,13 @@ int main(int argc, char* argv[]){
     gzFile outs[num_tables];
     FILE* outs_tmp[num_tables];
     for (int i = 0; i < num_tables; ++i){
-        sprintf(&namebuf[0], "%s.%d.tmp", output_prefix, i);
-        outs_tmp[i] = fopen(namebuf, "w");
-        if (!outs_tmp[i]){
-            fprintf(stderr, "ERROR opening %s for writing.\n", &namebuf[0]);
-            exit(1);
+        if (num_samp > 0){
+            sprintf(&namebuf[0], "%s.%d.tmp", output_prefix, i);
+            outs_tmp[i] = fopen(namebuf, "w");
+            if (!outs_tmp[i]){
+                fprintf(stderr, "ERROR opening %s for writing.\n", &namebuf[0]);
+                exit(1);
+            }
         }
         sprintf(&namebuf[0], "%s.%d.kmers", output_prefix, i);
         outs[i] = gzopen(namebuf, "w");
@@ -524,8 +540,15 @@ int main(int argc, char* argv[]){
             if (ntie == 0){
                 char* b = Current_Kmer(tables[min_idx], &kmer_text[0]);
                 int c = Current_Count(tables[min_idx]);
-                if (print_dat(outs_tmp[min_idx], kmer, b, c, tree, maxdust) == 1){\
-                    counts_add(&counts_tables[min_idx], c);
+                if (num_samp <= 0){
+                    if (print_dat_gz(&outs[min_idx], kmer, b, c, tree, maxdust) == 1){
+                    
+                    }
+                }
+                else{
+                    if (print_dat(outs_tmp[min_idx], kmer, b, c, tree, maxdust) == 1){\
+                        counts_add(&counts_tables[min_idx], c);
+                    }
                 }
             }
             // Only increment lowest-value iterators.
@@ -553,102 +576,110 @@ int main(int argc, char* argv[]){
         while (tables[i]->csuf != NULL){
             char* b = Current_Kmer(tables[i], &kmer_text[0]);
             int c = Current_Count(tables[i]);
-            if (print_dat(outs_tmp[i], kmer, b, c, tree, maxdust) == 1){
-                counts_add(&counts_tables[i], c);
+            if (num_samp <= 0){
+                if (print_dat_gz(&outs[i], kmer, b, c, tree, maxdust) == 1){
+
+                }
+            }
+            else{
+                if (print_dat(outs_tmp[i], kmer, b, c, tree, maxdust) == 1){
+                    counts_add(&counts_tables[i], c);
+                }
             }
             Next_Kmer_Entry(tables[i]);
         }
     }
-
-    char linebuf[1024];
-    char intbuf[50];
-    int intbuf_size = 50;
-
-    // Now sort counts in decreasing order and print the top number specified to each final output file.
-    for (int i = 0; i < num_tables; ++i){
-        // Stop writing tmp file
-        fclose(outs_tmp[i]);
-
-        // Compute a cutoff, where all counts above the value will be chosen,
-        // and a sample fraction for k-mers with the count at the cutoff.
-        int cutoff = -1;
-        double sampfrac = 0.0;
-        if (num_samp != -1 && counts_tables[i].nvals > num_samp){
-            fprintf(stderr, "Sampling %.2fM k-mers for species %d...\n", (double)num_samp/(double)1e6, i);
-            counts_sort(&counts_tables[i]);
-            cutoff = -counts_get(&counts_tables[i], num_samp);
-            sampfrac = 1.0;
-            // Find out how many other k-mers have this same count
-            int n_at_val = 1;
-            int n_include = 1;
-            for (int z = num_samp-1; z >= 0; z--){
-                if (-counts_get(&counts_tables[i], z) == cutoff){
-                    n_at_val++;
-                    n_include++;
-                }
-                else{
-                    break;
-                }
-            }
-            for (int z = num_samp + 1; z < counts_tables[i].nvals; ++z){
-                if (-counts_get(&counts_tables[i], z) == cutoff){
-                    n_at_val++;
-                }
-                else{
-                    break;
-                }
-            }
-            sampfrac = (double)n_include/(double)n_at_val;
-            fprintf(stderr, "Choosing k-mers with count above %d plus %.2f%% of k-mers with count = %d\n", cutoff,
-                sampfrac*100.0, cutoff);
-        }
-        counts_destroy(&counts_tables[i]);
-
-        fprintf(stderr, "Filtering tmp file %d...\n", i);
-        // Take all counts passing filter 
-        sprintf(&namebuf[0], "%s.%d.tmp", output_prefix, i);
-        FILE* inf = fopen(namebuf, "r");
-        ssize_t read;
-        size_t len = 0;
-        while(fgets(&linebuf[0], 1024*sizeof(char), inf)){
-            int sep = -1;
-            for (int x = 0; x < intbuf_size; ++x){
-                if (linebuf[x] == '\n' || linebuf[x] == '\0'){
-                    break;
-                }
-                else if (linebuf[x] == '\t'){
-                    intbuf[x] = '\0';
-                    sep = x;
-                    break;
-                }
-                else{
-                    intbuf[x] = linebuf[x];
-                }
-            }
-            
-            if (sep != -1){
-                int count = atoi(intbuf);
-                if (count > cutoff || 
-                   (count == cutoff && (double)rand() / (double)RAND_MAX < sampfrac)){
-                    // Accept.
-                    strncpy(&kmer_text[0], &linebuf[sep+1], kmer);
-                    kmer_text[kmer] = '\0';
-                    gzwrite(outs[i], kmer_text, kmer);
-                    gzwrite(outs[i], "\n", 1);
-                }
-            }
-        }
-        gzclose(outs[i]);
-        sprintf(&namebuf[0], "%s.%d.tmp", output_prefix, i);
-        remove(namebuf);
-        //remove(outs_tmp[i]);
-    }
     
-    /*
-    for (int i = 0; i < num_tables; ++i){
-        gzclose(outs[i]);
+    if (num_samp <= 0){
+        for (int i = 0; i < num_tables; ++i){
+            gzclose(outs[i]);
+        }
     }
-    */
+    else{
+        char linebuf[1024];
+        char intbuf[50];
+        int intbuf_size = 50;
+
+        // Now sort counts in decreasing order and print the top number specified to each final output file.
+        for (int i = 0; i < num_tables; ++i){
+            // Stop writing tmp file
+            fclose(outs_tmp[i]);
+
+            // Compute a cutoff, where all counts above the value will be chosen,
+            // and a sample fraction for k-mers with the count at the cutoff.
+            int cutoff = -1;
+            double sampfrac = 0.0;
+            if (num_samp != -1 && counts_tables[i].nvals > num_samp){
+                fprintf(stderr, "Sampling %.2fM k-mers for species %d...\n", (double)num_samp/(double)1e6, i);
+                counts_sort(&counts_tables[i]);
+                cutoff = -counts_get(&counts_tables[i], num_samp);
+                sampfrac = 1.0;
+                // Find out how many other k-mers have this same count
+                int n_at_val = 1;
+                int n_include = 1;
+                for (int z = num_samp-1; z >= 0; z--){
+                    if (-counts_get(&counts_tables[i], z) == cutoff){
+                        n_at_val++;
+                        n_include++;
+                    }
+                    else{
+                        break;
+                    }
+                }
+                for (int z = num_samp + 1; z < counts_tables[i].nvals; ++z){
+                    if (-counts_get(&counts_tables[i], z) == cutoff){
+                        n_at_val++;
+                    }
+                    else{
+                        break;
+                    }
+                }
+                sampfrac = (double)n_include/(double)n_at_val;
+                fprintf(stderr, "Choosing k-mers with count above %d plus %.2f%% of k-mers with count = %d\n", cutoff,
+                    sampfrac*100.0, cutoff);
+            }
+            counts_destroy(&counts_tables[i]);
+
+            fprintf(stderr, "Filtering tmp file %d...\n", i);
+            // Take all counts passing filter 
+            sprintf(&namebuf[0], "%s.%d.tmp", output_prefix, i);
+            FILE* inf = fopen(namebuf, "r");
+            ssize_t read;
+            size_t len = 0;
+            while(fgets(&linebuf[0], 1024*sizeof(char), inf)){
+                int sep = -1;
+                for (int x = 0; x < intbuf_size; ++x){
+                    if (linebuf[x] == '\n' || linebuf[x] == '\0'){
+                        break;
+                    }
+                    else if (linebuf[x] == '\t'){
+                        intbuf[x] = '\0';
+                        sep = x;
+                        break;
+                    }
+                    else{
+                        intbuf[x] = linebuf[x];
+                    }
+                }
+                
+                if (sep != -1){
+                    int count = atoi(intbuf);
+                    if (count > cutoff || 
+                       (count == cutoff && (double)rand() / (double)RAND_MAX < sampfrac)){
+                        // Accept.
+                        strncpy(&kmer_text[0], &linebuf[sep+1], kmer);
+                        kmer_text[kmer] = '\0';
+                        gzwrite(outs[i], kmer_text, kmer);
+                        gzwrite(outs[i], "\n", 1);
+                    }
+                }
+            }
+            gzclose(outs[i]);
+            sprintf(&namebuf[0], "%s.%d.tmp", output_prefix, i);
+            remove(namebuf);
+            //remove(outs_tmp[i]);
+        }
+    }
     //free(entries);
     //free(bases);
     
