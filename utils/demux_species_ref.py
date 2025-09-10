@@ -33,10 +33,12 @@ FASTA files directly.", required=True, nargs="+")
 from a reference genome, provide all species' genomes via the --fasta argument \
 and provide a GTF for each, in the same order, via this argument.", 
         required=False, nargs="+")
-    parser.add_argument("--orthology", "-O", help="Use blastn to keep only transcripts \
-where there is a clear ortholog in all species. This will be most useful if your \
-annotations are different qualities (missing genes in some but not other annotations \
-will cause problems)", action='store_true')
+    parser.add_argument("--no_orthology", "-O", help="Default behavior: filter \
+transcriptomes for sets of homologous transcripts. This is done by aligning each \
+pair of transcriptomes using minimap2, clustering whole transcriptomes using UPGMA, \
+and then iteratively finding homologous transcript sets at each node in the tree, \
+progressing to the root. Transcripts not belonging to a homologous set are discarded \
+before counting k-mers. Setting this option will disable this procedure.", action="store_true")
 
     parser.add_argument("--mm2", "-M", help="If filtering for orthologous transcript \
 and you do not have minimap2 in your $PATH, you can specify the path \
@@ -698,7 +700,7 @@ def main(args):
         tx_fa = options.fasta
     
     tx_fa_filt = []
-    if options.orthology:
+    if not options.no_orthology:
         tx_fa_filt, extrafiles = filter_orthology(tx_fa, options.out, options.mm2)
         files_cleanup += tx_fa_filt
         files_cleanup += extrafiles

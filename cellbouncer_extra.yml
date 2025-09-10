@@ -24,3 +24,4 @@ dependencies:
   - pandas
   - scanpy
   - anndata
+  - minimap2
