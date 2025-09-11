@@ -61,6 +61,15 @@ struct var{
     }
 };
 
+void read_vcf_samples(std::string& filename,
+    std::vector<std::string>& samples);
+
+int read_vcf_chrom(std::string& vcf_file,
+    std::string& chrom,
+    std::map<int, var>& snps,
+    int min_vq,
+    bool allow_missing=true);
+
 int read_vcf(std::string& filename, 
     bam_reader& reader,
     std::vector<std::string>& samples,
@@ -74,6 +83,15 @@ void get_conditional_match_fracs(std::map<int, std::map<int, var> >& snpdat,
     std::map<std::pair<int, int>, std::map<int, float> >& conditional_match_fracs, 
     int n_samples);
 
+void get_conditional_match_fracs_chrom(std::map<int, var>& snpdat,
+    std::map<std::pair<int, int>, std::map<int, float> >& conditional_match_fracs,
+    std::map<std::pair<int, int>, std::map<int, float> >& conditional_match_tots,
+    int n_samples);
+
+void conditional_match_fracs_normalize(std::map<std::pair<int, int>, std::map<int, float> >& conditional_match_fracs,
+    std::map<std::pair<int, int>, std::map<int, float> >& conditional_match_tots,
+    int n_samples);
+
 void process_bam_record(bam_reader& reader,
     int snppos,
     var& vardat,
@@ -85,8 +103,8 @@ void process_bam_record(bam_reader& reader,
 void process_bam_record_bulk(bam_reader& reader,
     int snppos,
     var& vardat,
-    std::map<int, std::map<int, std::pair<float, float> > >& snp_ref_alt,
-    std::map<int, std::map<int, float> >& snp_err,
+    std::map<int, std::pair<float, float> >& snp_ref_alt,
+    std::map<int, float>& snp_err,
     bool genes,
     std::map<std::pair<int, int>, std::set<std::string> >& snp_gene_ids,
     std::map<std::string, std::string>& gene_id2name);

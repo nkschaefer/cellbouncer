@@ -55,11 +55,11 @@ void help(int code){
     fprintf(stderr, "    --assignments -a The .assignments file from a CellBouncer program\n");
     fprintf(stderr, "       like demux_vcf\n");
     fprintf(stderr, "===== OPTIONAL =====\n");
-    fprintf(stderr, "    --index_jump -j Instead of reading through the entire BAM file \n");
-    fprintf(stderr, "       to count reads at variant positions, use the BAM index to \n");
-    fprintf(stderr, "       jump to each variant position. This will be faster if you \n");
-    fprintf(stderr, "       have relatively few SNPs, and much slower if you have a lot \n");
-    fprintf(stderr, "       of SNPs.\n");
+    //fprintf(stderr, "    --index_jump -j Instead of reading through the entire BAM file \n");
+    //fprintf(stderr, "       to count reads at variant positions, use the BAM index to \n");
+    //fprintf(stderr, "       jump to each variant position. This will be faster if you \n");
+    //fprintf(stderr, "       have relatively few SNPs, and much slower if you have a lot \n");
+    //fprintf(stderr, "       of SNPs.\n");
     fprintf(stderr, "    --p_thresh -p After re-genotyping a site, refine_vcf will compute the\n");
     fprintf(stderr, "       total reference and alt alleles observed at the site, along with the\n");
     fprintf(stderr, "       expected reference and alt alleles, given the total and the inferred\n");
@@ -668,7 +668,6 @@ void check_print_lines(regenotyper& rgt,
     bcf_hdr_t* header,
     bcf1_t* record,
     htsFile* outf,
-    map<int, map<int, map<int, pair<float, float> > > >& snp_id_counts,
     int& n_rm,
     int& n_updated){
 
@@ -688,7 +687,6 @@ void check_print_lines(regenotyper& rgt,
         }
         rgt.output_lines.erase(it->first);
         rgt.output_success.erase(it++);
-        //snp_id_counts[it->first.first].erase(it->first.second);
     }
 }
 
@@ -777,14 +775,12 @@ int main(int argc, char *argv[]) {
 
     // Store the names of all individuals in the VCF
     vector<string> samples;
-    
+    read_vcf_samples(vcf_file, samples);
+     
     // Store data about SNPs
-    map<int, map<int, var> > snpdat;
+    map<int, var> snpdat;
     
-    int nsnps;
-    
-    fprintf(stderr, "Loading variants from VCF/BCF...\n");
-    nsnps = read_vcf(vcf_file, reader, samples, snpdat, 0.0, false, false);
+    int nsnps = 0;
     
     // Write VCF header to stdout
     bcf_hdr_t* bcf_header;
@@ -819,7 +815,7 @@ int main(int argc, char *argv[]) {
     compute_weights(assignments, assignment_llr, weights);
 
     // Data structure to store SNP data
-    map<int, map<int, map<int, pair<float, float> > > > snp_id_counts;
+    map<int, map<int, pair<float, float> > > snp_id_counts;
 
     // Print progress message every n sites
     int progress = 1000;
@@ -872,14 +868,14 @@ int main(int argc, char *argv[]) {
             if (curtid != reader.tid()){
                 // Started a new chromosome
                 if (curtid != -1){
-                    while (cursnp != snpdat[curtid].end()){
-                        if (snpdat[curtid].count(cursnp->first) > 0){        
+                    while (cursnp != snpdat.end()){
+                        if (snp_id_counts.count(cursnp->first) > 0){        
                             if (nthreads <= 1){
                                 bool rm = false; 
                                 bool updated = regt_snp(curtid, cursnp->first,
-                                    snpdat[curtid][cursnp->first],
+                                    cursnp->second,
                                     samples.size(),
-                                    snp_id_counts[curtid][cursnp->first],
+                                    snp_id_counts[cursnp->first],
                                     rm,
                                     weights,
                                     rec,
@@ -895,32 +891,46 @@ int main(int argc, char *argv[]) {
                                     n_rm++;
                                 }
                                 n_tot++;
-                                snp_id_counts[curtid].erase(cursnp->first);
+                                snp_id_counts.erase(cursnp->first);
                             }
                             else{
                                 rgt.add_job(curtid, cursnp->first, 
-                                    &snpdat[curtid][cursnp->first], &snp_id_counts[curtid][cursnp->first]);
-                                check_print_lines(rgt, bcf_header, record, outf, snp_id_counts, n_rm, n_updated);
+                                    &cursnp->second, &snp_id_counts[cursnp->first]);
+                                check_print_lines(rgt, bcf_header, record, outf, n_rm, n_updated);
                                 n_tot++;
                             }
                         }
-                        ++cursnp;
+                        snpdat.erase(cursnp++);
                         ++nsnp_processed;
                     }
                 }
-                cursnp = snpdat[reader.tid()].begin();
+                snpdat.clear();
+                snp_id_counts.clear();
+                char* curchrom = NULL;
+                if (reader.tid() >= 0){
+                    curchrom = reader.ref_id();
+                }
+                if (curchrom != NULL){
+                    string chromstr = curchrom;
+                    // Use variant quality = 0 to pull all variants
+                    read_vcf_chrom(vcf_file, chromstr, snpdat, 0);
+                    cursnp = snpdat.begin();
+                }
+                else{
+                    cursnp = snpdat.end();
+                }
                 curtid = reader.tid();
             }
             // Advance to position within cur read
-            while (cursnp != snpdat[reader.tid()].end() && 
+            while (cursnp != snpdat.end() && 
                 cursnp->first < reader.reference_start){
-                if (snp_id_counts[reader.tid()].count(cursnp->first) > 0){ 
+                if (snp_id_counts.count(cursnp->first) > 0){ 
                     if (nthreads <= 1){
                         bool rm = false;
                         bool updated = regt_snp(reader.tid(), cursnp->first,
                             cursnp->second,
                             samples.size(),
-                            snp_id_counts[reader.tid()][cursnp->first],
+                            snp_id_counts[cursnp->first],
                             rm,
                             weights,
                             rec,
@@ -934,12 +944,12 @@ int main(int argc, char *argv[]) {
                         else if (rm){
                             n_rm++;
                         }
-                        snp_id_counts[reader.tid()].erase(cursnp->first);
+                        snp_id_counts.erase(cursnp->first);
                     }
                     else{
                         rgt.add_job(reader.tid(), cursnp->first, 
-                            &snpdat[reader.tid()][cursnp->first], &snp_id_counts[reader.tid()][cursnp->first]);
-                        check_print_lines(rgt, bcf_header, record, outf, snp_id_counts, n_rm, n_updated);
+                            &cursnp->second, &snp_id_counts[cursnp->first]);
+                        check_print_lines(rgt, bcf_header, record, outf, n_rm, n_updated);
                     }
                     n_tot++;
                 }
@@ -949,28 +959,28 @@ int main(int argc, char *argv[]) {
             // Create a second iterator to look ahead for any additional SNPs 
             // within the current read
             map<int, var>::iterator cursnp2 = cursnp;
-            while (cursnp2 != snpdat[reader.tid()].end() && 
+            while (cursnp2 != snpdat.end() && 
                 cursnp2->first >= reader.reference_start && 
                 cursnp2->first <= reader.reference_end){   
                 process_bam_record_bysnp(reader, cursnp2->first, cursnp2->second,
-                    assignments, snp_id_counts[reader.tid()][cursnp2->first]);
+                    assignments, snp_id_counts[cursnp2->first]);
                 ++cursnp2;
             }
             if (nsnp_processed % progress == 0 && nsnp_processed > last_print){
-                fprintf(stderr, "Processed %d of %d SNPs\r", nsnp_processed, nsnps); 
+                fprintf(stderr, "Processed %d SNPs\r", nsnp_processed); 
                 last_print = nsnp_processed;
             }
         }
         // Handle any final SNPs.
         if (curtid != -1){
-            while (cursnp != snpdat[curtid].end()){
-                if (snpdat[curtid].count(cursnp->first) > 0){
+            while (cursnp != snpdat.end()){
+                if (snp_id_counts.count(cursnp->first) > 0){
                     if (nthreads <= 1){
                         bool rm = false; 
                         bool updated = regt_snp(curtid, cursnp->first,
-                            snpdat[curtid][cursnp->first],
+                            cursnp->second,
                             samples.size(),
-                            snp_id_counts[curtid][cursnp->first],
+                            snp_id_counts[cursnp->first],
                             rm,
                             weights,
                             rec,
@@ -984,12 +994,12 @@ int main(int argc, char *argv[]) {
                         else if (rm){
                             n_rm++;
                         }
-                        snp_id_counts[curtid].erase(cursnp->first);
+                        snp_id_counts.erase(cursnp->first);
                     }
                     else{
                          rgt.add_job(curtid, cursnp->first, 
-                            &snpdat[curtid][cursnp->first], &snp_id_counts[curtid][cursnp->first]);
-                        check_print_lines(rgt, bcf_header, record, outf, snp_id_counts, n_rm, n_updated);
+                            &cursnp->second, &snp_id_counts[cursnp->first]);
+                        check_print_lines(rgt, bcf_header, record, outf, n_rm, n_updated);
                     }
                     n_tot++;
                 }
@@ -998,6 +1008,7 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+    /*
     else{
         // Visit each SNP and index-jump in the BAM to it.
         for (map<int, map<int, var> >::iterator curchrom = snpdat.begin();
@@ -1038,7 +1049,7 @@ int main(int argc, char *argv[]) {
                 else{
                     rgt.add_job(tid, cursnp->first, 
                         &snpdat[tid][cursnp->first], &snp_id_counts[tid][cursnp->first]);
-                    check_print_lines(rgt, bcf_header, record, outf, snp_id_counts, n_rm, n_updated);
+                    check_print_lines(rgt, bcf_header, record, outf, n_rm, n_updated);
                 }
                 n_tot++;
                 ++nsnp_processed;        
@@ -1051,14 +1062,15 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+    */
     hts_close(outf);
     bcf_destroy(record);
 
     if (nthreads > 1){
         rgt.close_pool();
-        check_print_lines(rgt, bcf_header, record, outf, snp_id_counts, n_rm, n_updated);
+        check_print_lines(rgt, bcf_header, record, outf, n_rm, n_updated);
     }
-    fprintf(stderr, "Processed %d of %d SNPs\n", nsnp_processed, nsnps);    
+    fprintf(stderr, "Processed %d SNPs\n", nsnp_processed);    
    
     fprintf(stderr, "Updated %d of %d (%.2f%%)\n", n_updated, n_tot, 100*(double)n_updated/(double)n_tot);
     fprintf(stderr, "Removed %d of %d (%.2f%%)\n", n_rm, n_tot, 100*(double)n_rm/(double)n_tot);

@@ -64,12 +64,12 @@ void help(int code){
     fprintf(stderr, "       to this number, in order to avoid reporting a local maximum, Default = 0\n");
     fprintf(stderr, "    --error_rate -e Sequencing error rate (will attempt to calculate from data if \n");
     fprintf(stderr, "       not provided.\n");
-    fprintf(stderr, "----- I/O options -----\n");
-    fprintf(stderr, "    --index_jump -j Instead of reading through the entire BAM file \n");
-    fprintf(stderr, "       to count reads at variant positions, use the BAM index to \n");
-    fprintf(stderr, "       jump to each variant position. This will be faster if you \n");
-    fprintf(stderr, "       have relatively few SNPs, and much slower if you have a lot \n");
-    fprintf(stderr, "       of SNPs.\n");
+    //fprintf(stderr, "----- I/O options -----\n");
+    //fprintf(stderr, "    --index_jump -j Instead of reading through the entire BAM file \n");
+    //fprintf(stderr, "       to count reads at variant positions, use the BAM index to \n");
+    //fprintf(stderr, "       jump to each variant position. This will be faster if you \n");
+    //fprintf(stderr, "       have relatively few SNPs, and much slower if you have a lot \n");
+    //fprintf(stderr, "       of SNPs.\n");
     fprintf(stderr, "===== ALTERNATIVE RUN MODE =====\n");
     fprintf(stderr, "    --props -p A preexisting file listing mixture proportions (or an .assignments\n");
     fprintf(stderr, "       file from which to calculate them). In this mode, instead of inferring MLE\n");
@@ -102,13 +102,17 @@ void infer_props_aux(vector<double>& n,
     }    
     optimML::mixcomp_solver solver(expfracs_all, "binom", n, k);
     if (nthread > 0){
-        solver.set_threads(nthread);
+        // Because of how "mixprops" are handled internally, it's slow to 
+        // multithread them (stuff needs to be recalculated for every data
+        // pt for every thread). Just multi-thread the solving part, 
+        // not the evaluation part.
         solver.set_threads_bfgs(nthread);
     }
     solver.solve();
     
     maxll = solver.log_likelihood;
     maxprops = solver.results;
+
     for (int i = 0; i < n_trials; ++i){
         solver.add_mixcomp_fracs(startfrac);
         solver.randomize_mixcomps();
@@ -120,74 +124,22 @@ void infer_props_aux(vector<double>& n,
     }
 }
 
-
-
-bool infer_props(map<int, map<int, pair<float, float> > >& snp_ref_alt,
-    map<int, map<int, var> >& snpdat,
-    double err_rate,
+bool infer_props(vector<double>& n,
+    vector<double>& k,
+    vector<vector<double> >& expfracs_all,
     int n_trials,
     int n_samples,
-    double& nreads,
     double& maxll,
     vector<double>& maxprops,
     vector<double>& dirichlet_mle,
     int bootstrap,
     int nthread){
     
-    nreads = 0;
-    
-    // Transform data into counts & expectations
-    vector<double> n;
-    vector<double> k;
-    vector<vector<double> > expfracs_all;
-
-    for (map<int, map<int, pair<float, float> > >::iterator s = snp_ref_alt.begin(); s != snp_ref_alt.end();
-        ++s){
-        for (map<int, pair<float, float> >::iterator s2 = s->second.begin(); s2 != s->second.end(); ++s2){
-            
-            bool miss = false;
-            vector<double> expfracs;
-
-            for (int i = 0; i < n_samples; ++i){
-                if (snpdat[s->first][s2->first].haps_covered[i]){
-                    int nalt = 0;
-                    if (snpdat[s->first][s2->first].haps1[i]){
-                        nalt++;
-                    }
-                    if (snpdat[s->first][s2->first].haps2[i]){
-                        nalt++;
-                    }
-                    double expfrac = (double)nalt/2.0;
-                    // Account for error rate
-                    if (expfrac == 0){
-                        expfrac += err_rate;
-                    }
-                    else if (expfrac == 1.0){
-                        expfrac -= err_rate;
-                    }
-                    expfracs.push_back(expfrac);
-                }
-                else{
-                    miss = true;
-                    break;
-                }
-            }
-
-            if (!miss){
-                nreads += s2->second.first + s2->second.second;
-                n.push_back(s2->second.first + s2->second.second);
-                k.push_back(s2->second.second);
-                expfracs_all.push_back(expfracs);          
-            } 
-        }
-    }
-    
     if (expfracs_all.size() == 0){
         return false;
     }
     
     infer_props_aux(n, k, expfracs_all, n_samples, n_trials, maxll, maxprops, nthread);
-    
     if (bootstrap > 0){
         // Resample.
         // Init random number generator - use static variables so it only 
@@ -220,21 +172,24 @@ bool infer_props(map<int, map<int, pair<float, float> > >& snp_ref_alt,
                 int r = uni_dist(rand_gen); 
                 n_bootstrap.push_back(n[r]);
                 k_bootstrap.push_back(k[r]);
+                //vector<double> row(n_samples);
+                //for (int j = 0; j < n_samples; ++j){
+                //    row[j] = expfracs_all[r][j];
+                //}
+                //expfrac_bootstrap.push_back(row);
                 expfrac_bootstrap.push_back(expfracs_all[r]);
             }
             vector<double> p_bootstrap;
             double ll_bootstrap;
+            
             // Solve
             infer_props_aux(n_bootstrap, k_bootstrap, expfrac_bootstrap,
                 n_samples, n_trials, ll_bootstrap, p_bootstrap, nthread);
-
             props_bootstrap.push_back(p_bootstrap);
             for (int j = 0; j < n_samples; ++j){
                 dirprops[j].push_back(p_bootstrap[j]);
             }
         }
-        fprintf(stderr, "\n");
-        
         // Find MLE concentration parameters of Dirichlet (in common.cpp)
         fit_dirichlet(maxprops, dirprops, dirichlet_mle, nthread);
         
@@ -342,84 +297,120 @@ void parse_props_prev(string& filename, map<int, double>& props, vector<string>&
     }
 }
 
-void compute_ll_snps(map<int, map<int, pair<float, float> > >& snp_ref_alt,
-    map<int, map<int, var> >& snpdat,
-    map<int, string>& tid2chrom,
+int compute_ll_snp(pair<float, float>& snp_ref_alt,
+    var& snpdat,
+    string& chrom,
+    int tid, 
+    int pos,
     map<int, double>& props,
     double err_rate,
     int n_samples,
     bool genes,
     map<pair<int, int>, set<string> >& snp_gene_ids,
-    map<string, string>& gene_id2name){
+    map<string, string>& gene_id2name,
+    map<string, double>& genesums,
+    map<string, double>& genecounts){
     
-    map<string, double> genesums;
-    map<string, double> genecounts;
-     
-    for (map<int, map<int, pair<float, float> > >::iterator x = snp_ref_alt.begin();
-        x != snp_ref_alt.end(); ++x){
-        for (map<int, pair<float, float> >::iterator y = x->second.begin();
-            y != x->second.end(); ++y){
-            bool miss = false;
-            // Get expected freqs
-            double freqsum = 0.0;
-            for (int i = 0; i < n_samples; ++i){
-                if (!snpdat[x->first][y->first].haps_covered[i]){
-                    miss = true;
-                    break;
+    // Get expected freqs
+    double freqsum = 0.0;
+    for (int i = 0; i < n_samples; ++i){
+        int nalt = 0;
+        if (snpdat.haps1[i]){
+            nalt++;
+        }
+        if (snpdat.haps2[i]){
+            nalt++;
+        }
+        double expec = (double)nalt/(double)2.0;
+        if (expec == 0){
+            expec += err_rate;
+        }
+        else if (expec == 1.0){
+            expec -= err_rate;
+        }
+        freqsum += props[i] * expec;
+    }
+
+    double ref = snp_ref_alt.first;
+    double alt = snp_ref_alt.second;
+    
+    if (ref + alt > 0){
+        double ll = dbinom(ref+alt, alt, freqsum);
+        if (genes){
+            pair<int, int> key = make_pair(tid, pos);
+            for (set<string>::iterator gid = snp_gene_ids[key].begin(); gid != 
+                snp_gene_ids[key].end(); ++gid){
+                if (genesums.count(*gid) == 0){
+                    genesums.insert(make_pair(*gid, 0));
+                    genecounts.insert(make_pair(*gid, 0));
                 }
-                else{
-                    int nalt = 0;
-                    if (snpdat[x->first][y->first].haps1[i]){
-                        nalt++;
-                    }
-                    if (snpdat[x->first][y->first].haps2[i]){
-                        nalt++;
-                    }
-                    double expec = (double)nalt/(double)2.0;
-                    if (expec == 0){
-                        expec += err_rate;
-                    }
-                    else if (expec == 1.0){
-                        expec -= err_rate;
-                    }
-                    freqsum += props[i] * expec;
-                }
-            }
-            if (!miss){
-                double ref = y->second.first;
-                double alt = y->second.second;
-                if (ref + alt > 0){
-                    double ll = dbinom(ref+alt, alt, freqsum);
-                    if (genes){
-                        pair<int, int> key = make_pair(x->first, y->first);
-                        for (set<string>::iterator gid = snp_gene_ids[key].begin(); gid != 
-                            snp_gene_ids[key].end(); ++gid){
-                            if (genesums.count(*gid) == 0){
-                                genesums.insert(make_pair(*gid, 0));
-                                genecounts.insert(make_pair(*gid, 0));
-                            }
-                            genesums[*gid] += ll*(ref+alt);
-                            genecounts[*gid] += ref+alt;
-                        }
-                    }
-                    else{
-                        fprintf(stdout, "%s\t%d\t%d\t%f\t%f\n", tid2chrom[x->first].c_str(),
-                            y->first, y->first+1, ll, ref+alt);
-                    }
-                }
+                genesums[*gid] += ll*(ref+alt);
+                genecounts[*gid] += ref+alt;
             }
         }
-    }
-    if (genes){
-        for (map<string, double>::iterator gs = genesums.begin(); gs != genesums.end(); ++gs){
-            double mean = gs->second/genecounts[gs->first];
-            string name = gs->first;
-            if (gene_id2name.count(gs->first) > 0){
-                name = gene_id2name[gs->first];
-            }
-            fprintf(stdout, "%s\t%s\t%f\t%f\n", gs->first.c_str(), name.c_str(), mean, genecounts[gs->first]);
+        else{
+            fprintf(stdout, "%s\t%d\t%d\t%f\t%f\n", chrom.c_str(),
+                pos, pos+1, ll, ref+alt);
         }
+        return 1;
     }
+    return 0;
+    
+}
+
+void summarize_data(pair<float, float>& snp_ref_alt,
+    float snp_err_count,
+    var& snpdat,
+    int n_samples,
+    double err_rate,
+    double& nreads,
+    vector<double>& n,
+    vector<double>& k,
+    vector<vector<double> >& expfracs_all,
+    vector<double>& empirical_err_rates){
+   
+    if (snp_ref_alt.first + snp_ref_alt.second <= 1){
+        return;
+    } 
+
+    vector<double> expfracs;
+    
+    if (err_rate <= 0 || err_rate >= 1){
+        double e = snp_err_count/(snp_err_count + snp_ref_alt.first + 
+            snp_ref_alt.second);
+        empirical_err_rates.push_back(e);
+    }
+
+    for (int i = 0; i < n_samples; ++i){
+        int nalt = 0;
+        // Note: we have already ensured no missing genotypes when
+        // loading SNPs
+        if (snpdat.haps1[i]){
+            nalt++;
+        }
+        if (snpdat.haps2[i]){
+            nalt++;
+        }
+        double expfrac = (double)nalt/2.0;
+        
+        // Account for error rate
+        // Can only do this if the user supplied an error rate -- if not,
+        // will need to do this later after it's calculated.
+        if (err_rate > 0 && err_rate < 1){
+            if (expfrac == 0){
+                expfrac += err_rate;
+            }
+            else if (expfrac == 1.0){
+                expfrac -= err_rate;
+            }
+        }
+        expfracs.push_back(expfrac);
+    }
+
+    nreads += snp_ref_alt.first + snp_ref_alt.second;
+    n.push_back(snp_ref_alt.first + snp_ref_alt.second);
+    k.push_back(snp_ref_alt.second);
+    expfracs_all.push_back(expfracs);          
 }
 
 int main(int argc, char *argv[]) {    
@@ -428,13 +419,14 @@ int main(int argc, char *argv[]) {
        {"bam", required_argument, 0, 'b'},
        {"vcf", required_argument, 0, 'v'},
        {"output_prefix", required_argument, 0, 'o'},
-       {"index_jump", no_argument, 0, 'j'},
+       //{"index_jump", no_argument, 0, 'j'},
        {"ids", required_argument, 0, 'i'},
        {"qual", required_argument, 0, 'q'},
        {"n_trials", required_argument, 0, 'N'},
        {"props", required_argument, 0, 'p'},
        {"bootstrap", required_argument, 0, 'B'},
        {"genes", no_argument, 0, 'g'},
+       {"error_rate", required_argument, 0, 'e'},
        {"num_threads", required_argument, 0, 'T'},
        {0, 0, 0, 0} 
     };
@@ -462,7 +454,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:e:v:o:q:i:N:w:B:p:T:gjh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:e:v:o:q:i:N:w:B:p:T:gh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -495,9 +487,9 @@ int main(int argc, char *argv[]) {
             case 'q':
                 vq = atoi(optarg);
                 break;
-            case 'j':
-                stream = false;
-                break;
+            //case 'j':
+            //    stream = false;
+            //    break;
             case 'B':
                 bootstrap = atoi(optarg);
                 bootstrap_given = true;
@@ -544,7 +536,11 @@ name prefix.\n", output_prefix.c_str());
         fprintf(stderr, "ERROR: --genes/-g argument requires --props/-p.\n");
         exit(1);
     }
-    
+    if (props_given && (err_prior <= 0 || err_prior >= 1)){
+        fprintf(stderr, "ERROR: if providing pre-computed proportions, you must \
+also provide a valid --error_rate/-e.\n");
+        exit(1);
+    } 
     if (nthread <= 1){
         nthread = 0;
     }
@@ -562,21 +558,19 @@ name prefix.\n", output_prefix.c_str());
     vector<string> samples;
     
     // Store data about SNPs
-    map<int, map<int, var> > snpdat;
-    
-    int nsnps;
+    map<int, var> snpdat;
     
     if (vcf_file == ""){
         fprintf(stderr, "ERROR: vcf file is required\n");
         exit(1);
     }
-    fprintf(stderr, "Loading variants from VCF/BCF...\n");
-    nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, false, false);
     
+    // Get samples from VCF
+    read_vcf_samples(vcf_file, samples);
+
     map<int, double> props_prev;
     if (props_given){
         parse_props_prev(propsfile, props_prev, samples);
-
     }
 
     set<int> allowed_ids;
@@ -591,10 +585,10 @@ all possible individuals\n", idfile.c_str());
     }
     
     // Store ref and alt counts at SNPs
-    map<int, map<int, pair<float, float> > > snp_ref_alt;
+    map<int, pair<float, float> > snp_ref_alt;
     
     // Store erronenous (non ref-alt) counts at SNPs
-    map<int, map<int, float> > snp_err;
+    map<int, float> snp_err;
 
     // Store gene names at SNPs
     map<pair<int, int>, set<string> > snp_gene_ids;
@@ -624,6 +618,17 @@ all possible individuals\n", idfile.c_str());
         tid2chrom.insert(make_pair(ct->second, ct->first));
     } 
     
+    vector<double> n;
+    vector<double> k;
+    vector<vector<double> > expfracs_all;
+    vector<double> empirical_err_rates;
+    double nreads = 0.0;
+    
+    map<string, double> genesums;
+    map<string, double> genecounts;
+
+    int ll_snps = 0;
+
     int nsnp_processed = 0;
     if (stream){
 
@@ -634,27 +639,72 @@ all possible individuals\n", idfile.c_str());
         map<int, var>::iterator cursnp;
         while (reader.next()){
             
+            if (reader.unmapped() || reader.secondary() || reader.supplementary() ||
+                reader.qcfail() || reader.dup()){
+                continue;
+            }
+
             if (curtid != reader.tid()){
                 // Started a new chromosome
                 if (curtid != -1){
-                    while (cursnp != snpdat[curtid].end()){
+                    while (cursnp != snpdat.end()){
+                        if (props_given){
+                            ll_snps += compute_ll_snp(snp_ref_alt[cursnp->first], cursnp->second, 
+                                tid2chrom[curtid], curtid, cursnp->first, props_prev, err_prior, 
+                                samples.size(), genes, snp_gene_ids, snp_gene_names, genesums,
+                                genecounts);
+                        }
+                        else{
+                            summarize_data(snp_ref_alt[cursnp->first], snp_err[cursnp->first], 
+                                cursnp->second, samples.size(), err_prior, nreads, n, k, 
+                                expfracs_all, empirical_err_rates);
+                        }
+                        snp_ref_alt.erase(cursnp->first);
+                        snp_err.erase(cursnp->first);
                         ++nsnp_processed;
-                        ++cursnp;
+                        snpdat.erase(cursnp++);
                     }
                 }
-                cursnp = snpdat[reader.tid()].begin();
+                
+                snpdat.clear();
+                char* curchromptr = reader.ref_id();
+                if (curchromptr != NULL){    
+                    string curchrom = curchromptr;
+                    // The last argument here is very important: do not load any SNPs
+                    // where there are missing genotypes. They are impossible to 
+                    // model.
+                    read_vcf_chrom(vcf_file, curchrom, snpdat, vq, false);
+                    cursnp = snpdat.begin();
+                }
+                else{
+                    cursnp = snpdat.end();
+                }
                 curtid = reader.tid();
             }
             // Advance to position within cur read
-            while (cursnp != snpdat[reader.tid()].end() && 
+            while (cursnp != snpdat.end() && 
                 cursnp->first < reader.reference_start){
+                if (props_given){
+                    ll_snps += compute_ll_snp(snp_ref_alt[cursnp->first], cursnp->second, 
+                        tid2chrom[curtid], curtid, cursnp->first, props_prev, err_prior, 
+                        samples.size(), genes, snp_gene_ids, snp_gene_names, genesums,
+                        genecounts);
+                }
+                else{
+                    summarize_data(snp_ref_alt[cursnp->first], snp_err[cursnp->first],
+                        cursnp->second, samples.size(), err_prior, nreads, n, k, 
+                        expfracs_all, empirical_err_rates);
+                }
+                snp_ref_alt.erase(cursnp->first);
+                snp_err.erase(cursnp->first);
                 ++nsnp_processed;
-                ++cursnp;
+                snpdat.erase(cursnp++);
             }
+            
             // Create a second iterator to look ahead for any additional SNPs 
             // within the current read
             map<int, var>::iterator cursnp2 = cursnp;
-            while (cursnp2 != snpdat[reader.tid()].end() && 
+            while (cursnp2 != snpdat.end() && 
                 cursnp2->first >= reader.reference_start && 
                 cursnp2->first <= reader.reference_end){   
                 
@@ -666,17 +716,34 @@ all possible individuals\n", idfile.c_str());
                 ++cursnp2;
             }
             if (nsnp_processed % progress == 0 && nsnp_processed > last_print){
-                fprintf(stderr, "Processed %d of %d SNPs\r", nsnp_processed, nsnps); 
+                fprintf(stderr, "Processed %d SNPs\r", nsnp_processed); 
                 last_print = nsnp_processed;
-            }
-        
-            if (nsnp_processed == nsnps){
-                break;
             }
         }
         
+        if (snp_ref_alt.size() > 0){
+            while (cursnp != snpdat.end()){
+                if (props_given){
+                    ll_snps += compute_ll_snp(snp_ref_alt[cursnp->first], cursnp->second, 
+                        tid2chrom[curtid], curtid, cursnp->first, props_prev, err_prior, 
+                        samples.size(), genes, snp_gene_ids, snp_gene_names, genesums,
+                        genecounts);           
+                }
+                else{
+                    summarize_data(snp_ref_alt[cursnp->first], snp_err[cursnp->first],
+                        cursnp->second, samples.size(), err_prior, nreads, n, k, 
+                        expfracs_all, empirical_err_rates);
+                }
+                snp_ref_alt.erase(cursnp->first);
+                snp_err.erase(cursnp->first);
+                snpdat.erase(cursnp++);
+                ++nsnp_processed;
+            }
+        }
     }
     else{
+        /*
+         // Index-jumping incompatible with loading SNPs one chromosome at a time.
         // Visit each SNP and index-jump in the BAM to it.
         for (map<int, map<int, var> >::iterator curchrom = snpdat.begin();
             curchrom != snpdat.end(); ++curchrom){
@@ -704,10 +771,11 @@ all possible individuals\n", idfile.c_str());
                 }
             }
         }
+        */
     }
-    fprintf(stderr, "Processed %d of %d SNPs\n", nsnp_processed, nsnps);
+    fprintf(stderr, "Processed %d SNPs\n", nsnp_processed);
     
-    if (snp_ref_alt.size() == 0){
+    if (ll_snps == 0 && n.size() == 0){
         fprintf(stderr, "ERROR: no valid SNPs detected.\n");
         if (genes){
             fprintf(stderr, "Did you run this with --genes on a BAM file that lacks GX/GN tags?\n");
@@ -718,35 +786,57 @@ all possible individuals\n", idfile.c_str());
     }
     // Calculate error rate
     double err_rate = 0.0;
+    bool used_prior_err = true;
     if (err_prior > 0 && err_prior < 1){
         err_rate = err_prior;
     }
     else{
-        int nsnp_data = 0;
-        for (map<int, map<int, float> >::iterator s = snp_err.begin(); s != snp_err.end(); ++s){
-            for (map<int, float>::iterator s2 = s->second.begin(); s2 != s->second.end(); ++s2){
-                nsnp_data++;
-            }
+        double frac = 1.0/(double)empirical_err_rates.size();
+        for (int i = 0; i < empirical_err_rates.size(); ++i){
+            err_rate += frac * empirical_err_rates[i];
         }
-        double frac = 1.0/(double)nsnp_data;
-        err_rate = 0.0;
-        for (map<int, map<int, float> >::iterator s = snp_err.begin(); s != snp_err.end(); ++s){
-            for (map<int, float>::iterator s2 = s->second.begin(); s2 != s->second.end(); ++s2){
-                double ref = snp_ref_alt[s->first][s2->first].first;
-                double alt = snp_ref_alt[s->first][s2->first].second;
-                if (ref + alt + s2->second > 0){
-                    double ef = s2->second / (s2->second + ref + alt);
-                    err_rate += frac*ef;
+        used_prior_err = false;
+    }
+    
+    if (err_rate == 0.0 || isnan(err_rate)){
+        // Fall back on minimum error rate
+        err_rate = 0.001;
+        used_prior_err = false;
+    }
+
+    fprintf(stderr, "Approximate error rate = %f\n", err_rate);
+    
+    if (!used_prior_err){
+        // Adjust
+        for (int i = 0; i < expfracs_all.size(); ++i){
+            for (int j = 0; j < expfracs_all[i].size(); ++j){
+                double p = expfracs_all[i][j];
+                if (p == 1.0){
+                    expfracs_all[i][j] -= err_rate;
+                }
+                else if (p == 0.0){
+                    expfracs_all[i][j] += err_rate;
                 }
             }
         }
     }
-    if (err_rate == 0.0 || isnan(err_rate)){
-        fprintf(stderr, "TRUE\n");
-        err_rate = 0.001;
-    }
-    fprintf(stderr, "Approximate error rate = %f\n", err_rate);
     
+    if (props_given){
+        // We've already printed everything, unless summarizing by gene.
+        if (genes){
+            for (map<string, double>::iterator gs = genesums.begin(); gs != genesums.end(); ++gs){
+                double mean = gs->second/genecounts[gs->first];
+                string name = gs->first;
+                if (snp_gene_names.count(gs->first) > 0){
+                    name = snp_gene_names[gs->first];
+                }
+                fprintf(stdout, "%s\t%s\t%f\t%f\n", gs->first.c_str(), name.c_str(), mean, genecounts[gs->first]);
+            }
+        }
+        // Nothing left to do
+        return 0;
+    }
+
     string outfn = output_prefix + ".bulkprops";
     FILE* outf = fopen(outfn.c_str(), "w");
     
@@ -829,18 +919,13 @@ all possible individuals\n", idfile.c_str());
         }
         */
     }
-    else if (props_given){
-        // Compute log likelihood of each SNP under given proportions.
-        compute_ll_snps(snp_ref_alt, snpdat, tid2chrom, 
-            props_prev, err_rate, samples.size(), genes, snp_gene_ids, snp_gene_names);
-    }
     else{
         vector<double> props;
         double ll;
-        double nreads;
         vector<double> dirichlet_params;
-        infer_props(snp_ref_alt, snpdat, err_rate, n_trials, samples.size(), 
-            nreads, ll, props, dirichlet_params, bootstrap, nthread);
+        
+        infer_props(n, k, expfracs_all, n_trials, samples.size(), 
+            ll, props, dirichlet_params, bootstrap, nthread);
         
         int si = 0;
         map<string, int> samplesort;

@@ -20,6 +20,7 @@
 #include <float.h>
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
+#include <htslib/synced_bcf_reader.h>
 #include <zlib.h>
 #include <htswrapper/bc.h>
 #include <htswrapper/bam.h>
@@ -771,11 +772,13 @@ void help(int code){
     fprintf(stderr, "       separated by \"+\", with names in either order.\n");
     fprintf(stderr, "----- I/O options -----\n");
     print_libname_help();
+    /*
     fprintf(stderr, "    --index_jump -j Instead of reading through the entire BAM file \n");
     fprintf(stderr, "       to count reads at variant positions, use the BAM index to \n");
     fprintf(stderr, "       jump to each variant position. This will be faster if you \n");
     fprintf(stderr, "       have relatively few SNPs, and much slower if you have a lot \n");
     fprintf(stderr, "       of SNPs.\n");
+    */
     fprintf(stderr, "    --disable_conditional -f By default, the program will compute\n");
     fprintf(stderr, "       expected alt allele matching probabilities for SNPs of each type\n");
     fprintf(stderr, "       (homozygous ref, het, or homozygous alt in each individual), conditional\n");
@@ -800,7 +803,7 @@ int main(int argc, char *argv[]) {
        {"vcf", required_argument, 0, 'v'},
        {"output_prefix", required_argument, 0, 'o'},
        {"barcodes", required_argument, 0, 'B'},
-       {"index_jump", no_argument, 0, 'j'},
+       //{"index_jump", no_argument, 0, 'j'},
        {"doublet_rate", required_argument, 0, 'D'},
        {"ids", required_argument, 0, 'i'},
        {"ids_doublet", required_argument, 0, 'I'},
@@ -848,7 +851,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:n:e:E:p:s:fFCSUjh", long_options, &option_index )) != -1){
+    while((ch = getopt_long(argc, argv, "b:v:o:B:i:I:q:D:n:e:E:p:s:fFCSUh", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -895,9 +898,9 @@ int main(int argc, char *argv[]) {
             case 'q':
                 vq = atoi(optarg);
                 break;
-            case 'j':
-                stream = false;
-                break;
+            //case 'j':
+            //    stream = false;
+            //    break;
             case 'e':
                 error_ref = atof(optarg);
                 break;
@@ -966,13 +969,15 @@ name prefix.\n", output_prefix.c_str());
 
     // Store the names of all individuals in the VCF
     vector<string> samples;
-    
-    // Store data about SNPs
-    map<int, map<int, var> > snpdat;
-    
-    int nsnps;
-    
     bool samples_from_vcf = false;
+
+    // Store data about SNPs
+    map<int, var> snpdat;
+
+    int nsnps = 0;
+    
+    map<pair<int, int>, map<int, float> > conditional_match_fracs;
+    map<pair<int, int>, map<int, float> > conditional_match_tots;
 
     if (load_counts){
         // Load variant data from VCF file or from samples file, if it was written
@@ -987,8 +992,7 @@ name prefix.\n", output_prefix.c_str());
                 exit(1);
             }
             fprintf(stderr, "Reading VCF/BCF header...\n");
-            nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, true, true);
-            samples_from_vcf = true;
+            read_vcf_samples(vcf_file, samples);         
         }
     }
     else{
@@ -996,24 +1000,44 @@ name prefix.\n", output_prefix.c_str());
             fprintf(stderr, "ERROR: vcf file is required\n");
             exit(1);
         }
-        fprintf(stderr, "Loading variants from VCF/BCF...\n");
-        bool hdr_only = false;
-        bool skip_seq2tid = dump_conditional;
-        nsnps = read_vcf(vcf_file, reader, samples, snpdat, vq, hdr_only, skip_seq2tid);
-        // Compute conditional matching fractions for quant_contam (can disable)
-        if (!disable_conditional){
-            map<pair<int, int>, map<int, float> > conditional_match_fracs;
-            fprintf(stderr, "Computing conditional alt allele probabilities...\n");
-            get_conditional_match_fracs(snpdat, conditional_match_fracs, samples.size());
+        
+        read_vcf_samples(vcf_file, samples);
+        
+        if (dump_conditional){
+            // All we are doing here is computing & writing out conditional match fracs.
+            // Get a list of all chromosomes
+            bcf_srs_t* sr = bcf_sr_init();    
+            bcf_hdr_t* bcf_header = bcf_sr_get_header(sr, 0);
+
+            for (int i = 0; i < bcf_header->n[BCF_DT_CTG]; ++i){
+                // Read SNP data from this chromosome
+                string hdr_chrom = bcf_hdr_id2name(bcf_header, i);
+                map<int, var> snpstmp;
+                
+                read_vcf_chrom(vcf_file, hdr_chrom, snpstmp, vq); 
+
+                // Add data to conditional_match_fracs
+                get_conditional_match_fracs_chrom(snpstmp, conditional_match_fracs, 
+                    conditional_match_tots, samples.size());
+            }
+            bcf_sr_destroy(sr);
+
+            // Normalize conditional_match_fracs
+            conditional_match_fracs_normalize(conditional_match_fracs,
+                conditional_match_tots, samples.size());
+
+            // Write data.
             string outname = output_prefix + ".condf";
             FILE* outf = fopen(outname.c_str(), "w");
             dump_exp_fracs(outf, conditional_match_fracs);
-            fclose(outf); 
-            if (dump_conditional){
-                // Nothing left to do.
-                return 0;
-            }
+            fclose(outf);
+            return 0;
         }
+
+        // If not "dump_conditional", then we will load variants from each chromsome
+        // and adjust conditional_match_fracs as we read through the BAM, writing out
+        // results at the end.
+        
         samples_from_vcf = true;
     }
 
@@ -1079,8 +1103,8 @@ all possible individuals\n", idfile_doublet.c_str());
         map<pair<int, int>, pair<float, float> > > > indv_allelecounts;
 
     // Store counts for currently-tracked SNPs
-    map<int, map<int, robin_hood::unordered_map<unsigned long, 
-        pair<float, float> > > > varcounts_site;
+    map<int, robin_hood::unordered_map<unsigned long, 
+        pair<float, float> > > varcounts_site;
     
     robin_hood::unordered_map<unsigned long, map<int, float> > fracs;
     
@@ -1088,6 +1112,9 @@ all possible individuals\n", idfile_doublet.c_str());
     int progress = 1000;
     // What was the last number of sites for which a message was printed?
     int last_print = 0;
+    
+    // Do not allow index-jumping; it's incompatible with loading SNPs one chromosome at a time.
+    stream = true;
 
     // Load pre-computed allele counts from file, if it already exists
     if (load_counts){
@@ -1106,15 +1133,6 @@ all possible individuals\n", idfile_doublet.c_str());
         // retrieve cell barcodes
         reader.set_cb();
         
-        // Get a mapping of chromosome names to internal numeric IDs in the 
-        // BAM file. This is necessary to reconcile how HTSLib might represent
-        // the same chromosome name in the BAM vs the VCF file.
-        map<string, int> chrom2tid = reader.get_seq2tid();
-        map<int, string> tid2chrom;
-        for (map<string, int>::iterator ct = chrom2tid.begin(); ct != chrom2tid.end(); ++ct){
-            tid2chrom.insert(make_pair(ct->second, ct->first));
-        } 
-        
         int nsnp_processed = 0;
         if (stream){
 
@@ -1124,67 +1142,87 @@ all possible individuals\n", idfile_doublet.c_str());
             
             map<int, var>::iterator cursnp;
             while (reader.next()){
+                if (reader.unmapped() || reader.secondary() || reader.qcfail() || reader.dup()){
+                    continue;
+                }
                 if (curtid != reader.tid()){
                     // Started a new chromosome
                     if (curtid != -1){
-                        while (cursnp != snpdat[curtid].end()){
-                            if (snpdat[curtid].count(cursnp->first) > 0){        
-                                dump_vcs_counts(varcounts_site[curtid][cursnp->first], 
+                        while (cursnp != snpdat.end()){
+                            if (snpdat.count(cursnp->first) > 0){        
+                                dump_vcs_counts(varcounts_site[cursnp->first], 
                                     indv_allelecounts,
                                     cursnp->second, samples.size());
+                                varcounts_site.erase(cursnp->first);
                             }
                             ++nsnp_processed;
                             ++cursnp;
                         }
                     }
-                    cursnp = snpdat[reader.tid()].begin();
+                    snpdat.clear();
+                    char* curchromptr = reader.ref_id();
+                    if (curchromptr == NULL){
+                        cursnp = snpdat.end();
+                    }
+                    else{
+                        string curchrom = curchromptr;
+                        read_vcf_chrom(vcf_file, curchrom, snpdat, vq); 
+                        cursnp = snpdat.begin();
+                    }
                     curtid = reader.tid();
+                    if (!disable_conditional){
+                        // Compute contribution of new chrom to conditional match fracs
+                        get_conditional_match_fracs_chrom(snpdat, 
+                            conditional_match_fracs, conditional_match_tots, samples.size()); 
+                    }
                 }
                 // Advance to position within cur read
-                while (cursnp != snpdat[reader.tid()].end() && 
+                while (cursnp != snpdat.end() && 
                     cursnp->first < reader.reference_start){
                     
-                    if (varcounts_site[reader.tid()].count(cursnp->first) > 0){
-                        dump_vcs_counts(varcounts_site[reader.tid()][cursnp->first], 
+                    if (varcounts_site.count(cursnp->first) > 0){
+                        dump_vcs_counts(varcounts_site[cursnp->first], 
                             indv_allelecounts, 
                             cursnp->second, samples.size());
+                        varcounts_site.erase(cursnp->first);
                     }
                     ++nsnp_processed;
-                    ++cursnp;
+                    snpdat.erase(cursnp++);
+                    //++cursnp;
                 }
                 // Create a second iterator to look ahead for any additional SNPs 
                 // within the current read
                 map<int, var>::iterator cursnp2 = cursnp;
-                while (cursnp2 != snpdat[reader.tid()].end() && 
+                while (cursnp2 != snpdat.end() && 
                     cursnp2->first >= reader.reference_start && 
                     cursnp2->first <= reader.reference_end){   
                     process_bam_record(reader, cursnp2->first, cursnp2->second,
-                        varcounts_site[reader.tid()], cell_barcode, cell_barcodes);
+                        varcounts_site, cell_barcode, cell_barcodes);
                     ++cursnp2;
                 }
                 if (nsnp_processed % progress == 0 && nsnp_processed > last_print){
-                    fprintf(stderr, "Processed %d of %d SNPs\r", nsnp_processed, nsnps); 
+                    fprintf(stderr, "Processed %d SNPs\r", nsnp_processed); 
                     last_print = nsnp_processed;
-                }
-                if (nsnp_processed == nsnps){
-                    break;
                 }
             }
             
             // Handle any final SNPs.
             if (curtid != -1){
-                while (cursnp != snpdat[curtid].end()){
-                    if (snpdat[curtid].count(cursnp->first) > 0){        
-                        dump_vcs_counts(varcounts_site[curtid][cursnp->first], 
+                while (cursnp != snpdat.end()){
+                    if (snpdat.count(cursnp->first) > 0){
+                        dump_vcs_counts(varcounts_site[cursnp->first], 
                             indv_allelecounts,
                             cursnp->second, samples.size());
+                        varcounts_site.erase(cursnp->first);
                     }
                     ++nsnp_processed;
-                    ++cursnp;    
+                    snpdat.erase(cursnp++);
+                    //++cursnp;    
                 }
             }
         }
         else{
+            /*
             // Visit each SNP and index-jump in the BAM to it.
             for (map<int, map<int, var> >::iterator curchrom = snpdat.begin();
                 curchrom != snpdat.end(); ++curchrom){
@@ -1213,8 +1251,9 @@ all possible individuals\n", idfile_doublet.c_str());
                     }
                 }
             }
+            */
         }
-        fprintf(stderr, "Processed %d of %d SNPs\n", nsnp_processed, nsnps);
+        fprintf(stderr, "Processed %d SNPs\n", nsnp_processed);
         
         // Write the data just compiled to disk.
         string fname = output_prefix + ".counts";
@@ -1225,6 +1264,20 @@ all possible individuals\n", idfile_doublet.c_str());
         fprintf(stderr, "Done\n");
         //fclose(outf);
         gzclose(outf);
+
+        // Finalize conditional match fracs
+        if (!disable_conditional){
+            
+            // Normalize by total number of sites in calculations
+            conditional_match_fracs_normalize(conditional_match_fracs, 
+                conditional_match_tots, samples.size());
+            
+            // Write to disk.
+            string outname = output_prefix + ".condf";
+            FILE* outf = fopen(outname.c_str(), "w");
+            dump_exp_fracs(outf, conditional_match_fracs);
+            fclose(outf);
+        }
     }
         
     // Map cell barcodes to numeric IDs of best individual assignments 
