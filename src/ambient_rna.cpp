@@ -1345,7 +1345,8 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c, b
     }
     optimML::multivar_ml_solver solver(params, ll_amb_prof_mixture, dll_amb_prof_mixture);
     if (num_threads > 1){
-        solver.set_threads(num_threads);
+        // Avoid multi-threading for evaluation for mixture proportion problems
+        //solver.set_threads(num_threads);
         solver.set_bfgs_threads(num_threads);
     }
 
@@ -1610,7 +1611,8 @@ void contamFinder::bootstrap_amb_prof(int n_boots, map<int, double>& dirichlet_p
         vector<double> params;
         optimML::multivar_ml_solver solver(params, ll_amb_prof_mixture, dll_amb_prof_mixture);
         if (num_threads > 1){
-            solver.set_threads(num_threads);
+            // Avoid multithreading for evaluation for mixture proportion problems
+            //solver.set_threads(num_threads);
             solver.set_bfgs_threads(num_threads);
         }
         solver.add_mixcomp(mixfracs_boot);
