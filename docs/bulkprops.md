@@ -38,11 +38,6 @@ This option controls the number of bootstrap samples performed in order to compu
 How often you expect reads to mismatch their expected genotypes, due to sequencing error and misalignment. If you do not provide this value, it will be estimated from the data. You might want to provide this value if comparing pool composition across different conditions, to eliminate differences in results that come from differences in this estimated value.
 
 ```
---index_jump/-j Index jump
-```
-Default behavior is to read through the entire BAM file looking for SNP sites. Setting this option will instead cause the program to jump to the location of each SNP using the BAM index. This will only be faster if you have very few SNPs.
-
-```
 --threads/-T Number of processing threads
 ```
 Number of threads to use for parallel processing in likelihood calculations. Reading the BAM file will still be done by a single thread.
