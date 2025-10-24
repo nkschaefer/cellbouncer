@@ -274,11 +274,15 @@ a file name prefix.\n", outbase.c_str());
     }
     else{
         string out_test = outbase + ".assignments";
-        if (file_exists(out_test)){
+        string out_test2 = outbase + ".dd.all";
+        string out_test3 = outbase + ".dd.indv";
+        /*
+        if (file_exists(out_test2) || file_exists(out_test3)){
             fprintf(stderr, "ERROR: first argument, [output_prefix], is a preexisting output_prefix\n");
             fprintf(stderr, "  (to be loaded?)\n");
             exit(1);
         }
+        */
     }
 
     vector<int> n;
