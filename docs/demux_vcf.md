@@ -64,7 +64,7 @@ This process can take several hours, depending on how deeply sequenced the singl
 * `--error_sigma/-s` is the standard deviation for both initial guesses. Initial guesses are used as mean values for truncated normal distributions on (0,1) with the standard deviation supplied here. This effectively controls the uncertainty of these initial guesses (lower sigma = more certain), which affects how much sway the initial guesses have over the posterior estimates, which will be used to assign identities to cells.
 #### Other parameters
 * `--doublet_rate/-D` is the prior estimate of how common inter-individual doublets should be in the data set. Set to zero to disable doublet identification altogether. Default = 0.5
-* `--index_jump/-j` might increase speed when there are very few variants in the VCF. By default, `demux_vcf` streams through the entire BAM file, looking for reads that hit variant sites as it goes. This setting instead causes it to jump to each variant in the VCF instead of traversing the entire BAM file. If there are many variants, this will be slower than the default setting.
+
 ### Result files
 This will create the following output files:
 * `[output_base].assignments` contains the most likely identity assigned to each cell.

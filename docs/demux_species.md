@@ -27,6 +27,8 @@ Alternatively, if you map reads to a composite reference genome, you can use [`u
 
 You must first build a set of reference k-mers. To accomplish this, there is a program called `utils/demux_species_ref.py`. In order to run it, you must have [`FASTK`](https://github.com/thegenemyers/FASTK) available in your `$PATH`, or provide it via the `--FastK` argument. If you want to extract transcript sequences from a genome FASTA and an annotation GTF/GFF3, you must also have [`gffread`](https://github.com/gpertea/gffread) available in your `$PATH` or provide it via the `--gffread` argument. If you already have a FASTA file per species containing spliced transcripts, then you do not need `gffread`.
 
+**Update 9/10/2025**: I have added a step to this program designed to filter transcripts to only those that have an ortholog in all transcriptomes provided. This step is designed to prevent issues stemming from different-quality transcriptomes; e.g. if many transcripts are missing in one species' transcriptome, k-mers from those transcriptomes can be incorrectly designated as specific to the other species. This feature can be disabled using the `-O` option to `utils/demux_species_ref.py` but is recommended.
+
 To run the program:
 ```
 utils/demux_species_ref.py -k [length] -o [output_prefix] \
@@ -34,6 +36,7 @@ utils/demux_species_ref.py -k [length] -o [output_prefix] \
     -f [species1_fasta] [species2_fasta] ... \
     (-g [species1_gtf] [species2_gtf] ... ) \
     (-N [num_to_sample]) \
+    (-O) \
     (--FastK /path/to/FastK) \
     (--gffread /path/to/gffread)
 ```
@@ -45,7 +48,7 @@ utils/demux_species_ref.py -k [length] -o [output_prefix] \
   * If providing genomic FASTAs and annotation GTFs, then this argument should be the genomic FASTAs.
 * `-g` is an optional list of GTF files. If you used `-f` to provide reference genomes instead of transcripts, then the GTF files provided here will be used to extract transcripts from the reference genomes using `gffread.` For this, `gffread` must also either be available in your `$PATH` or you can provide the path to the program using `--gffread`.
 * `-N` is the number of k-mers to sample per species. If you set to -1, then all k-mers will be used. Setting to a smaller number (i.e. 20 million) will speed things up and save memory at the risk of losing data and potentially failing to identify some cells.
-
+* `-O` disables filtering for orthologous transcript sets (see above). It is recommended you do not use this option unless all transcriptomes are of very high quality (e.g. mouse and human).
 If you would rather run the steps yourself (instead of using this helper program), or better understand what it's doing, see [here](get_unique_kmers.md).
 
 

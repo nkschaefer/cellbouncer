@@ -5,12 +5,12 @@ If you have an `.assignments` file mapping cell barcodes to identities, as well 
 To run, just do this:
 
 ```
-utils/refine_vcf -b [bamfile] -a [assignments] -v [vcf] (-j)
+utils/refine_vcf -b [bamfile] -a [assignments] -v [vcf] (-T [num_threads])
 ```
 Where `[bamfile]` is your aligned single-cell sequencing data, `[assignments]` is the `.assignments` file containing cell identities, and `[vcf]` is the VCF file of genotype data (this can optionally be bgzipped or compressed to bcf).
 
-The `-j` argument is only useful when there are very few variants: it index-jumps through the BAM file instead of streaming it. This can speed things up when there aren't many variants to look up, but it will slow things down when there are many.
+The optional `-T` argument controls the number of threads used for parallel processing (default = 1).
 
-This program outputs the refined variants to `stdout` as it goes. 
+This program outputs the refined variants to `stdout` as it goes. Variants are written in gzipped VCF format, but there may be a future option to write BCF instead.
 
 [Back to main README](../README.md)
