@@ -7,6 +7,7 @@ CFLAGS = -fPIC -DBC_LENX2=$(BC_LENX2) -DKX2=$(KX2)
 CXXIFLAGS = -I$(PREFIX)/include -Iinclude
 CIFLAGS = -I$(PREFIX)/include -Iinclude
 LFLAGS = -L$(PREFIX)/lib -Llib
+NBITS ?= 500
 
 ifeq ($(findstring cellbouncer, ${CONDA_PREFIX}), cellbouncer)
     CXXIFLAGS += -I${CONDA_PREFIX}/include
@@ -22,7 +23,7 @@ KX2 = 16
 DEPS = lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
 DEPS2 = -lz -lhts -lpthread
 
-all: dependencies demux_vcf demux_mt demux_tags demux_species quant_contam doublet_dragon bulkprops utils/refine_vcf utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/split_read_files utils/atac_fq_preprocess utils/combine_species_counts utils/composite_bam2counts
+all: dependencies demux_vcf demux_mt demux_tags demux_species quant_contam doublet_dragon bulkprops utils/refine_vcf utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/split_read_files utils/atac_fq_preprocess utils/combine_species_counts utils/composite_bam2counts utils/downsample_vcf
 
 dependencies: lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
 
@@ -62,14 +63,17 @@ utils/get_unique_kmers: src/get_unique_kmers.c src/FASTK/libfastk.c build/libfas
 utils/atac_fq_preprocess: src/atac_fq_preprocess.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) build/common.o src/atac_fq_preprocess.cpp $(LFLAGS) $(DEPS) -o utils/atac_fq_preprocess $(DEPS2)
 
-utils/split_read_files: src/split_read_files.cpp src/common.h build/common.o
+utils/split_read_files: src/split_read_files.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) build/common.o src/split_read_files.cpp $(LFLAGS) $(DEPS) -o utils/split_read_files $(DEPS2)
 
-utils/combine_species_counts: src/combine_species_counts.cpp src/common.h build/common.o
+utils/combine_species_counts: src/combine_species_counts.cpp src/common.h build/common.o $(DEPS)
 	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) build/common.o src/combine_species_counts.cpp $(LFLAGS) $(DEPS) -o utils/combine_species_counts $(DEPS2)
 
-utils/composite_bam2counts: src/composite_bam2counts.cpp lib/libhtswrapper.a
+utils/composite_bam2counts: src/composite_bam2counts.cpp lib/libhtswrapper.a $(DEPS)
 	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) src/composite_bam2counts.cpp $(LFLAGS) $(DEPS) -o utils/composite_bam2counts $(DEPS2)
+
+utils/downsample_vcf: src/downsample_vcf.cpp src/downsample_vcf.h $(DEPS)
+	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) -DNBITS=$(NBITS) src/downsample_vcf.cpp $(LFLAGS) $(DEPS) -o utils/downsample_vcf $(DEPS2)
 
 build/common.o: src/common.cpp src/common.h lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) src/common.cpp -c -o build/common.o
