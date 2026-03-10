@@ -80,6 +80,11 @@ void help(int code){
     fprintf(stderr, "===== REQUIRED =====\n");
     fprintf(stderr, "    --vcf -v A VCF/BCF file listing variants.\n");
     fprintf(stderr, "    --num -n Desired final number of SNPs.\n");
+    fprintf(stderr, "    --splits -s Overrides --num/-n. Instead of choosing a desired number of output SNPs,\n");
+    fprintf(stderr, "      tell the program how many species splits/long branches there are. In the case of\n");
+    fprintf(stderr, "      human, chimp, bonobo, and orangutan, for example, there are 3: (Orang/Hominini), \n");
+    fprintf(stderr, "      (Human/Pan), and (troglodytes/paniscus). The program will downsample in a way that\n");
+    fprintf(stderr, "      only discards SNPs on overrepresented branches.\n");
     fprintf(stderr, "    --output -o Output VCF file name. Will be gzipped.\n");
     fprintf(stderr, "    --help -h Display this message and exit.\n");
     exit(code);
@@ -312,6 +317,76 @@ double dbrentfun(double param, const map<string, double>& data_d, const map<stri
     return d_df;
 }
 
+/**
+ * Brent's method for root finding in the case of a set number of splits provided.
+ * Instead of targeting a set number of final variants, this method instead searches
+ * for a parameter x where s_n^x - a_0 = a_0 - a_1
+ * where s_0, s_1, ... s_n are counts on the species-split branches
+ * and a_0, a_1, ... are counts of other clades
+ * In other words, the goal is to downsample only species-split clades exponentially, 
+ * so that the difference in branch lengths between the shortest species-split branch
+ * and the longest normal branch (which will not be downsampled) is comparable to 
+ * the distance between the two longest normal branches.
+ *
+ * All s clades will be downsampled as s^x.
+ */
+double brentfun_splits(double param, const map<string, double>& data_d, const map<string, int>& data_i){
+    double last_split = data_d.at("last_split");
+    double first_normal = data_d.at("a0");
+    double second_normal = data_d.at("a1");
+    
+    return (pow(last_split, param) - first_normal) - 
+        (first_normal - second_normal);
+}
+
+/**
+ * First derivative of above.
+ */
+double dbrentfun_splits(double param, const map<string, double>& data_d, const map<string, int>& data_i){
+    double last_split = data_d.at("last_split");
+    double first_normal = data_d.at("a0");
+    double second_normal = data_d.at("a1");
+
+    return pow(last_split, param) * log(last_split);
+
+}
+
+void print_sampstr(bitset<NBITS>& bs, 
+    vector<string>& samples,
+    double count,
+    double frac_keep){
+
+    set<string> samp1;
+    set<string> samp2;
+    for (int x = 0; x < samples.size(); ++x){
+        if (bs.test(x)){
+            samp1.insert(samples[x]);
+        }
+        else{
+            samp2.insert(samples[x]);
+        }
+    }
+    string sampstr1 = "";
+    string sampstr2 = "";
+    bool first = true;
+    for (set<string>::iterator s = samp1.begin(); s != samp1.end(); ++s){
+        if (!first){
+            sampstr1 += ",";
+        }
+        first = false;
+        sampstr1 += *s;
+    }
+    first = true;
+    for (set<string>::iterator s = samp2.begin(); s != samp2.end(); ++s){
+        if (!first){
+            sampstr2 += ",";
+        }
+        first = false;
+        sampstr2 += *s;
+    }
+    fprintf(stdout, "%s\t%s\t%d\t%f\n", sampstr1.c_str(), sampstr2.c_str(),
+        (int)round(count), frac_keep);
+}
 
 int main(int argc, char *argv[]) {    
     
@@ -319,6 +394,7 @@ int main(int argc, char *argv[]) {
        {"vcf", required_argument, 0, 'v'},
        {"output", required_argument, 0, 'o'},
        {"num", required_argument, 0, 'n'},
+       {"splits", required_argument, 0, 's'},
        {0, 0, 0, 0} 
     };
     
@@ -326,6 +402,7 @@ int main(int argc, char *argv[]) {
     string vcf_file = "";
     string outfile = "";
     int num = -1;
+    int splits = -1;
 
     int option_index = 0;
     int ch;
@@ -333,7 +410,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1){
         help(0);
     }
-    while((ch = getopt_long(argc, argv, "v:n:o:h", long_options, &option_index )) != -1){
+   while((ch = getopt_long(argc, argv, "v:n:o:s:h", long_options, &option_index )) != -1){
         switch(ch){
             case 0:
                 // This option set a flag. No need to do anything here.
@@ -350,6 +427,9 @@ int main(int argc, char *argv[]) {
             case 'n':
                 num = atoi(optarg);
                 break;
+            case 's':
+                splits = atoi(optarg);
+                break;
             default:
                 help(0);
                 break;
@@ -361,8 +441,12 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "ERROR: VCF file required\n");
         exit(1);
     }
-    if (num <= 0){
+    if (splits > 0){
+        fprintf(stderr, "Overriding --num with --splits = %d\n", splits);
+    }
+    else if (num <= 0){
         fprintf(stderr, "ERROR: --num/-n must be positive (Recommend > 1M)\n");
+        fprintf(stderr, "  alternatively, provide positive --splits/-s\n");
         exit(1);
     }
     if (outfile == ""){
@@ -596,93 +680,100 @@ int main(int argc, char *argv[]) {
     }
     
     map<string, double> sampstr2prob;
-    if (allbc2 > (double)num){
-        
-        sort(clcountsort.begin(), clcountsort.end());
-        
-        for (int n_hi = 1; n_hi <= clcountsort.size(); ++n_hi){ 
-            double sum_hi = 0;
+    
+    if (splits > 0){
+        if (clcountsort.size() < splits + 2){
+            fprintf(stderr, "ERROR: there must be at least two non-species branch clade counts\n");
+            fprintf(stderr, "  in order to downsample.\n");
+            fprintf(stderr, "You have set %d species branch splits and there are only %ld total branches.\n",
+                splits, clcountsort.size());
+            exit(1);
+        }
+        else{
+            // Downsample the requested number of longest branches.
+            sort(clcountsort.begin(), clcountsort.end());
             
-            optimML::brent_solver solver(brentfun, dbrentfun);
+            //optimML::brent_solver solver(brentfun_splits, dbrentfun_splits);
+            optimML::brent_solver solver(brentfun_splits);
             solver.set_root();
-            //solver.constrain_01();
-            char buf[50];
-            vector<vector<double> > vecs;
-
-            for (int i = 0; i < n_hi; ++i){
-                vecs.push_back(vector<double>{ -clcountsort[i].first });    
-                sprintf(&buf[0], "x%d", i);
-                string bufstr = buf;
-                bool success = solver.add_data(bufstr, vecs[vecs.size()-1]);
-                sum_hi += -clcountsort[i].first;
-            }
-
-            double sum_lo = allbc2 - sum_hi;
-            if (n_hi == clcountsort.size() || sum_lo < (double)num ){
-                double lastcount = -clcountsort[n_hi-1].first;
-                double nextcount = -1;
-                if (n_hi < clcountsort.size()){
-                    nextcount = -clcountsort[n_hi].first;
-                }
-                
-                solver.add_data_fixed("target", (int)round((double)num - sum_lo));
-                solver.add_data_fixed("num", n_hi);
-                double res = solver.solve(0,1);
-
-                if (res < 1.0){
-                    lastcount = pow(lastcount, res);
-                    
-                    double testsum = 0.0;
-                    for (int i = 0; i < n_hi; ++i){
-                        testsum += pow(-clcountsort[i].first, res);
-                    } 
-                    if (lastcount > nextcount){
-                        fprintf(stdout, "group1\tgroup2\tcount\tfrac_keep\n");
-                        for (int i = 0 ; i < n_hi; ++i){
-                            double dsp = pow(-clcountsort[i].first, res) / -clcountsort[i].first;
-                            downsample_prob.insert(make_pair(bs_idx[clcountsort[i].second], dsp));
-                            set<string> samp1;
-                            set<string> samp2;
-                            for (int x = 0; x < samples.size(); ++x){
-                                if (bs_idx[clcountsort[i].second].test(x)){
-                                    samp1.insert(samples[x]);
-                                }
-                                else{
-                                    samp2.insert(samples[x]);
-                                }
-                            }
-                            string sampstr1 = "";
-                            string sampstr2 = "";
-                            bool first = true;
-                            for (set<string>::iterator s = samp1.begin(); s != samp1.end(); ++s){
-                                if (!first){
-                                    sampstr1 += ",";
-                                }
-                                first = false;
-                                sampstr1 += *s;
-                            }
-                            first = true;
-                            for (set<string>::iterator s = samp2.begin(); s != samp2.end(); ++s){
-                                if (!first){
-                                    sampstr2 += ",";
-                                }
-                                first = false;
-                                sampstr2 += *s;
-                            }
-                            fprintf(stdout, "%s\t%s\t%d\t%f\n", sampstr1.c_str(), sampstr2.c_str(),
-                                (int)round(-clcountsort[i].first), dsp);
-                        }
-                        break;
-                    }
-                }
+            solver.add_data_fixed("last_split", -clcountsort[splits-1].first);
+            solver.add_data_fixed("a0", -clcountsort[splits].first);
+            solver.add_data_fixed("a1", -clcountsort[splits+1].first);
+            
+            double res = solver.solve(0, 1);
+            
+            fprintf(stdout, "group1\tgroup2\tcount\tfrac_keep\n");
+            for (int i = 0 ; i < splits; ++i){
+                double dsp = pow(-clcountsort[i].first, res) / -clcountsort[i].first;
+                downsample_prob.insert(make_pair(bs_idx[clcountsort[i].second], dsp));
+                print_sampstr(bs_idx[clcountsort[i].second], samples, -clcountsort[i].first, dsp);                 
             }
         }
     }
     else{
-        fprintf(stderr, "%f total clade counts; no downsampling needed\n", allbc2);
-        return 0;
+        // Downsample to reach target count.
+
+        if (allbc2 > (double)num){
+            
+            sort(clcountsort.begin(), clcountsort.end());
+            
+            for (int n_hi = 1; n_hi <= clcountsort.size(); ++n_hi){ 
+                double sum_hi = 0;
+                
+                //optimML::brent_solver solver(brentfun, dbrentfun);
+                optimML::brent_solver solver(brentfun);
+
+                solver.set_root();
+                //solver.constrain_01();
+                char buf[50];
+                vector<vector<double> > vecs;
+
+                for (int i = 0; i < n_hi; ++i){
+                    vecs.push_back(vector<double>{ -clcountsort[i].first });    
+                    sprintf(&buf[0], "x%d", i);
+                    string bufstr = buf;
+                    bool success = solver.add_data(bufstr, vecs[vecs.size()-1]);
+                    sum_hi += -clcountsort[i].first;
+                }
+
+                double sum_lo = allbc2 - sum_hi;
+                if (n_hi == clcountsort.size() || sum_lo < (double)num ){
+                    double lastcount = -clcountsort[n_hi-1].first;
+                    double nextcount = -1;
+                    if (n_hi < clcountsort.size()){
+                        nextcount = -clcountsort[n_hi].first;
+                    }
+                    
+                    solver.add_data_fixed("target", (int)round((double)num - sum_lo));
+                    solver.add_data_fixed("num", n_hi);
+                    double res = solver.solve(0,1);
+
+                    if (res < 1.0){
+                        lastcount = pow(lastcount, res);
+                        
+                        double testsum = 0.0;
+                        for (int i = 0; i < n_hi; ++i){
+                            testsum += pow(-clcountsort[i].first, res);
+                        } 
+                        if (lastcount > nextcount){
+                            fprintf(stdout, "group1\tgroup2\tcount\tfrac_keep\n");
+                            for (int i = 0 ; i < n_hi; ++i){
+                                double dsp = pow(-clcountsort[i].first, res) / -clcountsort[i].first;
+                                downsample_prob.insert(make_pair(bs_idx[clcountsort[i].second], dsp));
+                                print_sampstr(bs_idx[clcountsort[i].second], samples, -clcountsort[i].first, dsp);                 
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        else{
+            fprintf(stderr, "%f total clade counts; no downsampling needed\n", allbc2);
+            return 0;
+        }
     }
-    
+
     // Determine probability of keeping clades with missing genotypes
     unordered_map<pair<bitset<NBITS>, bitset<NBITS> >, double> downsample_miss_prob;
 
