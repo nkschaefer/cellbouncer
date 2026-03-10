@@ -1149,7 +1149,7 @@ all possible individuals\n", idfile_doublet.c_str());
                     // Started a new chromosome
                     if (curtid != -1){
                         while (cursnp != snpdat.end()){
-                            if (snpdat.count(cursnp->first) > 0){        
+                            if (varcounts_site.count(cursnp->first) > 0){        
                                 dump_vcs_counts(varcounts_site[cursnp->first], 
                                     indv_allelecounts,
                                     cursnp->second, samples.size());
@@ -1209,7 +1209,7 @@ all possible individuals\n", idfile_doublet.c_str());
             // Handle any final SNPs.
             if (curtid != -1){
                 while (cursnp != snpdat.end()){
-                    if (snpdat.count(cursnp->first) > 0){
+                    if (varcounts_site.count(cursnp->first) > 0){
                         dump_vcs_counts(varcounts_site[cursnp->first], 
                             indv_allelecounts,
                             cursnp->second, samples.size());
@@ -1303,7 +1303,7 @@ all possible individuals\n", idfile_doublet.c_str());
     map<pair<int, int>, double> er_map;
     map<pair<int, int>, double> ea_map; 
     assign_ids(indv_allelecounts, samples, assn, assn_llr, 
-        allowed_ids, allowed_ids, doublet_rate, error_ref, error_alt,
+        allowed_ids, allowed_ids2, doublet_rate, error_ref, error_alt,
         false, prior_weights);
 
     robin_hood::unordered_map<unsigned long, int> assncpy = assn;
@@ -1325,7 +1325,7 @@ all possible individuals\n", idfile_doublet.c_str());
     // Re-assign individuals using posterior error rates
     fprintf(stderr, "Re-inferring identities of cells...\n");
     assign_ids(indv_allelecounts, samples, assn, assn_llr,
-        allowed_ids, allowed_ids, doublet_rate, error_ref_posterior, error_alt_posterior,
+        allowed_ids, allowed_ids2, doublet_rate, error_ref_posterior, error_alt_posterior,
         false, prior_weights);
     
     // This function can infer sample-specific error rates, which might be better able to 
