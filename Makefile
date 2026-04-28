@@ -23,7 +23,7 @@ KX2 = 16
 DEPS = lib/libmixturedist.a lib/libhtswrapper.a lib/liboptimml.a
 DEPS2 = -lz -lhts -lpthread
 
-all: dependencies demux_vcf demux_mt demux_tags demux_species quant_contam doublet_dragon bulkprops utils/refine_vcf utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/split_read_files utils/atac_fq_preprocess utils/combine_species_counts utils/composite_bam2counts utils/downsample_vcf
+all: dependencies demux_vcf demux_mt demux_tags demux_species quant_contam doublet_dragon bulkprops utils/refine_vcf utils/bam_indiv_rg utils/bam_split_bcs utils/get_unique_kmers utils/split_read_files utils/atac_fq_preprocess utils/combine_species_counts utils/composite_bam2counts utils/downsample_vcf utils/filter_vcf_species_fixed
 
 dependencies: lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
 
@@ -74,6 +74,9 @@ utils/composite_bam2counts: src/composite_bam2counts.cpp lib/libhtswrapper.a $(D
 
 utils/downsample_vcf: src/downsample_vcf.cpp src/downsample_vcf.h $(DEPS)
 	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) -DNBITS=$(NBITS) src/downsample_vcf.cpp $(LFLAGS) $(DEPS) -o utils/downsample_vcf $(DEPS2)
+
+utils/filter_vcf_species_fixed: src/filter_vcf_species_fixed.cpp $(DEPS)
+	$(COMP) $(CXXFLAGS) $(CXXIFLAGS) src/filter_vcf_species_fixed.cpp $(LFLAGS) $(DEPS) -o utils/filter_vcf_species_fixed $(DEPS2)
 
 build/common.o: src/common.cpp src/common.h lib/libhtswrapper.a lib/libmixturedist.a lib/liboptimml.a
 	$(COMP) $(CXXIFLAGS) $(CXXFLAGS) src/common.cpp -c -o build/common.o
