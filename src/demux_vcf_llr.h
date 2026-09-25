@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <map>
 #include <set>
+#include <limits>
 #include <cstdlib>
 #include <utility>
 #include "common.h"
@@ -44,6 +45,8 @@ class llr_table{
         void insert(short i1, short i2, double llr);
         
         void disallow(short i);
+
+        void recalculate_minmax();
         
         // Thin the table out, keeping the set number of indvs
         bool del(int n_keep);

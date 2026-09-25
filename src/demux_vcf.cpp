@@ -1007,7 +1007,19 @@ name prefix.\n", output_prefix.c_str());
             // All we are doing here is computing & writing out conditional match fracs.
             // Get a list of all chromosomes
             bcf_srs_t* sr = bcf_sr_init();    
+            if (sr == NULL || !bcf_sr_add_reader(sr, vcf_file.c_str())){
+                fprintf(stderr, "ERROR reading VCF/BCF file %s\n", vcf_file.c_str());
+                if (sr != NULL){
+                    bcf_sr_destroy(sr);
+                }
+                exit(1);
+            }
             bcf_hdr_t* bcf_header = bcf_sr_get_header(sr, 0);
+            if (bcf_header == NULL){
+                fprintf(stderr, "ERROR reading VCF/BCF header %s\n", vcf_file.c_str());
+                bcf_sr_destroy(sr);
+                exit(1);
+            }
 
             for (int i = 0; i < bcf_header->n[BCF_DT_CTG]; ++i){
                 // Read SNP data from this chromosome
@@ -1047,15 +1059,17 @@ name prefix.\n", output_prefix.c_str());
     if (idfile_given){
         parse_idfile(idfile, samples, allowed_ids, allowed_ids2, true);
         if (allowed_ids.size() == 0){
-            fprintf(stderr, "No valid individual names found in file %s; allowing \
-all possible individuals\n", idfile.c_str());
+            fprintf(stderr, "ERROR: no valid individual names found in file %s\n",
+                idfile.c_str());
+            exit(1);
         }
     }
     if (idfile_doublet_given){
         parse_idfile(idfile_doublet, samples, allowed_ids, allowed_ids2, false);
         if (allowed_ids.size() == 0){
-            fprintf(stderr, "No valid individual names found in file %s; allowing \
-all possible individuals\n", idfile_doublet.c_str());
+            fprintf(stderr, "ERROR: no valid individual names found in file %s\n",
+                idfile_doublet.c_str());
+            exit(1);
         }
     }
     

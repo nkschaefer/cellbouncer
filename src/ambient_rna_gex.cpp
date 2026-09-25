@@ -243,7 +243,6 @@ bool contam_profiler_gex::get_profile(){
         double celltot = 0;
         
         int i = 0;
-        int cprev = -1;
         for (map<int, long int>::iterator c = m->second.begin(); c != m->second.end(); ++c){
             
             if (!skip_genes_given || skip_genelist.find(c->first) == skip_genelist.end()){
@@ -264,12 +263,8 @@ bool contam_profiler_gex::get_profile(){
                     grps2tot[clust] += count;
 
                     ns_idx[i].push_back(c->first);
-                    for (int j = cprev+1; j < c->first; ++j){
-                        ns[j].push_back(0);
-                    }
-                    ns[c->first].push_back(count);
+                    ns[i].push_back(count);
                     i++;
-                    cprev = c->first;
                 }
             }
         } 
@@ -283,8 +278,6 @@ bool contam_profiler_gex::get_profile(){
             // checking once an index == -1 is seen.
             for (int j = i; j < n_features; ++j){
                 ns_idx[j].push_back(-1);
-            }
-            for (int j = cprev + 1; j < n_features; ++j){
                 ns[j].push_back(0.0);
             }
 

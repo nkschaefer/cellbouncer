@@ -68,6 +68,25 @@ double binom_0 = 1e-6;
 
 // ===== Utility functions ===== 
 
+bool expfracs_complete(const map<pair<int, int>, map<int, float> >& expfracs,
+    const vector<int>& idx2samp){
+    for (vector<int>::const_iterator i = idx2samp.begin(); i != idx2samp.end(); ++i){
+        for (int nalt = 0; nalt <= 2; ++nalt){
+            pair<int, int> key = make_pair(*i, nalt);
+            map<pair<int, int>, map<int, float> >::const_iterator ef = expfracs.find(key);
+            if (ef == expfracs.end()){
+                return false;
+            }
+            for (vector<int>::const_iterator j = idx2samp.begin(); j != idx2samp.end(); ++j){
+                if (ef->second.find(*j) == ef->second.end()){
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
 /**
  * Integrate binomial log likelihood wrt p_c (expected alt allele match rate from contamination)
  * 
@@ -281,11 +300,14 @@ double ll_amb_prof_mixture(const vector<double>& params,
     double k = data_d.at("k");
     double p_e = data_d.at("p_e");
     double binom_p = (1.0 - c) * p_e + c * p_c;
-    
-    if (isnan(logbinom(n,k,binom_p)) || isinf(logbinom(n,k,binom_p))){
-       fprintf(stderr, "oops\n");
-       exit(1);
-
+    if (!isfinite(binom_p)){
+        return -INFINITY;
+    }
+    if (binom_p < DBL_MIN*1e6){
+        binom_p = DBL_MIN*1e6;
+    }
+    else if (binom_p > 1.0-DBL_MIN*1e6){
+        binom_p = 1.0-DBL_MIN*1e6;
     }
     return logbinom(n, k, binom_p);
 }
@@ -315,10 +337,19 @@ void dll_amb_prof_mixture(const vector<double>& params,
     double p_e = data_d.at("p_e");
     
     double binom_p = (1.0 - c) * p_e + c * p_c;
+    if (!isfinite(binom_p)){
+        return;
+    }
+    if (binom_p < DBL_MIN*1e6){
+        binom_p = DBL_MIN*1e6;
+    }
+    else if (binom_p > 1.0-DBL_MIN*1e6){
+        binom_p = 1.0-DBL_MIN*1e6;
+    }
     double dy_dp = (k-n*binom_p)/(binom_p - binom_p*binom_p);
     
     results[results.size()-1] += dy_dp * c;
-    if (c_in_data){
+    if (!c_in_data){
         results[0] += dy_dp * (p_c - p_e);
     }
 }
@@ -367,12 +398,12 @@ contamFinder::contamFinder(robin_hood::unordered_map<unsigned long,
 
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin(); a != 
         assn.end(); ++a){
-        allowed_ids.insert(a->second);
+        this->allowed_ids.insert(a->second);
         // Make sure we also allow sub-IDs of combinations
         if (a->second >= n_samples){
             pair<int, int> combo = idx_to_hap_comb(a->second, n_samples);
-            allowed_ids.insert(combo.first);
-            allowed_ids.insert(combo.second);
+            this->allowed_ids.insert(combo.first);
+            this->allowed_ids.insert(combo.second);
         }
         if (id_llrsum.count(a->second) == 0){
             id_llrsum.insert(make_pair(a->second, 0.0));
@@ -822,15 +853,32 @@ double contamFinder::est_min_c(){
     double vsum = 0.0;
     double vcount = 0.0;
     for (map<int, double>::iterator mi = minc_by_id.begin(); mi != minc_by_id.end(); ++mi){
-        vsum += mi->second/minc_by_id_count[mi->first];
-        vcount++;
+        if (minc_by_id_count[mi->first] > 0){
+            vsum += mi->second/minc_by_id_count[mi->first];
+            vcount++;
+        }
     }
-    double c_est = vsum/(vcount-1.0);
+    double c_est;
+    if (vcount > 1){
+        c_est = vsum/(vcount-1.0);
+    }
+    else if (vcount > 0){
+        c_est = vsum/vcount;
+    }
+    else{
+        c_est = 0.01;
+    }
+    if (!isfinite(c_est) || c_est <= 0){
+        c_est = 0.01;
+    }
     
     contam_prof.clear();
     double minval = 0.01;
     double denom = 0.0;
     for (map<int, double>::iterator mi = minc_by_id.begin(); mi != minc_by_id.end(); ++mi){
+        if (minc_by_id_count[mi->first] <= 0){
+            continue;
+        }
         double val = mi->second/minc_by_id_count[mi->first];
         double frac = 1.0 - val/c_est;
         if (frac < minval){
@@ -839,12 +887,21 @@ double contamFinder::est_min_c(){
         denom += frac;
         contam_prof.insert(make_pair(mi->first, frac));
     }
+    for (int i = 0; i < idx2samp.size(); ++i){
+        int samp = idx2samp[i];
+        if (contam_prof.count(samp) == 0){
+            contam_prof.insert(make_pair(samp, minval));
+            denom += minval;
+        }
+    }
     if (inter_species){
         contam_prof.insert(make_pair(-1, 1.0/((double)minc_by_id.size() + 1.0)));
         denom += contam_prof[-1];
     }
-    for (map<int, double>::iterator cp = contam_prof.begin(); cp != contam_prof.end(); ++cp){
-        cp->second /= denom;
+    if (denom > 0){
+        for (map<int, double>::iterator cp = contam_prof.begin(); cp != contam_prof.end(); ++cp){
+            cp->second /= denom;
+        }
     }
     
     return c_est;
@@ -989,7 +1046,10 @@ void contamFinder::est_contam_cells_global(){
  *
  */
 void contamFinder::est_contam_cells(){
-    
+    robin_hood::unordered_map<unsigned long, double> contam_rate_prev = contam_rate;
+    robin_hood::unordered_map<unsigned long, double> contam_rate_se_prev = contam_rate_se;
+    robin_hood::unordered_map<unsigned long, double> contam_rate_ll_prev = contam_rate_ll;
+
     contam_rate.clear();
     contam_rate_se.clear();
     contam_rate_ll.clear();
@@ -1035,21 +1095,36 @@ void contamFinder::est_contam_cells(){
         }
         c_cell.set_maxiter(-1);
         
-        bool root_found = 0.0;
         double se = 0.0;
-        double c_cell_map = 1.0;
+        double c_cell_map = 0.0;
         double ll = 0.0;
+        bool solved = false;
         try{
             c_cell_map = c_cell.solve(0,1);
-            if (c_cell.root_found){
+            if (c_cell.root_found && isfinite(c_cell_map) && c_cell_map >= 0 &&
+                c_cell_map <= 1 && isfinite(c_cell.log_likelihood)){
                 ll = c_cell.log_likelihood;
                 if (c_cell.se_found){
                     se = c_cell.se;
                 }
+                solved = true;
             }
         }
         catch (int exc){
             // pass
+        }
+        if (!solved && contam_rate_prev.count(ci->first) > 0){
+            c_cell_map = contam_rate_prev[ci->first];
+            if (contam_rate_se_prev.count(ci->first) > 0){
+                se = contam_rate_se_prev[ci->first];
+            }
+            if (contam_rate_ll_prev.count(ci->first) > 0){
+                ll = contam_rate_ll_prev[ci->first];
+            }
+            solved = true;
+        }
+        if (!solved){
+            continue;
         }
         // Set SE to 0 if we did not find a maximum-likelihood estimate in the range (0,1) 
         contam_rate.emplace(ci->first, c_cell_map);
@@ -1062,6 +1137,10 @@ void contamFinder::est_contam_cells(){
         contam_rate_ll.emplace(ci->first, ll);
     }
     
+    if (cell_c_maps.size() == 0){
+        return;
+    }
+
     // Re-compute data set-wide distribution
     pair<double, double> mu_var;
     if (weighted){
@@ -1091,6 +1170,9 @@ void contamFinder::est_contam_cells(){
     map<int, double> idccount;
     for (robin_hood::unordered_map<unsigned long, int>::iterator a = assn.begin();
         a != assn.end(); ++a){
+        if (contam_rate.count(a->first) == 0){
+            continue;
+        }
         if (a->second >= n_samples){
             pair<int, int> comb = idx_to_hap_comb(a->second, n_samples);
             if (idcsum.count(comb.first) == 0){
@@ -1338,6 +1420,10 @@ void contamFinder::compile_amb_prof_dat(bool solve_for_c,
  * Edits init_c to updated value (if solve_for_c == true)
  */
 double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c, bool use_global_c){
+    if (!expfracs_complete(expfracs, idx2samp)){
+        fprintf(stderr, "ERROR: incomplete conditional matching probabilities\n");
+        return -DBL_MAX;
+    }
     
     vector<double> params;
     if (solve_for_c){
@@ -1372,10 +1458,25 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c, b
     if (contam_prof.count(-1) > 0){
         startprops.push_back(contam_prof[-1]);
     }
+
+    bool valid_data = mixfracs.size() > 0 && startprops.size() > 0 &&
+        weights.size() == mixfracs.size() && n.size() == mixfracs.size() &&
+        k.size() == mixfracs.size() && p_e.size() == mixfracs.size() &&
+        (solve_for_c || c.size() == mixfracs.size());
+    for (int i = 0; valid_data && i < mixfracs.size(); ++i){
+        if (mixfracs[i].size() != startprops.size()){
+            valid_data = false;
+        }
+    }
+    if (!valid_data){
+        fprintf(stderr, "ERROR: invalid ambient profile data\n");
+        return -DBL_MAX;
+    }
     
     // Set up ML solver 
-    solver.add_mixcomp(mixfracs);
-    solver.add_mixcomp_fracs(startprops);
+    if (!solver.add_mixcomp(mixfracs) || !solver.add_mixcomp_fracs(startprops)){
+        return -DBL_MAX;
+    }
     solver.add_data("n", n);
     solver.add_data("k", k);
     solver.add_data("p_e", p_e);
@@ -1390,43 +1491,55 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c, b
 
     if (solve_for_c){
         // First time. Try a few starting conditions and get the maximum LL.
-        solver.solve();
-        
         vector<double> lls;
         vector<vector<double> > mcs;
         vector<double> cs;
-        int maxidx = 0;
-        double maxll = solver.log_likelihood;
-        lls.push_back(solver.log_likelihood);
-        mcs.push_back(solver.results_mixcomp);
-        cs.push_back(solver.results[0]);
+        int maxidx = -1;
+        double maxll = -DBL_MAX;
+        if (solver.solve() && solver.results.size() > 0 &&
+            solver.results_mixcomp.size() == startprops.size() &&
+            isfinite(solver.log_likelihood) && isfinite(solver.results[0])){
+            maxidx = 0;
+            maxll = solver.log_likelihood;
+            lls.push_back(solver.log_likelihood);
+            mcs.push_back(solver.results_mixcomp);
+            cs.push_back(solver.results[0]);
+        }
         
         vector<double> mptest;
         for (int i = 0; i < startprops.size(); ++i){
             mptest.push_back(1.0/startprops.size());
         }
-        solver.add_mixcomp_fracs(mptest);
-        solver.solve();
-        if (solver.log_likelihood > maxll){
-            maxll = solver.log_likelihood;
+        if (solver.add_mixcomp_fracs(mptest) && solver.solve() &&
+            solver.results.size() > 0 && solver.results_mixcomp.size() == startprops.size() &&
+            isfinite(solver.log_likelihood) && isfinite(solver.results[0])){
+            if (maxidx == -1 || solver.log_likelihood > maxll){
+                maxidx = lls.size();
+                maxll = solver.log_likelihood;
+            }
+            lls.push_back(solver.log_likelihood);
+            mcs.push_back(solver.results_mixcomp);
+            cs.push_back(solver.results[0]);
         }
-        lls.push_back(solver.log_likelihood);
-        mcs.push_back(solver.results_mixcomp);
-        cs.push_back(solver.results[0]);
 
         int ntrials = contam_prof.size() * n_mixprop_trials;
         //vector<double> trialprops;
         for (int n = 0; n < ntrials; ++n){
             solver.randomize_mixcomps();
-             
-            solver.solve();
-            if (solver.log_likelihood > maxll){
+            if (solver.solve() && solver.results.size() > 0 &&
+                solver.results_mixcomp.size() == startprops.size() &&
+                isfinite(solver.log_likelihood) && isfinite(solver.results[0]) &&
+                (maxidx == -1 || solver.log_likelihood > maxll)){
                 maxll = solver.log_likelihood;
                 maxidx = lls.size();
                 lls.push_back(solver.log_likelihood);
                 mcs.push_back(solver.results_mixcomp);
                 cs.push_back(solver.results[0]);
             }
+        }
+        if (maxidx == -1){
+            fprintf(stderr, "ERROR: unable to infer ambient RNA profile\n");
+            return -DBL_MAX;
         }
         solver.log_likelihood = maxll;
         solver.results[0] = cs[maxidx];
@@ -1444,7 +1557,11 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c, b
     }
     else{
         vector<double> trialprops;
-        solver.solve();
+        if (!solver.solve() || solver.results_mixcomp.size() != startprops.size() ||
+            !isfinite(solver.log_likelihood)){
+            fprintf(stderr, "ERROR: unable to infer ambient RNA profile\n");
+            return -DBL_MAX;
+        }
         vector<double> maxres = solver.results_mixcomp;
         double maxll = solver.log_likelihood;
         /* 
@@ -1547,6 +1664,12 @@ double contamFinder::update_amb_prof_mixture(bool solve_for_c, double& init_c, b
 void contamFinder::bootstrap_amb_prof(int n_boots, map<int, double>& dirichlet_params){
     // Assumes we have already solved everything and that this is at the end.
 
+    if (!expfracs_complete(expfracs, idx2samp)){
+        fprintf(stderr, "ERROR: incomplete conditional matching probabilities\n");
+        dirichlet_params.clear();
+        return;
+    }
+
     // Compile everything we need
     vector<vector<double> > mixfracs;
     vector<double> weights;
@@ -1579,6 +1702,19 @@ void contamFinder::bootstrap_amb_prof(int n_boots, map<int, double>& dirichlet_p
         vector<double> v;
         dirprops.push_back(v);
         mle_fracs.push_back(contam_prof[-1]);
+    }
+
+    bool valid_data = n.size() > 0 && startprops.size() > 0 &&
+        mixfracs.size() == n.size() && weights.size() == n.size() &&
+        k.size() == n.size() && p_e.size() == n.size() && c.size() == n.size();
+    for (int i = 0; valid_data && i < mixfracs.size(); ++i){
+        if (mixfracs[i].size() != startprops.size()){
+            valid_data = false;
+        }
+    }
+    if (!valid_data){
+        dirichlet_params.clear();
+        return;
     }
     
     // Initialize random stuff
@@ -1615,13 +1751,32 @@ void contamFinder::bootstrap_amb_prof(int n_boots, map<int, double>& dirichlet_p
             //solver.set_threads(num_threads);
             solver.set_bfgs_threads(num_threads);
         }
-        solver.add_mixcomp(mixfracs_boot);
-        solver.add_mixcomp_fracs(startprops);
+        if (!solver.add_mixcomp(mixfracs_boot) ||
+            !solver.add_mixcomp_fracs(startprops)){
+            continue;
+        }
         solver.add_data("n", n_boot);
         solver.add_data("k", k_boot);
         solver.add_data("p_e", p_e_boot);
         solver.add_data("c", c_boot);
-        solver.solve();
+        solver.add_weights(weights_boot);
+        if (!solver.solve() || solver.results_mixcomp.size() != startprops.size() ||
+            !isfinite(solver.log_likelihood)){
+            continue;
+        }
+        bool complete = true;
+        double propsum = 0.0;
+        for (int x = 0; x < solver.results_mixcomp.size(); ++x){
+            if (!isfinite(solver.results_mixcomp[x]) || solver.results_mixcomp[x] < 0 ||
+                solver.results_mixcomp[x] > 1){
+                complete = false;
+                break;
+            }
+            propsum += solver.results_mixcomp[x];
+        }
+        if (!complete || fabs(propsum-1.0) > 1e-6){
+            continue;
+        }
         
         for (int x = 0; x < solver.results_mixcomp.size(); ++x){
             dirprops[x].push_back(solver.results_mixcomp[x]);
@@ -1629,10 +1784,19 @@ void contamFinder::bootstrap_amb_prof(int n_boots, map<int, double>& dirichlet_p
         
     }
     fprintf(stderr, "\n");
+
+    if (dirprops.size() == 0 || dirprops[0].size() == 0){
+        dirichlet_params.clear();
+        return;
+    }
     
     // Now fit Dirichlet MLE
     vector<double> dirichlet_soln;
     fit_dirichlet(mle_fracs, dirprops, dirichlet_soln);
+    if (dirichlet_soln.size() != startprops.size()){
+        dirichlet_params.clear();
+        return;
+    }
     
     dirichlet_params.clear();
     for (int i = 0; i < idx2samp.size(); ++i){
@@ -1810,8 +1974,6 @@ bool contamFinder::reclassify_cells(){
         doub_rate_table = doublet_rate;
     }
 
-    set<unsigned long> cell_rm;
-   
     /*
     vector<pair<double, int> > cpsort;
     for (map<int, double>::iterator cp = contam_prof.begin(); cp != contam_prof.end(); ++cp){
@@ -2072,7 +2234,17 @@ bool contamFinder::reclassify_cells(){
                         c_cell.add_beta_prior(betaparams.first, betaparams.second);
                     }
                     c_cell.set_maxiter(-1);
-                    double c_cell_map = c_cell.solve(0,1);
+                    double c_cell_map = 0.0;
+                    bool c_cell_solved = false;
+                    try{
+                        c_cell_map = c_cell.solve(0,1);
+                        c_cell_solved = c_cell.root_found && isfinite(c_cell_map) &&
+                            c_cell_map >= 0 && c_cell_map <= 1 &&
+                            isfinite(c_cell.log_likelihood);
+                    }
+                    catch (int exc){
+                        // Keep the previous assignment.
+                    }
                     
                     // Only accept the change if the new assignment + contam rate inference has a higher
                     // log likelihood than the older assignment + contam rate inference
@@ -2083,9 +2255,10 @@ bool contamFinder::reclassify_cells(){
                     //if (c_cell.root_found &&
                     //    (contam_rate_ll[a->first] == 0 || c_cell.log_likelihood < contam_rate_ll[a->first])){
   
-                    if (c_cell.root_found &&
+                    if (c_cell_solved &&
 //                        c_cell_map >= contam_rate[a->first] &&  
-                        (contam_rate_ll[a->first] == 0 || c_cell.log_likelihood >= contam_rate_ll[a->first])){
+                        (contam_rate_ll.count(a->first) == 0 || contam_rate_ll[a->first] == 0 ||
+                        c_cell.log_likelihood >= contam_rate_ll[a->first])){
                         n_reassigned++;
                         
                         //fprintf(stdout, "%s\t%f\t%f\t%f\t%f\n", bc2str(a->first).c_str(),
@@ -2097,33 +2270,15 @@ bool contamFinder::reclassify_cells(){
                         a->second = a_new;
                         assn_llr[a->first] = llr_new;
                         contam_rate[a->first] = c_cell_map;
-                        contam_rate_se[a->first] = c_cell.se;
+                        contam_rate_se[a->first] = c_cell.se_found ? c_cell.se : 0.0;
                         contam_rate_ll[a->first] = c_cell.log_likelihood;
                     }
                 }
             }
-            else{
-                cell_rm.insert(a->first);        
-            }
-        }
-        else{
-            // Keep original? Delete original?
-            cell_rm.insert(a->first);
         }
     }
     
     fprintf(stderr, "  %d cells reassigned\n", n_reassigned);
-    fprintf(stderr, "  %ld cells removed\n", cell_rm.size());
-
-    if (cell_rm.size() > 0){
-        changed = true;
-    }
-    for (set<unsigned long>::iterator rm = cell_rm.begin(); rm != cell_rm.end(); ++rm){
-        assn.erase(*rm);
-        assn_llr.erase(*rm);
-        contam_rate.erase(*rm);
-        contam_rate_se.erase(*rm);
-    }
     return changed;
 }
 
@@ -2190,7 +2345,9 @@ pair<double, double> contamFinder::est_error_rates(bool init){
     double this_e_a = e_a;
 
     try{
-        solver.solve();
+        if (!solver.solve()){
+            throw optimML::OPTIMML_MATH_ERR;
+        }
     
         this_e_r = solver.results[0];
         this_e_a = solver.results[1];
@@ -2237,11 +2394,19 @@ double contamFinder::compute_ll(){
  * Return overall log likelihood.
  */
 void contamFinder::fit(){
+    map<int, double> init_prof;
+    if (contam_prof_initialized){
+        init_prof = contam_prof;
+    }
+
     // Begin with minimum estimate of c (global contamination rate)
     // if not provided from a previous run
     if (c_init <= 0){
         // Get (estimated/averaged) min bound on c
         c_init = this->est_min_c();
+    }
+    if (contam_prof_initialized){
+        contam_prof = init_prof;
     }
     double ll_init = init_params(c_init);
     fprintf(stderr, "Initial global contamination rate = %f\n", c_init);

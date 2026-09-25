@@ -187,15 +187,22 @@ int read_vcf_chrom(string& vcf_file,
                             chrom.c_str(), (long int) bcf_record->pos);
                         exit(1);
                     }
+                    if (num_loaded != num_samples*2){
+                        fprintf(stderr, "WARNING: expected diploid genotypes at %s %ld\n",
+                            chrom.c_str(), (long int) bcf_record->pos);
+                        free(gts);
+                        --nvar;
+                        continue;
+                    }
                     
                     // Assume ploidy = 2
                     int ploidy = 2;
                     //int ploidy = n_gts / num_samples; 
                     
                     // Load genotype qualities
-                    float* gqs = NULL;
+                    int32_t* gqs = NULL;
                     int n_gqs = 0;
-                    int num_gq_loaded = bcf_get_format_float(bcf_header, bcf_record, "GQ",
+                    int num_gq_loaded = bcf_get_format_int32(bcf_header, bcf_record, "GQ",
                         &gqs, &n_gqs);
                     
                     int nalt_alleles = 0;
@@ -206,14 +213,16 @@ int read_vcf_chrom(string& vcf_file,
                         
                         bool gq_pass = false;
                         
-                        if (num_gq_loaded < num_samples || !isnan(gqs[i]) || 
-                            gqs[i] == bcf_float_missing){
+                        if (num_gq_loaded < num_samples ||
+                            gqs[i] == bcf_int32_missing ||
+                            gqs[i] == bcf_int32_vector_end){
                             // Missing GQ? let it slide
                             gq_pass = true;
                         }
                         else{
                             // valid GQ.
                             if (gqs[i] >= mingq){
+                                gq_pass = true;
                                 v.gqs.push_back(pow(10, -(float)gqs[i] / 10.0));
                             }
                             else{
@@ -222,7 +231,11 @@ int read_vcf_chrom(string& vcf_file,
                             }
                         }
                         
-                        if (bcf_gt_is_missing(gtptr[0])){
+                        if (gtptr[0] == bcf_int32_vector_end ||
+                            gtptr[1] == bcf_int32_vector_end ||
+                            bcf_gt_is_missing(gtptr[0]) || bcf_gt_is_missing(gtptr[1]) ||
+                            bcf_gt_allele(gtptr[0]) < 0 || bcf_gt_allele(gtptr[0]) > 1 ||
+                            bcf_gt_allele(gtptr[1]) < 0 || bcf_gt_allele(gtptr[1]) > 1){
                             // Missing genotype.
                             nmiss++;
                         }
@@ -248,6 +261,7 @@ int read_vcf_chrom(string& vcf_file,
                             }
                         }    
                     } 
+                    free(gts);
                     free(gqs);            
                     
                     if (allow_missing || nmiss == 0){
@@ -382,15 +396,22 @@ int read_vcf(string& filename,
                         chrom.c_str(), (long int) bcf_record->pos);
                     exit(1);
                 }
+                if (num_loaded != num_samples*2){
+                    fprintf(stderr, "WARNING: expected diploid genotypes at %s %ld\n",
+                        chrom.c_str(), (long int) bcf_record->pos);
+                    free(gts);
+                    --nvar;
+                    continue;
+                }
                 
                 // Assume ploidy = 2
                 int ploidy = 2;
                 //int ploidy = n_gts / num_samples; 
                 
                 // Load genotype qualities
-                float* gqs = NULL;
+                int32_t* gqs = NULL;
                 int n_gqs = 0;
-                int num_gq_loaded = bcf_get_format_float(bcf_header, bcf_record, "GQ",
+                int num_gq_loaded = bcf_get_format_int32(bcf_header, bcf_record, "GQ",
                     &gqs, &n_gqs);
                 
                 int nalt_alleles = 0;
@@ -401,14 +422,16 @@ int read_vcf(string& filename,
                     
                     bool gq_pass = false;
                     
-                    if (num_gq_loaded < num_samples || !isnan(gqs[i]) || 
-                        gqs[i] == bcf_float_missing){
+                    if (num_gq_loaded < num_samples ||
+                        gqs[i] == bcf_int32_missing ||
+                        gqs[i] == bcf_int32_vector_end){
                         // Missing GQ? let it slide
                         gq_pass = true;
                     }
                     else{
                         // valid GQ.
                         if (gqs[i] >= mingq){
+                            gq_pass = true;
                             v.gqs.push_back(pow(10, -(float)gqs[i] / 10.0));
                         }
                         else{
@@ -417,7 +440,11 @@ int read_vcf(string& filename,
                         }
                     }
                     
-                    if (bcf_gt_is_missing(gtptr[0])){
+                    if (gtptr[0] == bcf_int32_vector_end ||
+                        gtptr[1] == bcf_int32_vector_end ||
+                        bcf_gt_is_missing(gtptr[0]) || bcf_gt_is_missing(gtptr[1]) ||
+                        bcf_gt_allele(gtptr[0]) < 0 || bcf_gt_allele(gtptr[0]) > 1 ||
+                        bcf_gt_allele(gtptr[1]) < 0 || bcf_gt_allele(gtptr[1]) > 1){
                         // Missing genotype.
                         nmiss++;
                     }
@@ -443,6 +470,7 @@ int read_vcf(string& filename,
                         }
                     }    
                 } 
+                free(gts);
                 free(gqs);            
                 
                 if (allow_missing || nmiss == 0){

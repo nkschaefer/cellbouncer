@@ -211,15 +211,17 @@ but specify the -F option to create this file. Then re-run this program.\n");
     if (idfile_given){
         parse_idfile(idfile, samples, allowed_ids, allowed_ids2, true);
         if (allowed_ids.size() == 0){
-            fprintf(stderr, "No valid individual names found in file %s; allowing \
-all possible individuals\n", idfile.c_str());
+            fprintf(stderr, "ERROR: no valid individual names found in file %s\n",
+                idfile.c_str());
+            exit(1);
         }
     }
     if (idfile_doublet_given){
         parse_idfile(idfile_doublet, samples, allowed_ids, allowed_ids2, false);
         if (allowed_ids.size() == 0){
-            fprintf(stderr, "No valid individual names found in file %s; allowing \
-all possible individuals\n", idfile_doublet.c_str());
+            fprintf(stderr, "ERROR: no valid individual names found in file %s\n",
+                idfile_doublet.c_str());
+            exit(1);
         }
     }
 
@@ -258,7 +260,32 @@ all possible individuals\n", idfile_doublet.c_str());
 
         // Initialize to whatever was the final estimate last time 
         if (nits > 0){
-            cf.set_init_contam_prof(contam_prof);
+            set<int> expected_ids;
+            set<int> profile_ids;
+            if (allowed_ids.size() == 0){
+                for (int i = 0; i < samples.size(); ++i){
+                    expected_ids.insert(i);
+                }
+            }
+            else{
+                for (set<int>::iterator i = allowed_ids.begin(); i != allowed_ids.end(); ++i){
+                    if (*i < samples.size()){
+                        expected_ids.insert(*i);
+                    }
+                }
+            }
+            if (inter_species){
+                expected_ids.insert(-1);
+            }
+            for (map<int, double>::iterator cp = contam_prof.begin(); cp != contam_prof.end(); ++cp){
+                profile_ids.insert(cp->first);
+            }
+            if (profile_ids == expected_ids){
+                cf.set_init_contam_prof(contam_prof);
+            }
+            else{
+                fprintf(stderr, "WARNING: contamination profile does not match current sample set; reinitializing.\n");
+            }
         }
         if (nits > 0){
             double meanc = 0.0;
@@ -281,7 +308,9 @@ all possible individuals\n", idfile_doublet.c_str());
         cf.fit(); 
         
         for (int i = 0; i < samples.size(); ++i){
-            fprintf(stderr, "%s) %f\n", samples[i].c_str(), cf.contam_prof[i]);
+            if (cf.contam_prof.count(i) > 0){
+                fprintf(stderr, "%s) %f\n", samples[i].c_str(), cf.contam_prof[i]);
+            }
         }   
 
         double ll = cf.compute_ll();
@@ -319,7 +348,19 @@ all possible individuals\n", idfile_doublet.c_str());
             // Do bootstrapping
             cf.assn = assn;
             cf.assn_llr = assn_llr;
-            cf.contam_prof = contam_prof;
+            set<int> cf_ids;
+            set<int> profile_ids;
+            for (map<int, double>::iterator cp = cf.contam_prof.begin(); cp !=
+                cf.contam_prof.end(); ++cp){
+                cf_ids.insert(cp->first);
+            }
+            for (map<int, double>::iterator cp = contam_prof.begin(); cp !=
+                contam_prof.end(); ++cp){
+                profile_ids.insert(cp->first);
+            }
+            if (cf_ids == profile_ids){
+                cf.contam_prof = contam_prof;
+            }
             cf.contam_rate = contam_rate;
             cf.contam_rate_se = contam_rate_se;
             fprintf(stderr, "Computing Dirichlet concentration parameters \

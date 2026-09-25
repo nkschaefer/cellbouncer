@@ -1834,7 +1834,7 @@ double sep_bg_dists_percent(vector<double>& bgperc_all_flat){
         double mean1 = bgpercmod.dists[0].params[0][0] / 
             (bgpercmod.dists[0].params[0][0] + bgpercmod.dists[0].params[0][1]);
         double mean2 = bgpercmod.dists[1].params[0][0] / 
-            (bgpercmod.dists[1].params[0][0] + bgpercmod.dists[0].params[0][1]);
+            (bgpercmod.dists[1].params[0][0] + bgpercmod.dists[1].params[0][1]);
         
         double v1 = bgpercmod.dists[0].params[0][0] + bgpercmod.dists[0].params[0][1];
         double v2 = bgpercmod.dists[1].params[0][0] + bgpercmod.dists[1].params[0][1];
