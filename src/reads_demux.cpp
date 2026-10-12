@@ -154,7 +154,12 @@ bool reads_demuxer::scan_rna(){
         scanner.corr_barcodes(true);
     }   
     while(scanner.next()){
-        int species = bc2species[scanner.barcode];
+        robin_hood::unordered_map<unsigned long, short>::iterator b2s =
+            bc2species.find(scanner.barcode);
+        if (b2s == bc2species.end()){
+            continue;
+        }
+        int species = b2s->second;
         write_fastq(scanner.seq_id, scanner.seq_id_len,
             scanner.barcode_read, scanner.barcode_read_len,
             scanner.barcode_read_qual, species*2);
@@ -287,7 +292,12 @@ bool reads_demuxer::scan_atac(){
     int bc_len = whitelist->len_bc();
 
     while(scanner.next()){
-        int species = bc2species[scanner.barcode];
+        robin_hood::unordered_map<unsigned long, short>::iterator b2s =
+            bc2species.find(scanner.barcode);
+        if (b2s == bc2species.end()){
+            continue;
+        }
+        int species = b2s->second;
         if (atac_preproc){
             string bc_str = bc2str(scanner.barcode, bc_len);
             write_fastq(scanner.seq_id, scanner.seq_id_len,
